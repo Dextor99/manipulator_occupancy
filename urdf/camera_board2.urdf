@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="camera_board2">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.00108090334069513 0.0552476750881365 0.0120370228370369"
+        rpy="0 0 0" />
+    <mass value="0" />
+    <inertia
+        ixx="0.0"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="0.0"
+        iyz="0.0"
+        izz="0.0" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="./meshes/camera_board/camera.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="./meshes/camera_board/camera.STL" />
+      </geometry>
+    </collision>
+  </link>
+
+  <link
+    name="rgb_link">
+    <inertial>
+      <origin
+        xyz="0.0331329722954641 0.0259425264235928 -0.0273488462636874"
+        rpy="0 0 0" />
+    <mass value="0" />
+    <inertia
+        ixx="0.0"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="0.0"
+        iyz="0.0"
+        izz="0.0" />
+    </inertial>
+  </link>
+  <joint
+    name="rgb_optical_joint"
+    type="fixed">
+    <origin
+      xyz="0.0331329722954641 0.056 0.025016"
+      rpy="0 0 3.14159265358979" />
+    <parent
+      link="base_link" />
+    <child
+      link="rgb_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_cam_link">
+    <inertial>
+      <origin
+        xyz="0.0181329722954641 0.0259425264235928 -0.0273488462636874"
+        rpy="0 0 0" />
+    <mass value="0" />
+    <inertia
+        ixx="0.0"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="0.0"
+        iyz="0.0"
+        izz="0.0" />
+    </inertial>
+  </link>
+  <joint
+    name="right_optical_joint"
+    type="fixed">
+    <origin
+      xyz="0.0181329722954641 0.056 0.025016"
+      rpy="0 0 3.14159265358979" />
+    <parent
+      link="base_link" />
+    <child
+      link="right_cam_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_cam_link">
+    <inertial>
+      <origin
+        xyz="-0.0318670277045359 0.0259425264235928 -0.0273488462636874"
+        rpy="0 0 0" />
+    <mass value="0" />
+    <inertia
+        ixx="0.0"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="0.0"
+        iyz="0.0"
+        izz="0.0" />
+    </inertial>
+  </link>
+  <joint
+    name="left_optical_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0318670277045359 0.056 0.025016"
+      rpy="0 0 3.14159265358979" />
+    <parent
+      link="base_link" />
+    <child
+      link="left_cam_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+</robot>
