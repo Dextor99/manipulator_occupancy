@@ -1,6 +1,6 @@
 self_filter_margin: 0.03
-cluster_eps: 0.08
-cluster_min_points: 20
+cluster_eps: 0.05
+cluster_min_points: 25
 shape_margin: 0.02
 association_distance: 0.20
 velocity_alpha: 0.3
@@ -8,6 +8,11 @@ prediction_horizon: 0.5
 prediction_step: 0.1
 risk_margin: 0.05
 prediction_uncertainty: 0.02
+enable_cluster_split: true     # 启用/禁用子聚类拆分功能，false 时走默认聚类逻辑
+cluster_split_threshold: 300   # 超过此点数的簇尝试子聚类拆分（防合并）
+cluster_sub_eps: 0.12          # 子聚类 eps（比主聚类大，便于分离粘连物体）
+cluster_sub_min_points: 10     # 子聚类 min_points
+min_track_age: 3       # 物体需连续跟踪 ≥ N 帧才参与安全判断（滤除帧间闪烁）
 d_safe: 0.15
 d_slow: 0.10
 d_stop: 0.05

@@ -51,12 +51,15 @@ def fit_obb(points: np.ndarray) -> ShapeModel:
 def make_occupancy_object(cluster: np.ndarray, timestamp: float, margin: float = 0.02):
     from perception.occupancy_object import OccupancyObject
 
-    shape = fit_sphere(cluster, margin=margin)
+    # 用 OBB 中心（更稳定，不随单侧点云偏移）+ 实际点到中心的最远距离（保持紧凑）
+    shape = fit_obb(cluster)
+    radius = float(np.max(np.linalg.norm(cluster - shape.center, axis=1))) + margin
+    shape.radius = radius
     return OccupancyObject(
         id=-1,
         center=shape.center,
         velocity=np.zeros(3),
-        radius=float(shape.radius or 0.0),
+        radius=radius,
         shape=shape,
         confidence=0.0,
         risk="UNKNOWN",

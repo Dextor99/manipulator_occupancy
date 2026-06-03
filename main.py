@@ -12,7 +12,7 @@ from perception.geometry_fit import make_occupancy_object
 from perception.occupancy_object import OccupancyObject
 from perception.occupancy_tracker import OccupancyTracker
 from perception.self_filter import filter_robot_self_points
-from risk.distance_check import min_capsule_sphere_distance
+from risk.distance_check import min_capsule_sphere_distance, min_capsule_obb_distance
 from risk.prediction import predict_risk_spheres
 from risk.safety_policy import SafetyDecision, SafetyPolicy
 from robot.capsule_model import capsules_from_config, mock_capsules
@@ -69,20 +69,56 @@ def run_pipeline(source: str, config_dir: str, max_frames: int, visualize: bool 
             eps=safety_cfg.get("cluster_eps", 0.05),
             min_points=safety_cfg.get("cluster_min_points", 30),
         )
-        detections = [
-            make_occupancy_object(cluster, timestamp=frame.timestamp, margin=safety_cfg.get("shape_margin", 0.02))
-            for cluster in clusters
-            if cluster.shape[0] >= safety_cfg.get("cluster_min_points", 30)
-        ]
+        detections = []
+        enable_split = safety_cfg.get("enable_cluster_split", True)
+        split_threshold = safety_cfg.get("cluster_split_threshold", 500)
+        sub_eps = safety_cfg.get("cluster_sub_eps", 0.12)
+        sub_min_pts = safety_cfg.get("cluster_sub_min_points", 10)
+        for cluster in clusters:
+            if cluster.shape[0] < safety_cfg.get("cluster_min_points", 30):
+                continue
+            # 子聚类拆分：异常大的簇可能是两个物体被 DBSCAN 合并，尝试拆开
+            if enable_split and cluster.shape[0] >= split_threshold:
+                sub_clusters = cluster_points(cluster, eps=sub_eps, min_points=sub_min_pts)
+                if len(sub_clusters) > 1:
+                    for sub in sub_clusters:
+                        if sub.shape[0] < safety_cfg.get("cluster_min_points", 30):
+                            continue
+                        detections.append(
+                            make_occupancy_object(sub, timestamp=frame.timestamp, margin=safety_cfg.get("shape_margin", 0.02))
+                        )
+                    continue
+            detections.append(
+                make_occupancy_object(cluster, timestamp=frame.timestamp, margin=safety_cfg.get("shape_margin", 0.02))
+            )
         objects = tracker.update(detections, timestamp=frame.timestamp)
+        # 滤除闪烁簇：只对连续跟踪 ≥ N 帧的物体做安全判断
+        # tracker 仍会跟踪所有物体（包括新出现的），积累 age
+        # 但安全管道只看见稳物体，避免单帧闪现噪声引发急停
+        min_track_age = safety_cfg.get("min_track_age", 3)
+        stable_objects = [obj for obj in objects if obj.age >= min_track_age]
         risk_spheres = predict_risk_spheres(
-            objects,
+            stable_objects,
             horizon=safety_cfg.get("prediction_horizon", 0.5),
             step=safety_cfg.get("prediction_step", 0.1),
             margin=safety_cfg.get("risk_margin", 0.05),
             uncertainty=safety_cfg.get("prediction_uncertainty", 0.02),
         )
+        # 双层距离检查：球体快速筛 → 近距离时 OBB 精确算
         min_distance, nearest_id = min_capsule_sphere_distance(capsules, risk_spheres)
+        safe_thr = safety_cfg.get("d_safe", 0.15)
+        if min_distance < safe_thr + 0.05:
+            obb_dist, obb_id, _ = min_capsule_obb_distance(
+                capsules, stable_objects,
+                horizon=safety_cfg.get("prediction_horizon", 0.5),
+                step=safety_cfg.get("prediction_step", 0.1),
+                margin=safety_cfg.get("risk_margin", 0.05),
+                uncertainty=safety_cfg.get("prediction_uncertainty", 0.02),
+                obb_threshold=safe_thr,
+            )
+            if obb_dist < min_distance:
+                min_distance = obb_dist
+                nearest_id = obb_id
         decision = policy.evaluate(min_distance, nearest_id)
         for obj in objects:
             obj.risk = decision.level.value if obj.id == nearest_id else "OBSERVED"

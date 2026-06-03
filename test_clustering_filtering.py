@@ -75,7 +75,7 @@ import open3d as o3d
 from sklearn.cluster import DBSCAN
 
 from test_remove_robot_points_fast import SceneProcessor, ProcessedFrame, ROBOT_REMOVAL_THRESHOLD
-from perception.geometry_fit import create_obb_wireframe, create_sphere_wireframe, create_text_label  # 仅用于可视化，无逻辑依赖
+from perception.geometry_fit import fit_obb, create_obb_wireframe, create_sphere_wireframe, create_text_label
 
 # ── 默认聚类参数 ──────────────────────────────────────────────
 DBSCAN_EPS = 0.06           # DBSCAN 邻域半径（米）
@@ -98,7 +98,7 @@ class OccupancyCluster:
     center: np.ndarray               # (3,) 几何中心
     bbox_min: np.ndarray             # (3,) AABB 最小值
     bbox_max: np.ndarray             # (3,) AABB 最大值
-    volume: float                    # AABB 体积（立方米）
+    volume: float                    # OBB 体积（立方米），比 AABB 更紧凑准确
     n_points: int                    # 点数
     passed: bool                     # 是否通过所有过滤
     filter_reasons: list[str]        # 被过滤的原因（passed=True 时为空）
@@ -525,13 +525,26 @@ class FastClusteringFilter:
         fo_pts = [c.points for c in self._clusters if not c.passed]
         self._filtered_out_pts = np.vstack(fo_pts) if fo_pts else np.empty((0, 3))
 
+    @staticmethod
+    def _obb_volume(pts: np.ndarray) -> float:
+        """计算点云的 OBB 体积 (m³)，与主管线 geometry_fit.fit_obb 一致。"""
+        if pts.shape[0] < 3:
+            return 0.0
+        center = pts.mean(axis=0)
+        centered = pts - center
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        rotation = vh.T
+        local = centered @ rotation
+        half = (local.max(axis=0) - local.min(axis=0)) * 0.5
+        return float(8.0 * half[0] * half[1] * half[2])
+
     def _analyze_cluster(self, pts: np.ndarray, label: int) -> OccupancyCluster:
         """分析单个簇的各项指标并判断是否通过过滤。"""
         center = np.mean(pts, axis=0)
         bmin = pts.min(axis=0)
         bmax = pts.max(axis=0)
         dims = bmax - bmin
-        volume = float(dims[0] * dims[1] * dims[2])
+        volume = self._obb_volume(pts)  # OBB 体积，比 AABB 更紧凑准确
         n_pts = len(pts)
         z_var = float(np.var(pts[:, 2]))
 
@@ -662,11 +675,13 @@ def visualize_clusters(scene_pts: np.ndarray,
         pcd.paint_uniform_color(ci)
         vis.add_geometry(pcd)
 
-        # ── 球体线框（绿色调） ──
-        sphere_radius = float(np.max(np.linalg.norm(
-            cluster.points - cluster.center, axis=1))) + 0.02
+        # ── 包围球（黄色）：OBB 中心到最远点，用于第1层快速检查 ──
+        obb_model = fit_obb(cluster.points)
+        sphere_center = obb_model.center
+        sphere_r = float(np.max(np.linalg.norm(
+            cluster.points - sphere_center, axis=1))) + 0.02
         sphere_ls = create_sphere_wireframe(
-            cluster.center, sphere_radius, color=(0.0, 1.0, 0.5))
+            sphere_center, sphere_r, color=(1.0, 0.9, 0.0))
         vis.add_geometry(sphere_ls)
 
         # ── OBB 线框（橙色） ──
@@ -836,8 +851,8 @@ def run_live(config_dir: str = 'config',
 
         # 预分配几何线框和标记（最多支持 MAX_GEO_CLUSTERS 个簇）
         MAX_GEO_CLUSTERS = 10
-        obb_lines = []     # 每个簇的 OBB 线框
-        sphere_lines = []  # 每个簇的球体线框
+        obb_lines = []         # 每个簇的 OBB 线框（第2层精确）
+        sphere_lines = []      # 每个簇的包围球线框（第1层快速）
         center_pts = o3d.geometry.PointCloud()  # 中心标记
         vis.add_geometry(center_pts)
         for _ in range(MAX_GEO_CLUSTERS):
@@ -997,19 +1012,16 @@ def run_live(config_dir: str = 'config',
                         obb_lines[i].lines = obb.lines
                         obb_lines[i].paint_uniform_color(ci)
                         vis.update_geometry(obb_lines[i])
-                        # 球体线框（平滑后的半径）
-                        if i in stable_tracks:
-                            sphere_radius = stable_tracks[i].radius
-                            sphere_center = stable_tracks[i].center
-                        else:
-                            sphere_radius = float(np.max(np.linalg.norm(
-                                cl.points - cl.center, axis=1))) + 0.02
-                            sphere_center = cl.center
+                        # ── 包围球（黄色，OBB 中心→最远点，第1层快速检查用） ──
+                        obb_model = fit_obb(cl.points)
+                        sphere_center = obb_model.center
+                        sphere_radius = float(np.max(np.linalg.norm(
+                            cl.points - sphere_center, axis=1))) + 0.02
                         sphere = create_sphere_wireframe(
-                            sphere_center, sphere_radius, color=(0.0, 1.0, 0.5))
+                            sphere_center, sphere_radius, color=(1.0, 0.9, 0.0))
                         sphere_lines[i].points = sphere.points
                         sphere_lines[i].lines = sphere.lines
-                        sphere_lines[i].paint_uniform_color((0.0, 1.0, 0.5))
+                        sphere_lines[i].paint_uniform_color((1.0, 0.9, 0.0))
                         vis.update_geometry(sphere_lines[i])
                     else:
                         # 清空未使用的线框
