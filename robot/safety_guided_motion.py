@@ -169,6 +169,9 @@ class AdaptiveSafetyController:
      同向/远离 | closing ≤ 0.03   | 保持安全即可，不主动减速
     ---------+--------------------+----------------------------------
 
+    停止超时恢复：若因静态障碍停住 ≥hold_timeout 秒且障碍不再靠近，
+    自动缓慢恢复运动，避免"障碍不消失就不动"的锁死现象。
+
     速度渐变：减速 2.0/s, 加速 0.5/s – 缓启动不突兀。
     """
 
@@ -179,9 +182,11 @@ class AdaptiveSafetyController:
         d_stop: float = 0.06,
         max_decel: float = 2.0,
         max_accel: float = 0.5,
-        dynamic_lookahead: float = 0.3,
-        close_threshold: float = 0.03,  # m/s — 超过此值视为"迎面接近"
+        dynamic_lookahead: float = 0.15,
+        close_threshold: float = 0.05,  # m/s — 超过此值视为"迎面接近"
         dist_smooth_alpha: float = 0.3,  # 距离 EMA 平滑系数
+        hold_timeout: float = 2.0,  # 停止超过此秒数且障碍不靠近 → 尝试恢复
+        hold_recovery_speed: float = 0.15,  # 恢复时的初始 speed_scale
     ):
         self.d_safe = d_safe
         self.d_slow = d_slow
@@ -191,6 +196,8 @@ class AdaptiveSafetyController:
         self.dynamic_lookahead = dynamic_lookahead
         self.close_threshold = close_threshold
         self.dist_smooth_alpha = dist_smooth_alpha
+        self.hold_timeout = hold_timeout
+        self.hold_recovery_speed = hold_recovery_speed
 
         self.speed_scale = 1.0
         self.last_decision = "SAFE"
@@ -200,6 +207,9 @@ class AdaptiveSafetyController:
         # ── 帧间状态（按 object_id 追踪） ──
         self._prev_dist: dict[int, float] = {}
         self._smoothed_dist: dict[int, float] = {}
+
+        # ── 停止超时恢复状态 ──
+        self._hold_start_time: float | None = None
 
     def evaluate(
         self,
@@ -227,6 +237,7 @@ class AdaptiveSafetyController:
             self.last_effective_dist = float("inf")
             self._prev_dist.clear()
             self._smoothed_dist.clear()
+            self._hold_start_time = None
         else:
             oid = nearest_obj.id
 
@@ -259,8 +270,7 @@ class AdaptiveSafetyController:
                 self.last_decision = "APPROACHING"
             else:
                 # ── 同向/远离：不主动减速，仅 d_stop 处保底 ──
-                # 同向时相对速度小，允许保持速度
-                effective_dist = smoothed + 0.04  # 放松4cm，避免过于敏感
+                effective_dist = smoothed + 0.04
                 self.last_decision = "FOLLOWING"
 
             # d) 三段映射 → 目标 speed_scale
@@ -270,6 +280,21 @@ class AdaptiveSafetyController:
                 target = 0.0
             else:
                 target = (effective_dist - self.d_stop) / (self.d_safe - self.d_stop)
+
+            # e) 停止超时恢复
+            #    如果因障碍停住（target=0）且障碍没有明显靠近（closing ≤ close_threshold），
+            #    持续 hold_timeout 秒后以 hold_recovery_speed 缓慢恢复。
+            #    避免"障碍不消失就永远锁死"。
+            #    用 close_threshold 而非 0.0 是为了容忍距离抖动，只有 real approach 才重置。
+            if target < 0.01 and closing <= self.close_threshold:
+                if self._hold_start_time is None:
+                    self._hold_start_time = time.perf_counter()
+                elif time.perf_counter() - self._hold_start_time >= self.hold_timeout:
+                    # 超时 → 以低速恢复，后续距离变化由渐变机制平滑处理
+                    target = self.hold_recovery_speed
+                    self.last_decision = "HOLD_RECOVERY"
+            else:
+                self._hold_start_time = None
 
             self.last_nearest_id = oid
             self.last_effective_dist = effective_dist
@@ -645,7 +670,7 @@ def run_safety_guided_motion(
     motion_planner = YAxisMotionPlanner(range_m=0.40, base_speed=0.1)
     controller = AdaptiveSafetyController(
         d_safe=0.22, d_slow=0.12, d_stop=0.06,
-        max_decel=2.0, max_accel=0.5, dynamic_lookahead=0.3,
+        max_decel=2.0, max_accel=0.5, dynamic_lookahead=0.15,
     )
 
     # ── ★ 真实机械臂运动控制 ──

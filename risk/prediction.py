@@ -27,10 +27,13 @@ def predict_risk_spheres(
     for obj in objects:
         speed = float(np.linalg.norm(obj.velocity))
         if speed < 0.01:
-            # 静态障碍：至少生成一个当前位置 RiskSphere，否则距离检查完全找不到它
+            # 静态障碍：只使用 obj.radius + 薄边 0.02m
+            # 不加 margin(0.05) 和 uncertainty(0.02) 是因为：
+            #   - 静态障碍不需要预测膨胀
+            #   - 加多了表面距离被吞掉 → 障碍退开几厘米 distance 还是 0
             predictions.append(RiskSphere(
                 obj.id, obj.center.copy(),
-                float(obj.radius + margin + uncertainty),
+                float(obj.radius + 0.02),
                 0.0,
             ))
         else:
