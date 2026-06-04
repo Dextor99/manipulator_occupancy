@@ -122,32 +122,43 @@ def main():
           f"RX={math.degrees(rx0):.1f}° RY={math.degrees(ry0):.1f}° "
           f"RZ={math.degrees(rz0):.1f}°", flush=True)
 
-    # ── 运动循环 ──
-    t_start = time.perf_counter()
-    print("[MotionWorker] 开始运动循环", flush=True)
+    # ── 运动循环（累积相位，支持暂停/恢复） ──
+    # phase += ω × speed × dt
+    # speed=0 → phase 冻结 → 机械臂停在当前位置不动
+    # speed>0 → phase 从暂停处继续 → 运动方向、位置连续无跳变
+    phase = 0.0
+    t_last = time.perf_counter()
+    print("[MotionWorker] 开始运动循环 (累积相位)", flush=True)
 
     try:
         while _read_int8(16):
+            now = time.perf_counter()
+            dt = now - t_last
+            t_last = now
+
             speed = max(_read_double(0), 0.0)
 
-            t_elapsed = time.perf_counter() - t_start
-            phase = base_omega * speed * t_elapsed
+            # 累积相位：speed=0 时项为 0，相位自然冻结
+            phase += base_omega * speed * dt
             y_target = y0 + range_m * math.sin(phase)
 
             target_pose = [x0, y_target, z0, rx0, ry0, rz0]
 
             try:
-                # 非阻塞 movel：发送目标后立即返回
-                # 控制器内部轨迹混合，机器人连续运动不停顿
                 mod.movel_async(target_pose)
             except Exception as e:
                 print(f"[MotionWorker] movel_async 异常: {e}", flush=True)
                 break
 
-            _write_double(8, y_target)
-            # 短暂让步 CPU，~100Hz 目标更新率
-            # movel_async 本身 ~5ms（逆解），加上 sleep 共 ~15ms/cycle
-            time.sleep(0.010)
+            # 写入真实末端 Y 位置
+            try:
+                actual = list(mod.get_status())
+                _write_double(8, actual[1])
+            except Exception:
+                _write_double(8, y_target)
+
+            # 固定 20ms 间隔（~50Hz），给控制器足够时间处理每条指令
+            time.sleep(0.020)
 
     except KeyboardInterrupt:
         pass

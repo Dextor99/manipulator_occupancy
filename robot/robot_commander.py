@@ -143,7 +143,7 @@ class RobotCommander:
     # Y 轴运动控制（子进程）
     # ══════════════════════════════════════════════════════════════
 
-    def start_y_oscillate(self, range_m: float = 0.30):
+    def start_y_oscillate(self, range_m: float = 0.40):
         """启动子进程：Y 轴 ±range_m 正弦往返。
 
         通过 subprocess.Popen 启动 robot/motion_worker.py，
@@ -347,7 +347,7 @@ if __name__ == "__main__":
     commander = RobotCommander(ip=sys.argv[1] if len(sys.argv) > 1 else "192.168.123.96")
     if not commander.connect():
         sys.exit(1)
-    commander.start_y_oscillate(range_m=0.30)
+    commander.start_y_oscillate(range_m=0.40)
     print("运动中，按 Ctrl+C 停止")
     try:
         while True:

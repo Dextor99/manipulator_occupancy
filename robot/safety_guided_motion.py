@@ -71,8 +71,7 @@ from perception.geometry_fit import (
 from perception.occupancy_tracker import OccupancyTracker
 from perception.occupancy_object import OccupancyObject
 from risk.prediction import predict_risk_spheres, RiskSphere
-from risk.distance_check import min_capsule_sphere_distance
-from robot.capsule_model import Capsule, mock_capsules, capsules_from_config
+# 距离判定改用机械臂点云，不再使用胶囊体
 from robot.robot_commander import RobotCommander
 
 # ═══════════════════════════════════════════════════════════════
@@ -128,22 +127,20 @@ class _StructuredMockReader:
 class YAxisMotionPlanner:
     """在 Y 轴 ±range 之间正弦波形平滑往返，速度受 speed_scale 控制。
 
-    使用时间基准正弦波（与 RobotCommander._motion_loop 一致），
-    speed_scale 影响波形角速度，实现平滑加减速。
+    使用累积相位法（而非 t_elapsed），speed_scale 变化时位置连续不跳变。
     """
 
-    def __init__(self, range_m: float = 0.30, base_speed: float = 0.1):
+    def __init__(self, range_m: float = 0.40, base_speed: float = 0.1):
         self.range = range_m
         self.base_speed = base_speed
         self.y_pos = 0.0
-        self._t_start = time.perf_counter()
-        self._omega = 0.8  # rad/s，与 RobotCommander 一致
+        self._phase = 0.0  # 累积相位 rad
+        self._omega = 0.8  # rad/s
 
     def step(self, dt: float, speed_scale: float) -> float:
-        """根据 speed_scale 更新位置，返回当前 y_pos（dt 保留为接口兼容）。"""
-        t_elapsed = time.perf_counter() - self._t_start
-        phase = self._omega * max(speed_scale, 0.0) * t_elapsed
-        self.y_pos = self.range * np.sin(phase)
+        """累积相位积分：phase += ω * speed * dt → 位置平滑过渡。"""
+        self._phase += self._omega * max(speed_scale, 0.0) * dt
+        self.y_pos = self.range * np.sin(self._phase)
         return self.y_pos
 
 
@@ -151,31 +148,8 @@ class YAxisMotionPlanner:
 # 2. 移动胶囊体提供器
 # ═══════════════════════════════════════════════════════════════
 
-class MovingCapsuleProvider:
-    """根据 y_pos 偏移机械臂胶囊体（基座不动，末端偏移最大）。"""
-
-    OFFSET_FACTORS = {
-        "base_link": 0.0,
-        "upper_arm": 0.7,
-        "forearm": 0.85,
-        "wrist": 0.95,
-    }
-
-    def __init__(self, base_capsules: list[Capsule] | None = None):
-        self.base_capsules = base_capsules or mock_capsules()
-
-    def get_capsules(self, y_pos: float) -> list[Capsule]:
-        moved = []
-        for cap in self.base_capsules:
-            factor = self.OFFSET_FACTORS.get(cap.name, 0.5)
-            offset = np.array([0.0, factor * y_pos, 0.0])
-            moved.append(Capsule(
-                name=cap.name,
-                a=cap.a + offset,
-                b=cap.b + offset,
-                radius=cap.radius,
-            ))
-        return moved
+# 不再使用 MovingCapsuleProvider
+# 距离判定直接用机械臂点云（来自相机或模拟生成）
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -183,13 +157,19 @@ class MovingCapsuleProvider:
 # ═══════════════════════════════════════════════════════════════
 
 class AdaptiveSafetyController:
-    """基于障碍距离平滑调节速度倍率。
+    """基于障碍距离 + 接近速度的智能调速。
 
-    - 静态障碍 → 按实际距离减速
-    - 动态接近 → 预判未来位置，提前减速
-    - 动态远离 → 正常通过
+    根据距离变化率（closing velocity）区分三类场景：
 
-    速度渐变不跳变，避免突兀启停。
+    ---------+--------------------+----------------------------------
+     场景     | 判定条件           | 行为
+    ---------+--------------------+----------------------------------
+     静态     | obs_speed<0.01    | 梯度减速，到 d_stop 才停
+     迎面接近 | closing > 0.03    | 预判提前减速，相对速度越大越激进
+     同向/远离 | closing ≤ 0.03   | 保持安全即可，不主动减速
+    ---------+--------------------+----------------------------------
+
+    速度渐变：减速 2.0/s, 加速 0.5/s – 缓启动不突兀。
     """
 
     def __init__(
@@ -200,6 +180,8 @@ class AdaptiveSafetyController:
         max_decel: float = 2.0,
         max_accel: float = 0.5,
         dynamic_lookahead: float = 0.3,
+        close_threshold: float = 0.03,  # m/s — 超过此值视为"迎面接近"
+        dist_smooth_alpha: float = 0.3,  # 距离 EMA 平滑系数
     ):
         self.d_safe = d_safe
         self.d_slow = d_slow
@@ -207,55 +189,81 @@ class AdaptiveSafetyController:
         self.max_decel = max_decel
         self.max_accel = max_accel
         self.dynamic_lookahead = dynamic_lookahead
+        self.close_threshold = close_threshold
+        self.dist_smooth_alpha = dist_smooth_alpha
 
         self.speed_scale = 1.0
         self.last_decision = "SAFE"
         self.last_nearest_id: int | None = None
         self.last_effective_dist = float("inf")
 
+        # ── 帧间状态（按 object_id 追踪） ──
+        self._prev_dist: dict[int, float] = {}
+        self._smoothed_dist: dict[int, float] = {}
+
     def evaluate(
         self,
         distance: float,
         nearest_obj: OccupancyObject | None,
-        capsules: list[Capsule],
-        dt: float,
+        capsules: list | None = None,
+        dt: float = 0.05,
     ) -> float:
-        """返回平滑后的 speed_scale (0.0~1.0)。"""
+        """返回平滑后的 speed_scale (0.0~1.0)。
+
+        Parameters
+        ----------
+        distance : float
+            机械臂表面到障碍物表面的 KD-tree 距离 (m), inf = 无障。
+        nearest_obj : OccupancyObject | None
+            最近障碍的跟踪对象，含 velocity / id 等信息。
+        dt : float
+            帧间隔 (s)。
+        """
         # ── 无障碍 → 全速 ──
         if np.isinf(distance) or nearest_obj is None:
             target = 1.0
             self.last_decision = "SAFE"
             self.last_nearest_id = None
             self.last_effective_dist = float("inf")
+            self._prev_dist.clear()
+            self._smoothed_dist.clear()
         else:
-            speed = float(np.linalg.norm(nearest_obj.velocity))
-            effective_dist = distance
+            oid = nearest_obj.id
 
-            if speed > 0.01:
-                # 计算接近速度
-                wrist_center = self._get_wrist_center(capsules)
-                if wrist_center is not None:
-                    to_robot = wrist_center - nearest_obj.center
-                    dist_to_robot = float(np.linalg.norm(to_robot))
-                    if dist_to_robot > 0.001:
-                        closing = max(
-                            0.0,
-                            float(np.dot(nearest_obj.velocity, to_robot / dist_to_robot)),
-                        )
-                    else:
-                        closing = 0.0
-                else:
-                    closing = 0.0
-
-                if closing > 0.01:
-                    effective_dist = max(0.0, distance - closing * self.dynamic_lookahead)
-                    self.last_decision = "DYNAMIC_APPROACH"
-                else:
-                    self.last_decision = "DYNAMIC_FLEE" if speed > 0.01 else "STATIC"
+            # a) 距离 EMA 平滑，抑制单帧抖动
+            raw_dist = distance
+            if oid in self._smoothed_dist:
+                smoothed = self.dist_smooth_alpha * raw_dist + \
+                           (1.0 - self.dist_smooth_alpha) * self._smoothed_dist[oid]
             else:
-                self.last_decision = "STATIC"
+                smoothed = raw_dist
+            self._smoothed_dist[oid] = smoothed
 
-            # ── 三段映射 → 目标 speed_scale ──
+            # b) 接近速率 (closing > 0 = 间距在缩小)
+            if oid in self._prev_dist:
+                closing = (self._prev_dist[oid] - smoothed) / max(dt, 1e-6)
+            else:
+                closing = 0.0
+            self._prev_dist[oid] = smoothed
+
+            obstacle_speed = float(np.linalg.norm(nearest_obj.velocity))
+
+            # c) 场景分类 + 有效距离
+            if obstacle_speed < 0.01 and closing <= self.close_threshold:
+                # ── 静态障碍：梯度减速，不突然停 ──
+                effective_dist = smoothed
+                self.last_decision = "STATIC"
+            elif closing > self.close_threshold:
+                # ── 迎面接近：预判减速 ──
+                effective_dist = max(0.0, smoothed - closing * self.dynamic_lookahead)
+                self.last_decision = "APPROACHING"
+            else:
+                # ── 同向/远离：不主动减速，仅 d_stop 处保底 ──
+                # 同向时相对速度小，允许保持速度
+                effective_dist = smoothed + 0.04  # 放松4cm，避免过于敏感
+                self.last_decision = "FOLLOWING"
+
+            # d) 三段映射 → 目标 speed_scale
             if effective_dist >= self.d_safe:
                 target = 1.0
             elif effective_dist <= self.d_stop:
@@ -263,7 +271,7 @@ class AdaptiveSafetyController:
             else:
                 target = (effective_dist - self.d_stop) / (self.d_safe - self.d_stop)
 
-            self.last_nearest_id = nearest_obj.id
+            self.last_nearest_id = oid
             self.last_effective_dist = effective_dist
 
         # ── 速度渐变 ──
@@ -271,13 +279,6 @@ class AdaptiveSafetyController:
         delta = np.clip(target - self.speed_scale, -max_change, max_change)
         self.speed_scale = float(np.clip(self.speed_scale + delta, 0.0, 1.0))
         return self.speed_scale
-
-    @staticmethod
-    def _get_wrist_center(capsules: list[Capsule]) -> np.ndarray | None:
-        for cap in capsules:
-            if cap.name == "wrist":
-                return (cap.a + cap.b) * 0.5
-        return None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -373,6 +374,25 @@ def _find_nearest_distance(
             best_rob_pt = robot_pts[idx]
             best_obs_pt = rs.center
     return best_d, best_rob_pt, best_obs_pt
+
+
+def _find_nearest_distance_rs(
+    robot_pts: np.ndarray, risk_spheres: list[RiskSphere],
+) -> tuple[float, int | None]:
+    """用 KD-tree 找机器人点云到风险球的最短距离，返回 (距离, object_id)。"""
+    if len(robot_pts) == 0 or not risk_spheres:
+        return float("inf"), None
+    from scipy.spatial import cKDTree
+    tree = cKDTree(robot_pts)
+    best_d = float("inf")
+    best_id: int | None = None
+    for rs in risk_spheres:
+        d, idx = tree.query(rs.center)
+        d = max(d - rs.radius, 0.0)  # 表面对表面
+        if d < best_d:
+            best_d = d
+            best_id = rs.object_id
+    return best_d, best_id
 
 
 # ── 可视化初始化：同 live_tracking.py，预分配轻量 PointCloud / LineSet ──
@@ -582,6 +602,7 @@ def run_safety_guided_motion(
     visualize: bool = False,
     single_shot: bool = False,
     show_timing: bool = False,
+    no_safety: bool = False,
     plane_removal: dict | None = None,
     temporal_denoise: dict | None = None,
     **kwargs,
@@ -621,8 +642,7 @@ def run_safety_guided_motion(
     )
 
     # ── ★ 安全引导运动新组件 ──
-    motion_planner = YAxisMotionPlanner(range_m=0.30, base_speed=0.1)
-    capsule_provider = MovingCapsuleProvider()
+    motion_planner = YAxisMotionPlanner(range_m=0.40, base_speed=0.1)
     controller = AdaptiveSafetyController(
         d_safe=0.22, d_slow=0.12, d_stop=0.06,
         max_decel=2.0, max_accel=0.5, dynamic_lookahead=0.3,
@@ -642,14 +662,17 @@ def run_safety_guided_motion(
             print("[错误] 无法连接机器人，退出")
             return
         # 启动后台 Y 轴运动线程
-        commander.start_y_oscillate(range_m=0.30)
+        commander.start_y_oscillate(range_m=0.40)
         robot_y_pos = commander.get_y_pos()
-        print(f"[运动] 真实机械臂模式：Y 轴 ±0.30m 往返, base_speed=0.05m/s")
+        print(f"[运动] 真实机械臂模式：Y 轴 ±0.40m 往返, base_speed=0.05m/s")
         print(f"[运动] 初始 Y ≈ {robot_y_pos:.3f}m")
     else:
         print("[运动] 模拟 Y 轴 ±0.30m 往返, base_speed=0.1m/s")
-    print("[安全] d_safe=0.22  d_slow=0.12  d_stop=0.06")
-    print(f"[安全] max_decel={controller.max_decel:.1f}/s  max_accel={controller.max_accel:.1f}/s")
+    if no_safety:
+        print("[安全] 已关闭 (--no-safety) — 固定 speed=1.0")
+    else:
+        print("[安全] d_safe=0.22  d_slow=0.12  d_stop=0.06")
+        print(f"[安全] max_decel={controller.max_decel:.1f}/s  max_accel={controller.max_accel:.1f}/s")
 
     # ── 可视化（PointCloud + LineSet 轻量模式，同 live_tracking.py） ──
     geo = _init_visualization(visualize)
@@ -657,6 +680,12 @@ def run_safety_guided_motion(
     _view_fitted = False
 
     print("\n=== 安全引导运动: 聚类→跟踪→预测→速度调节 ===\n")
+
+    # ── 真实机械臂模式：用初始帧的 robot_pts 作为参考臂形 ──
+    # 初始时臂在中心位置，URDF 移除最准 → robot_pts 完整且处于相机坐标系
+    # 之后每帧按 SDK 报告的 Y 位移平移参考点，确保距离检查坐标系正确
+    ref_robot_pts = None
+    ref_y0 = 0.0
 
     # ── 帧生成 ──
     def _frames():
@@ -766,33 +795,63 @@ def run_safety_guided_motion(
             # ★ 安全引导运动层
             # =====================================================
 
-            # a) 机器人步进（模拟 / 真实）
-            if commander is not None:
-                # 真实机械臂：将安全控制器的 speed_scale 写入后台线程
-                commander.set_speed_scale(controller.speed_scale)
-                y_pos = commander.get_y_pos()
+            if no_safety:
+                # ── 无安全模式：固定 speed=1.0，跳过距离检查 + 安全控制 ──
+                speed_scale = 1.0
+                if commander is not None:
+                    commander.set_speed_scale(1.0)
+                    y_pos = commander.get_y_pos()
+                else:
+                    y_pos = motion_planner.step(dt, 1.0)
+                min_dist = float("inf")
+                nearest_id = None
+                nearest_obj = None
+                controller.speed_scale = 1.0
+                controller.last_decision = "NO_SAFETY"
             else:
-                # 模拟模式
-                y_pos = motion_planner.step(dt, controller.speed_scale)
+                # a) 机器人步进（模拟 / 真实）
+                if commander is not None:
+                    # 真实机械臂：将安全控制器的 speed_scale 写入后台线程
+                    commander.set_speed_scale(controller.speed_scale)
+                    y_pos = commander.get_y_pos()
+                else:
+                    # 模拟模式
+                    y_pos = motion_planner.step(dt, controller.speed_scale)
 
-            # b) 胶囊体偏移
-            moved_capsules = capsule_provider.get_capsules(y_pos)
+                # b) 距离检查（用机械臂点云 × 所有风险球 KD-tree）
+                # 记录第一帧有效的 robot_pts 作为参考臂形（初始位置 URDF 移除最准）
+                if ref_robot_pts is None and len(robot_pts) > 100:
+                    ref_robot_pts = robot_pts.copy()
+                    ref_y0 = y_pos
+                    print(f"[初始化] 参考臂形已记录: {len(ref_robot_pts)} 点, ref_y0={ref_y0:.3f}m")
 
-            # c) 距离检查（用偏移后的胶囊体 × 所有风险球）
-            min_dist, nearest_id = min_capsule_sphere_distance(moved_capsules, risk_spheres_all)
+                if len(robot_pts) > 100:
+                    rob_pts_for_dist = robot_pts
+                elif ref_robot_pts is not None:
+                    # 用参考臂形平移 Y 位移 ≈ 真实臂在相机坐标系中的当前位置
+                    dy = y_pos - ref_y0
+                    rob_pts_for_dist = ref_robot_pts + np.array([0.0, dy, 0.0], dtype=float)
+                else:
+                    rob_pts_for_dist = _mock_robot_points(y_pos)
 
-            # d) 找最近物体对象
-            nearest_obj = None
-            if nearest_id is not None:
-                for obj in tracked_objects:
-                    if obj.id == nearest_id:
-                        nearest_obj = obj
-                        break
+                min_dist, nearest_id = _find_nearest_distance_rs(rob_pts_for_dist, risk_spheres_all)[:2]
 
-            # e) 安全控制器 → speed_scale
-            speed_scale = controller.evaluate(min_dist, nearest_obj, moved_capsules, dt)
+                # c) 找最近物体对象
+                nearest_obj = None
+                if nearest_id is not None:
+                    for obj in tracked_objects:
+                        if obj.id == nearest_id:
+                            nearest_obj = obj
+                            break
+
+                # d) 安全控制器 → speed_scale（不再传胶囊体）
+                speed_scale = controller.evaluate(min_dist, nearest_obj, None, dt)
 
             t2 = time.perf_counter()
+
+            # ── 诊断 ──
+            n_rob = len(robot_pts)
+            n_rs = len(risk_spheres_all)
 
             # ── 控制台输出 ──
             n_valid = len(cluster_result.clusters)
@@ -813,7 +872,8 @@ def run_safety_guided_motion(
                 f"[{frame_idx:4d}]  Y={y_pos:+.3f}m {dir_char}  "
                 f"speed={speed_scale:.0%}  "
                 f"dist={dist_str}  obj={obj_str}  "
-                f"dec={controller.last_decision}{d_tag}{timing}"
+                f"dec={controller.last_decision}  "
+                f"rob={n_rob} rs={n_rs}{d_tag}{timing}"
             )
 
             # ── 可视化 ──
@@ -887,6 +947,8 @@ def main():
     p.add_argument("--single", action="store_true")
     p.add_argument("--timing", action="store_true")
     p.add_argument("--remove-planes", action="store_true")
+    p.add_argument("--no-safety", action="store_true",
+                   help="关闭安全引导，固定 speed_scale=1.0，纯运动")
     p.add_argument("--plane-dist", type=float, default=0.02)
     p.add_argument("--max-planes", type=int, default=1)
     p.add_argument("--temporal-denoise", action="store_true")
@@ -931,6 +993,7 @@ def main():
         robot_ip=args.robot_ip,
         visualize=args.visualize, single_shot=args.single,
         show_timing=args.timing,
+        no_safety=args.no_safety,
         plane_removal=(
             {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
             if args.remove_planes else None
