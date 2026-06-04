@@ -169,8 +169,14 @@ class AdaptiveSafetyController:
      同向/远离 | closing ≤ 0.03   | 保持安全即可，不主动减速
     ---------+--------------------+----------------------------------
 
-    停止超时恢复：若因静态障碍停住 ≥hold_timeout 秒且障碍不再靠近，
-    自动缓慢恢复运动，避免"障碍不消失就不动"的锁死现象。
+    设计要点
+    --------
+    - d_stop=0.08m > ROBOT_REMOVAL_THRESHOLD=0.05m：
+      停止距离大于自身过滤阈值，避免"最近障碍点被删除→距离骤升→误判安全"。
+    - surface_margin=0.02m：
+      补偿点云稀疏/体素降采样/遮挡导致的点到点距离乐观偏差。
+    - HOLD_RECOVERY 仅当距离恢复到 d_safe 以上才触发：
+      自然距离控制已覆盖大部分恢复场景，HOLD_RECOVERY 仅作为兜底。
 
     速度渐变：减速 2.0/s, 加速 0.5/s – 缓启动不突兀。
     """
@@ -178,13 +184,14 @@ class AdaptiveSafetyController:
     def __init__(
         self,
         d_safe: float = 0.22,
-        d_slow: float = 0.12,
-        d_stop: float = 0.06,
+        d_slow: float = 0.14,
+        d_stop: float = 0.08,
         max_decel: float = 2.0,
         max_accel: float = 0.5,
         dynamic_lookahead: float = 0.15,
         close_threshold: float = 0.05,  # m/s — 超过此值视为"迎面接近"
         dist_smooth_alpha: float = 0.3,  # 距离 EMA 平滑系数
+        surface_margin: float = 0.02,  # 点云稀疏补偿（体素降采样/遮挡导致的距离乐观）
         hold_timeout: float = 2.0,  # 停止超过此秒数且障碍不靠近 → 尝试恢复
         hold_recovery_speed: float = 0.15,  # 恢复时的初始 speed_scale
     ):
@@ -196,6 +203,7 @@ class AdaptiveSafetyController:
         self.dynamic_lookahead = dynamic_lookahead
         self.close_threshold = close_threshold
         self.dist_smooth_alpha = dist_smooth_alpha
+        self.surface_margin = surface_margin
         self.hold_timeout = hold_timeout
         self.hold_recovery_speed = hold_recovery_speed
 
@@ -261,8 +269,8 @@ class AdaptiveSafetyController:
 
             # c) 场景分类 + 有效距离
             if obstacle_speed < 0.01 and closing <= self.close_threshold:
-                # ── 静态障碍：梯度减速，不突然停 ──
-                effective_dist = smoothed
+                # ── 静态障碍：梯度减速 + surface_margin 补偿点云稀疏乐观偏差 ──
+                effective_dist = max(0.0, smoothed - self.surface_margin)
                 self.last_decision = "STATIC"
             elif closing > self.close_threshold:
                 # ── 迎面接近：预判减速 ──
@@ -281,18 +289,18 @@ class AdaptiveSafetyController:
             else:
                 target = (effective_dist - self.d_stop) / (self.d_safe - self.d_stop)
 
-            # e) 停止超时恢复
-            #    如果因障碍停住（target=0）且障碍没有明显靠近（closing ≤ close_threshold），
-            #    持续 hold_timeout 秒后以 hold_recovery_speed 缓慢恢复。
-            #    避免"障碍不消失就永远锁死"。
-            #    用 close_threshold 而非 0.0 是为了容忍距离抖动，只有 real approach 才重置。
+            # e) 停止超时恢复（安全的兜底机制）
+            #    ⚠ 仅当障碍物已明显远离（smoothed > d_safe）才允许强制恢复。
+            #    正常情况下 distance>d_safe → target=1.0 → target<0.01 不成立，
+            #    所以此分支实际不会覆盖正常距离控制，仅作为极端情况下的安全兜底。
+            #    避免"停止 2s → 主动恢复 → 顶着障碍走"的危险循环。
             if target < 0.01 and closing <= self.close_threshold:
                 if self._hold_start_time is None:
                     self._hold_start_time = time.perf_counter()
                 elif time.perf_counter() - self._hold_start_time >= self.hold_timeout:
-                    # 超时 → 以低速恢复，后续距离变化由渐变机制平滑处理
-                    target = self.hold_recovery_speed
-                    self.last_decision = "HOLD_RECOVERY"
+                    if smoothed > self.d_safe:
+                        target = self.hold_recovery_speed
+                        self.last_decision = "HOLD_RECOVERY"
             else:
                 self._hold_start_time = None
 
@@ -726,10 +734,17 @@ def run_safety_guided_motion(
     )
 
     # ── ★ 安全引导运动新组件 ──
-    motion_planner = YAxisMotionPlanner(range_m=0.40, base_speed=0.1)
+    motion_planner = YAxisMotionPlanner(
+        range_m=kwargs.get("range_m", 0.40),
+        base_speed=kwargs.get("base_speed", 0.1),
+    )
     controller = AdaptiveSafetyController(
-        d_safe=0.22, d_slow=0.12, d_stop=0.06,
-        max_decel=2.0, max_accel=0.5, dynamic_lookahead=0.15,
+        d_safe=kwargs.get("d_safe", 0.22),
+        d_slow=kwargs.get("d_slow", 0.14),
+        d_stop=kwargs.get("d_stop", 0.08),
+        max_decel=kwargs.get("max_decel", 2.0),
+        max_accel=kwargs.get("max_accel", 0.5),
+        dynamic_lookahead=kwargs.get("dynamic_lookahead", 0.15),
     )
 
     # ── ★ 真实机械臂运动控制 ──
@@ -739,14 +754,15 @@ def run_safety_guided_motion(
         # 注入 RobotCommander（主进程读取关节用），避免双重连接
         state_reader = getattr(processor, '_state_reader', None)
         robot_mod = state_reader.sdk_module if hasattr(state_reader, 'sdk_module') else None
-        commander = RobotCommander(ip=robot_ip, base_speed=0.05,
+        commander = RobotCommander(ip=robot_ip, base_speed=kwargs.get("base_speed", 0.05),
                                    robot_mod=robot_mod)
         ok = commander.connect(home_joints_deg=[0.0, 0.0, 90.0, 0.0, 90.0, 0.0])
         if not ok:
             print("[错误] 无法连接机器人，退出")
             return
-        # 启动后台 Y 轴运动线程
-        commander.start_y_oscillate(range_m=0.40)
+        # 启动后台 Y 轴运动线程（传入 base_omega 保持速度和模拟模式一致）
+        base_omega = kwargs.get("base_omega", 0.8)
+        commander.start_y_oscillate(range_m=kwargs.get("range_m", 0.40), base_omega=base_omega)
         robot_y_pos = commander.get_y_pos()
         print(f"[运动] 真实机械臂模式：Y 轴 ±0.40m 往返, base_speed=0.05m/s")
         print(f"[运动] 初始 Y ≈ {robot_y_pos:.3f}m")
@@ -755,7 +771,9 @@ def run_safety_guided_motion(
     if no_safety:
         print("[安全] 已关闭 (--no-safety) — 固定 speed=1.0")
     else:
-        print("[安全] d_safe=0.22  d_slow=0.12  d_stop=0.06")
+        print(f"[安全] d_safe={controller.d_safe:.2f}  "
+              f"d_slow={controller.d_slow:.2f}  d_stop={controller.d_stop:.2f}  "
+              f"margin={controller.surface_margin:.2f}")
         print(f"[安全] max_decel={controller.max_decel:.1f}/s  max_accel={controller.max_accel:.1f}/s")
 
     # ── 可视化（PointCloud + LineSet 轻量模式，同 live_tracking.py） ──
@@ -883,8 +901,8 @@ def run_safety_guided_motion(
                 # ── 无安全模式：固定 speed=1.0，跳过距离检查 + 安全控制 ──
                 speed_scale = 1.0
                 if commander is not None:
-                    commander.set_speed_scale(1.0)
                     y_pos = commander.get_y_pos()
+                    commander.set_speed_scale(1.0)
                 else:
                     y_pos = motion_planner.step(dt, 1.0)
                 min_dist = float("inf")
@@ -892,14 +910,12 @@ def run_safety_guided_motion(
                 controller.speed_scale = 1.0
                 controller.last_decision = "NO_SAFETY"
             else:
-                # a) 机器人步进（模拟 / 真实）
+                # a) 读取当前位置（先不动作，用于距离检查）
                 if commander is not None:
-                    # 真实机械臂：将安全控制器的 speed_scale 写入后台线程
-                    commander.set_speed_scale(controller.speed_scale)
                     y_pos = commander.get_y_pos()
+                    # ▸ ▸ 等距离检查 + 安全计算后，再写入 speed_scale（步骤 d）
                 else:
-                    # 模拟模式
-                    y_pos = motion_planner.step(dt, controller.speed_scale)
+                    y_pos = motion_planner.y_pos  # 读取当前位置（不步进）
 
                 # b) 距离检查（用机械臂点云 × 障碍物原始点云簇 KD-tree — 点对点，不经过 RiskSphere 膨胀）
                 # 记录第一帧有效的 robot_pts 作为参考臂形（初始位置 URDF 移除最准）
@@ -921,8 +937,14 @@ def run_safety_guided_motion(
                 min_dist, nearest_obj, _ = _find_nearest_cluster_distance(
                     rob_pts_for_dist, valid, tracked_objects)
 
-                # c) 安全控制器 → speed_scale
+                # c) 安全控制器 → 用当前帧数据计算 speed_scale
                 speed_scale = controller.evaluate(min_dist, nearest_obj, None, dt)
+
+                # d) 将安全速度写入运动执行器（下一帧生效）
+                if commander is not None:
+                    commander.set_speed_scale(speed_scale)
+                else:
+                    y_pos = motion_planner.step(dt, speed_scale)
 
             t2 = time.perf_counter()
 

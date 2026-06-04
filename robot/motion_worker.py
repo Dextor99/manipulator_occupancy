@@ -126,9 +126,13 @@ def main():
     # phase += ω × speed × dt
     # speed=0 → phase 冻结 → 机械臂停在当前位置不动
     # speed>0 → phase 从暂停处继续 → 运动方向、位置连续无跳变
+    #
+    # 暂停机制：speed ≈ 0 时不发送 movel_async，机械臂保持当前位置。
+    # 速度恢复后继续发送新目标。避免 speed_scale=0 时重复发送相同目标
+    # 导致机器人持续向障碍施力。
     phase = 0.0
     t_last = time.perf_counter()
-    print("[MotionWorker] 开始运动循环 (累积相位)", flush=True)
+    print("[MotionWorker] 开始运动循环 (累积相位, 支持暂停)", flush=True)
 
     try:
         while _read_int8(16):
@@ -144,13 +148,17 @@ def main():
 
             target_pose = [x0, y_target, z0, rx0, ry0, rz0]
 
-            try:
-                mod.movel_async(target_pose)
-            except Exception as e:
-                print(f"[MotionWorker] movel_async 异常: {e}", flush=True)
-                break
+            # ── speed ≈ 0 → 暂停：不发 movel_async，机器人保持当前位置 ──
+            if speed > 0.005:
+                try:
+                    mod.movel_async(target_pose)
+                except Exception as e:
+                    print(f"[MotionWorker] movel_async 异常: {e}", flush=True)
+                    break
+            # speed ≤ 0.005：跳过 movel，不向机器人发送新指令
+            # 伺服保持最后一条 movel_async 的目标位置
 
-            # 写入真实末端 Y 位置
+            # 写入真实末端 Y 位置（无论是否暂停，都读取实际位置）
             try:
                 actual = list(mod.get_status())
                 _write_double(8, actual[1])

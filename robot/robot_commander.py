@@ -143,7 +143,7 @@ class RobotCommander:
     # Y 轴运动控制（子进程）
     # ══════════════════════════════════════════════════════════════
 
-    def start_y_oscillate(self, range_m: float = 0.40):
+    def start_y_oscillate(self, range_m: float = 0.40, base_omega: float = 0.8):
         """启动子进程：Y 轴 ±range_m 正弦往返。
 
         通过 subprocess.Popen 启动 robot/motion_worker.py，
@@ -178,7 +178,7 @@ class RobotCommander:
         worker_script = str(Path(__file__).parent / "motion_worker.py")
         self._process = subprocess.Popen(
             [sys.executable, worker_script,
-             self._shm_path, self.ip, str(range_m)],
+             self._shm_path, self.ip, str(range_m), str(base_omega)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             # 子进程不需要继承主进程的 Open3D/SDK 连接
