@@ -26,6 +26,8 @@ def predict_risk_spheres(
     predictions = []
     for obj in objects:
         speed = float(np.linalg.norm(obj.velocity))
+        if speed < 0.01:  # 静止物体不预测，碰撞检测由当前帧 OBB/包围球负责
+            continue
         for tau in taus:
             center = obj.center + obj.velocity * tau
             radius = obj.radius + margin + speed * tau + uncertainty

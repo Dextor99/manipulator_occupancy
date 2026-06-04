@@ -7,6 +7,7 @@
 数据采集 / 机械臂去除 / 聚类过滤 → 全部复用 test_clustering_filtering 的成果
 在此基础上增加：多目标跟踪（OccupancyTracker）、3D 速度估计（EMA）、
 运动预测（predict_risk_spheres）、高级可视化（速度箭头/预测轨迹/ID标签）
+如果发现真实运动物体被误判为静止（门限太严），建议调 motion_gate 或 pos_alpha；如果仍有假速度（门限不够），调低 pos_alpha 或加大 motion_gate。
 
 用法
 ----
@@ -183,7 +184,11 @@ def run_live(
     sphere_smoother = SphereSmoother(alpha=0.25, max_miss=5)
 
     # ── ★ 多目标跟踪 + 速度估计 ──
-    tracker = OccupancyTracker(association_distance=0.25, alpha=0.3)
+    # 位置 EMA + 位移门限 + 速度死区 抑制点云噪声引起的假速度
+    tracker = OccupancyTracker(association_distance=0.25, alpha=0.3,
+                                pos_alpha=0.3, motion_gate=0.010,
+                                velocity_dead_zone=0.02,
+                                shape_alpha=0.4)
 
     # ── 可视化初始化 ──
     vis = None

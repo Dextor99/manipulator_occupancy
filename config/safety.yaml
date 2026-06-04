@@ -4,6 +4,10 @@ cluster_min_points: 25
 shape_margin: 0.02
 association_distance: 0.20
 velocity_alpha: 0.3
+pos_alpha: 0.3           # 位置 EMA 平滑（抑制点云中心帧间抖动）
+motion_gate: 0.005       # 位移门限 (m)：平滑后位移低于此值视为静态
+velocity_dead_zone: 0.01 # 速度死区 (m/s)：最终速度低于此强制归零
+shape_alpha: 0.4         # 形状 EMA 平滑系数：抑制包围盒/包围球尺寸抖动
 prediction_horizon: 0.5
 prediction_step: 0.1
 risk_margin: 0.05
@@ -16,3 +20,11 @@ min_track_age: 3       # 物体需连续跟踪 ≥ N 帧才参与安全判断（
 d_safe: 0.15
 d_slow: 0.10
 d_stop: 0.05
+
+# ── 安全引导运动 ──
+guided_safe: 0.22       # 安全引导：d_safe (m)
+guided_slow: 0.12       # 安全引导：d_slow (m)
+guided_stop: 0.06       # 安全引导：d_stop (m)
+max_decel: 2.0          # 最大减速度 (/s)：全速→停止约 0.5s
+max_accel: 0.5          # 最大加速度 (/s)：停止→全速约 2s（缓启动）
+dynamic_lookahead: 0.3  # 动态接近预判时间 (s)

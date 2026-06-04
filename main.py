@@ -40,6 +40,10 @@ def run_pipeline(source: str, config_dir: str, max_frames: int, visualize: bool 
     tracker = OccupancyTracker(
         association_distance=safety_cfg.get("association_distance", 0.2),
         alpha=safety_cfg.get("velocity_alpha", 0.3),
+        pos_alpha=safety_cfg.get("pos_alpha", 0.3),
+        motion_gate=safety_cfg.get("motion_gate", 0.005),
+        velocity_dead_zone=safety_cfg.get("velocity_dead_zone", 0.01),
+        shape_alpha=safety_cfg.get("shape_alpha", 0.4),
     )
     policy = SafetyPolicy(
         d_safe=safety_cfg.get("d_safe", 0.15),
