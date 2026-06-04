@@ -404,7 +404,11 @@ def _find_nearest_distance(
 def _find_nearest_distance_rs(
     robot_pts: np.ndarray, risk_spheres: list[RiskSphere],
 ) -> tuple[float, int | None]:
-    """用 KD-tree 找机器人点云到风险球的最短距离，返回 (距离, object_id)。"""
+    """用 KD-tree 找机器人点云到风险球的最短距离，返回 (距离, object_id)。
+
+    已废弃 — 改用 _find_nearest_cluster_distance 直接使用原始点云。
+    保留仅用于可视化连线（_update_visualization 中仍使用 RiskSphere）。
+    """
     if len(robot_pts) == 0 or not risk_spheres:
         return float("inf"), None
     from scipy.spatial import cKDTree
@@ -418,6 +422,61 @@ def _find_nearest_distance_rs(
             best_d = d
             best_id = rs.object_id
     return best_d, best_id
+
+
+def _find_nearest_cluster_distance(
+    robot_pts: np.ndarray,
+    valid_clusters: list,
+    tracked_objects: list[OccupancyObject],
+) -> tuple[float, OccupancyObject | None, int | None]:
+    """用 KD-tree 找机器人点云到障碍物原始点云簇的最短表面距离（点对点）。
+
+    直接用障碍物簇的原始点云，不经过 RiskSphere / 包围球 / 包围盒膨胀，
+    比 RiskSphere 表面距离更精确 —— 不会被膨胀半径吞掉真实间距。
+
+    Returns
+    -------
+    min_dist : float
+        最短欧氏距离 (m)，无障返回 inf
+    nearest_obj : OccupancyObject | None
+        最近障碍物的跟踪对象
+    nearest_obj_id : int | None
+        最近障碍物的跟踪 ID
+    """
+    if len(robot_pts) == 0 or not valid_clusters or not tracked_objects:
+        return float("inf"), None, None
+
+    from scipy.spatial import cKDTree
+
+    # 拼合所有有效簇的原始点云
+    all_obs_pts = np.vstack([c.points for c in valid_clusters])
+    if len(all_obs_pts) == 0:
+        return float("inf"), None, None
+
+    obs_tree = cKDTree(all_obs_pts)
+
+    # 对每个机器人点查最近障碍点
+    dists, idxs = obs_tree.query(robot_pts)
+    min_idx = int(np.argmin(dists))
+    min_dist = float(dists[min_idx])
+    nearest_obs_pt = all_obs_pts[idxs[min_idx]]
+
+    # 空间关联：最近点属于哪个簇 → 对应哪个 tracked_object
+    cluster_boundaries = np.cumsum([len(c.points) for c in valid_clusters])
+    global_idx = int(idxs[min_idx])
+    for ci, boundary in enumerate(cluster_boundaries):
+        if global_idx < boundary:
+            cluster_center = valid_clusters[ci].center
+            best_obj = None
+            best_d = 0.3  # 空间关联阈值 0.3m
+            for obj in tracked_objects:
+                d = float(np.linalg.norm(obj.center - cluster_center))
+                if d < best_d:
+                    best_d = d
+                    best_obj = obj
+            return min_dist, best_obj, best_obj.id if best_obj else None
+
+    return min_dist, None, None
 
 
 # ── 可视化初始化：同 live_tracking.py，预分配轻量 PointCloud / LineSet ──
@@ -829,7 +888,6 @@ def run_safety_guided_motion(
                 else:
                     y_pos = motion_planner.step(dt, 1.0)
                 min_dist = float("inf")
-                nearest_id = None
                 nearest_obj = None
                 controller.speed_scale = 1.0
                 controller.last_decision = "NO_SAFETY"
@@ -843,7 +901,7 @@ def run_safety_guided_motion(
                     # 模拟模式
                     y_pos = motion_planner.step(dt, controller.speed_scale)
 
-                # b) 距离检查（用机械臂点云 × 所有风险球 KD-tree）
+                # b) 距离检查（用机械臂点云 × 障碍物原始点云簇 KD-tree — 点对点，不经过 RiskSphere 膨胀）
                 # 记录第一帧有效的 robot_pts 作为参考臂形（初始位置 URDF 移除最准）
                 if ref_robot_pts is None and len(robot_pts) > 100:
                     ref_robot_pts = robot_pts.copy()
@@ -859,17 +917,11 @@ def run_safety_guided_motion(
                 else:
                     rob_pts_for_dist = _mock_robot_points(y_pos)
 
-                min_dist, nearest_id = _find_nearest_distance_rs(rob_pts_for_dist, risk_spheres_all)[:2]
+                # 直接用原始点云簇 KD-tree（点对点，不经过 RiskSphere 膨胀）
+                min_dist, nearest_obj, _ = _find_nearest_cluster_distance(
+                    rob_pts_for_dist, valid, tracked_objects)
 
-                # c) 找最近物体对象
-                nearest_obj = None
-                if nearest_id is not None:
-                    for obj in tracked_objects:
-                        if obj.id == nearest_id:
-                            nearest_obj = obj
-                            break
-
-                # d) 安全控制器 → speed_scale（不再传胶囊体）
+                # c) 安全控制器 → speed_scale
                 speed_scale = controller.evaluate(min_dist, nearest_obj, None, dt)
 
             t2 = time.perf_counter()
