@@ -302,12 +302,56 @@ def _risk_color(dist: float, controller: AdaptiveSafetyController) -> tuple[floa
 MAX_VIS_CLUSTERS = 12
 
 
-def _mock_robot_points(y_pos: float, n_points: int = 800) -> np.ndarray:
-    """模拟模式下生成一个盒状点云表示机械臂位置，随 y_pos 偏移。"""
+def _mock_robot_points(y_pos: float, n_points: int = 1200) -> np.ndarray:
+    """生成机械臂本体的模拟点云（多段实心圆柱骨架），随 y_pos 沿 Y 轴偏移。
+
+    再现 AUBO i16 大致骨架 —— 基座→肩→上臂→肘→前臂→腕，
+    每段用实心圆柱点云近似，确保可视化能看到"臂"的形态。
+    """
     rng = np.random.default_rng(0)
-    pts = rng.uniform(low=[-0.05, -0.05, 0.0], high=[0.65, 0.05, 0.65], size=(n_points, 3))
-    pts[:, 1] += y_pos
-    return pts
+    # 关节位置（基坐标系，Y = 0）
+    joints = [
+        [0.00, 0.0, 0.00],
+        [0.00, 0.0, 0.08],
+        [0.00, 0.0, 0.32],
+        [0.00, 0.0, 0.38],
+        [0.12, 0.0, 0.52],
+        [0.15, 0.0, 0.58],
+    ]
+    radii = [0.055, 0.045, 0.035, 0.035, 0.028, 0.022]
+
+    n_seg = len(joints) - 1
+    base = n_points // n_seg
+    seg_counts = [base] * (n_seg - 1) + [n_points - base * (n_seg - 1)]
+
+    all_pts = []
+    for idx, count in enumerate(seg_counts):
+        p0, p1 = np.array(joints[idx]), np.array(joints[idx + 1])
+        r0, r1 = radii[idx], radii[idx + 1]
+        d = p1 - p0
+        L = float(np.linalg.norm(d))
+        if L < 1e-8:
+            continue
+        du = d / L
+        # 健壮的正交基
+        ref = np.array([1.0, 0.0, 0.0]) if abs(du[1]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        perp1 = np.cross(du, ref)
+        perp1 /= float(np.linalg.norm(perp1))
+        perp2 = np.cross(du, perp1)
+
+        t = rng.random(count) * L
+        theta = rng.random(count) * 2 * np.pi
+        r_at_t = r0 + (r1 - r0) * t / L
+        r_eff = r_at_t * np.sqrt(rng.random(count))  # sqrt → 截面均匀分布
+
+        pts = (p0[np.newaxis] + du[np.newaxis] * t[:, np.newaxis]
+               + perp1[np.newaxis] * (r_eff * np.cos(theta))[:, np.newaxis]
+               + perp2[np.newaxis] * (r_eff * np.sin(theta))[:, np.newaxis])
+        all_pts.append(pts)
+
+    arm = np.vstack(all_pts)
+    arm[:, 1] += y_pos
+    return arm
 
 
 def _find_nearest_distance(
@@ -587,7 +631,12 @@ def run_safety_guided_motion(
     # ── ★ 真实机械臂运动控制 ──
     commander: RobotCommander | None = None
     if use_real_robot:
-        commander = RobotCommander(ip=robot_ip, base_speed=0.05)
+        # 从 SceneProcessor 内部提取已加载的 SDK 模块，
+        # 注入 RobotCommander（主进程读取关节用），避免双重连接
+        state_reader = getattr(processor, '_state_reader', None)
+        robot_mod = state_reader.sdk_module if hasattr(state_reader, 'sdk_module') else None
+        commander = RobotCommander(ip=robot_ip, base_speed=0.05,
+                                   robot_mod=robot_mod)
         ok = commander.connect(home_joints_deg=[0.0, 0.0, 90.0, 0.0, 90.0, 0.0])
         if not ok:
             print("[错误] 无法连接机器人，退出")
@@ -614,6 +663,7 @@ def run_safety_guided_motion(
         if use_mock_camera:
             while True:
                 yield reader.read()
+                time.sleep(FRAME_INTERVAL_MS / 1000)  # 节流 mock 到 ~10fps
         else:
             yield from processor.run()
 

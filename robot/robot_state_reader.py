@@ -186,3 +186,8 @@ class RealRobotStateReader(RobotStateReader):
             return {"pos": np.array(s[0:3]), "rpy": np.array(s[3:6])}
         except Exception:
             return None
+
+    @property
+    def sdk_module(self):
+        """返回底层 SDK 模块，供 RobotCommander 复用避免双重连接。"""
+        return self._mod
