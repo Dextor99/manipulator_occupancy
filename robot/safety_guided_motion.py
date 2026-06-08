@@ -451,15 +451,30 @@ def _find_nearest_cluster_distance(
     nearest_obj_id : int | None
         最近障碍物的跟踪 ID
     """
+    min_dist, nearest_obj, nearest_obj_id, _, _ = _find_nearest_cluster_distance_detail(
+        robot_pts, valid_clusters, tracked_objects)
+    return min_dist, nearest_obj, nearest_obj_id
+
+
+def _find_nearest_cluster_distance_detail(
+    robot_pts: np.ndarray,
+    valid_clusters: list,
+    tracked_objects: list[OccupancyObject],
+) -> tuple[float, OccupancyObject | None, int | None, np.ndarray | None, np.ndarray | None]:
+    """找机器人点云到障碍物原始点云簇的最近点对。
+
+    在基础距离结果之外，同时返回机器人最近点和障碍物最近点，
+    用于判断障碍物是否位于当前运动方向前方。
+    """
     if len(robot_pts) == 0 or not valid_clusters or not tracked_objects:
-        return float("inf"), None, None
+        return float("inf"), None, None, None, None
 
     from scipy.spatial import cKDTree
 
     # 拼合所有有效簇的原始点云
     all_obs_pts = np.vstack([c.points for c in valid_clusters])
     if len(all_obs_pts) == 0:
-        return float("inf"), None, None
+        return float("inf"), None, None, None, None
 
     obs_tree = cKDTree(all_obs_pts)
 
@@ -467,6 +482,7 @@ def _find_nearest_cluster_distance(
     dists, idxs = obs_tree.query(robot_pts)
     min_idx = int(np.argmin(dists))
     min_dist = float(dists[min_idx])
+    nearest_robot_pt = robot_pts[min_idx]
     nearest_obs_pt = all_obs_pts[idxs[min_idx]]
 
     # 空间关联：最近点属于哪个簇 → 对应哪个 tracked_object
@@ -482,9 +498,47 @@ def _find_nearest_cluster_distance(
                 if d < best_d:
                     best_d = d
                     best_obj = obj
-            return min_dist, best_obj, best_obj.id if best_obj else None
+            return min_dist, best_obj, best_obj.id if best_obj else None, nearest_robot_pt, nearest_obs_pt
 
-    return min_dist, None, None
+    return min_dist, None, None, nearest_robot_pt, nearest_obs_pt
+
+
+def _is_obstacle_in_motion_direction(
+    robot_pt: np.ndarray | None,
+    obs_pt: np.ndarray | None,
+    motion_dir_y: float,
+    lateral_deadband: float = 0.015,
+    lateral_threshold: float = 0.10,
+) -> bool:
+    """判断最近障碍点是否在当前 Y 轴运动方向前方。
+
+    Y 轴运动时，只有同时满足以下两个条件的障碍才视为"在运动路线上"：
+      ① Y 轴方向一致性 — 障碍在运动方向前方（或 Y 方向在死区内）
+      ② X-Z 横向距离    — 障碍离机械臂最近点的横向距离小于阈值
+
+    motion_dir_y > 0 表示向 +Y 运动，< 0 表示向 -Y 运动。
+    若运动方向暂时不可判定，则保守认为在前方。
+    """
+    if robot_pt is None or obs_pt is None:
+        return True
+    if abs(motion_dir_y) < 1e-6:
+        return True
+
+    # ── 条件 1: Y 轴方向 ──
+    dy = float(obs_pt[1] - robot_pt[1])
+    if abs(dy) < lateral_deadband:
+        return True  # 死区内保守判定
+    if dy * motion_dir_y <= 0.0:
+        return False  # 障碍在身后
+
+    # ── 条件 2: X-Z 横向距离 ──
+    dx = float(obs_pt[0] - robot_pt[0])
+    dz = float(obs_pt[2] - robot_pt[2])
+    lateral_dist = np.sqrt(dx * dx + dz * dz)
+    if lateral_dist > lateral_threshold:
+        return False  # 横向距离过大，不在运动路径上
+
+    return True
 
 
 # ── 可视化初始化：同 live_tracking.py，预分配轻量 PointCloud / LineSet ──
@@ -817,6 +871,8 @@ def run_safety_guided_motion(
     threading.Thread(target=_acquisition_worker, daemon=True).start()
 
     t_last = time.perf_counter()
+    last_y_for_dir: float | None = None
+    last_motion_dir_y = 1.0
 
     try:
         frame_idx = 0
@@ -909,6 +965,7 @@ def run_safety_guided_motion(
                 nearest_obj = None
                 controller.speed_scale = 1.0
                 controller.last_decision = "NO_SAFETY"
+                dir_risk_tag = "all"
             else:
                 # a) 读取当前位置（先不动作，用于距离检查）
                 if commander is not None:
@@ -916,6 +973,12 @@ def run_safety_guided_motion(
                     # ▸ ▸ 等距离检查 + 安全计算后，再写入 speed_scale（步骤 d）
                 else:
                     y_pos = motion_planner.y_pos  # 读取当前位置（不步进）
+
+                if last_y_for_dir is not None:
+                    dy_motion = y_pos - last_y_for_dir
+                    if abs(dy_motion) > 1e-4:
+                        last_motion_dir_y = 1.0 if dy_motion > 0.0 else -1.0
+                motion_dir_y = last_motion_dir_y
 
                 # b) 距离检查（用机械臂点云 × 障碍物原始点云簇 KD-tree — 点对点，不经过 RiskSphere 膨胀）
                 # 记录第一帧有效的 robot_pts 作为参考臂形（初始位置 URDF 移除最准）
@@ -934,8 +997,22 @@ def run_safety_guided_motion(
                     rob_pts_for_dist = _mock_robot_points(y_pos)
 
                 # 直接用原始点云簇 KD-tree（点对点，不经过 RiskSphere 膨胀）
-                min_dist, nearest_obj, _ = _find_nearest_cluster_distance(
+                min_dist_raw, nearest_obj_raw, _, nearest_rob_pt, nearest_obs_pt = _find_nearest_cluster_distance_detail(
                     rob_pts_for_dist, valid, tracked_objects)
+
+                in_motion_dir = _is_obstacle_in_motion_direction(
+                    nearest_rob_pt, nearest_obs_pt, motion_dir_y)
+
+                # 只对运动方向前方障碍物做主动减速/停止。
+                # 后方/侧后的障碍物如果已进入 d_stop，仍保守停车；否则忽略。
+                if in_motion_dir or min_dist_raw <= controller.d_stop:
+                    min_dist = min_dist_raw
+                    nearest_obj = nearest_obj_raw
+                    dir_risk_tag = "front" if in_motion_dir else "near"
+                else:
+                    min_dist = float("inf")
+                    nearest_obj = None
+                    dir_risk_tag = "back"
 
                 # c) 安全控制器 → 用当前帧数据计算 speed_scale
                 speed_scale = controller.evaluate(min_dist, nearest_obj, None, dt)
@@ -945,6 +1022,10 @@ def run_safety_guided_motion(
                     commander.set_speed_scale(speed_scale)
                 else:
                     y_pos = motion_planner.step(dt, speed_scale)
+                    last_y_for_dir = y_pos
+
+                if commander is not None:
+                    last_y_for_dir = y_pos
 
             t2 = time.perf_counter()
 
@@ -971,7 +1052,7 @@ def run_safety_guided_motion(
                 f"[{frame_idx:4d}]  Y={y_pos:+.3f}m {dir_char}  "
                 f"speed={speed_scale:.0%}  "
                 f"dist={dist_str}  obj={obj_str}  "
-                f"dec={controller.last_decision}  "
+                f"dec={controller.last_decision}/{dir_risk_tag}  "
                 f"rob={n_rob} rs={n_rs}{d_tag}{timing}"
             )
 

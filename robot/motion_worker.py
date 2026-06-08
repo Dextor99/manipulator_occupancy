@@ -12,6 +12,10 @@
 用法
 ----
   python robot/motion_worker.py <shm_path> <robot_ip> <range_m> [base_omega]
+
+真实连续运动使用 robot.movel_line(..., block=False) 一次发送到端点，
+运行中监控安全速度和端点位置。旧的 movel_async() 是 IK + JointMove 的
+非阻塞接口，不再用于安全引导运动。
 """
 
 from __future__ import annotations
@@ -122,55 +126,133 @@ def main():
           f"RX={math.degrees(rx0):.1f}° RY={math.degrees(ry0):.1f}° "
           f"RZ={math.degrees(rz0):.1f}°", flush=True)
 
-    # ── 运动循环（累积相位，支持暂停/恢复） ──
-    # phase += ω × speed × dt
-    # speed=0 → phase 冻结 → 机械臂停在当前位置不动
-    # speed>0 → phase 从暂停处继续 → 运动方向、位置连续无跳变
+    if not hasattr(mod, "movel_line") or not hasattr(mod, "move_control_stop"):
+        print("[MotionWorker] 当前 SDK .so 缺少 movel_line/move_control_stop，请重新编译 pybind robot 模块", flush=True)
+        sys.exit(1)
+
+    # ── 运动循环（非阻塞 LineMove 到端点，支持暂停/恢复） ──
+    # TeachStart(MOV_Y) 在程序化 stop/continue/反向时容易让控制器进入 stop state。
+    # 这里改为一次发送到 y_min/y_max 端点的非阻塞直线运动，机械臂连续运行；
+    # 主循环只负责监控安全速度、端点和必要时打断/重发目标。
     #
-    # 暂停机制：speed ≈ 0 时不发送 movel_async，机械臂保持当前位置。
-    # 速度恢复后继续发送新目标。避免 speed_scale=0 时重复发送相同目标
-    # 导致机器人持续向障碍施力。
-    phase = 0.0
-    t_last = time.perf_counter()
-    print("[MotionWorker] 开始运动循环 (累积相位, 支持暂停)", flush=True)
+    # 当前策略：
+    # 1) 每次读取真实 TCP Y 位置；
+    # 2) 当前方向目标是 y_max 或 y_min；
+    # 3) speed_scale≈0 时 move_control_stop，停在当前位置；
+    # 4) 障碍离开后，从当前位置继续向原方向端点移动。
+    y_min = y0 - range_m
+    y_max = y0 + range_m
+    direction = 1.0
+    max_line_vel = min(max(abs(range_m * base_omega), 0.02), 0.08)
+    max_line_acc = min(max(max_line_vel * 2.0, 0.05), 0.20)
+    edge_margin_m = 0.010
+    min_line_vel = 0.006
+    active_motion = False
+    active_dir: float | None = None
+    active_vel = 0.0
+    paused_for_safety = False
+    print("[MotionWorker] 开始运动循环 (非阻塞 movel_line 连续往返, 支持暂停)", flush=True)
+    print(f"[MotionWorker] line_vel<= {max_line_vel:.3f} m/s  line_acc<= {max_line_acc:.3f} m/s^2", flush=True)
+    print(f"[MotionWorker] Y range: {y_min:+.3f} .. {y_max:+.3f} m", flush=True)
+
+    def _stop_motion(reason: str):
+        nonlocal active_motion, active_dir, active_vel
+        if active_motion:
+            try:
+                mod.move_control_stop(False)
+                print(f"[MotionWorker] 停止当前直线运动: {reason}", flush=True)
+            except Exception as exc:
+                print(f"[MotionWorker] move_control_stop 异常: {exc}", flush=True)
+            time.sleep(0.15)
+        active_motion = False
+        active_dir = None
+        active_vel = 0.0
+
+    def _clear_controller_stop():
+        """清除控制器的 stop state，为新的 movel_line 做准备。
+        move_control_continue 可能返回非零（如 11028=仍在停止），重试至多 3 次。
+        """
+        if not hasattr(mod, "move_control_continue"):
+            return True
+        for attempt in range(3):
+            try:
+                ret = mod.move_control_continue(False)
+            except Exception as exc:
+                print(f"[MotionWorker] move_control_continue 异常(attempt {attempt}): {exc}", flush=True)
+                ret = -1
+            if ret == 0:
+                if attempt > 0:
+                    print(f"[MotionWorker] move_control_continue 恢复成功 (attempt {attempt})", flush=True)
+                return True
+            time.sleep(0.15 + attempt * 0.10)
+        print(f"[MotionWorker] move_control_continue 多次尝试后仍返回 {ret}", flush=True)
+        return False
+
+    def _start_line(new_dir: float, new_vel: float, current_y: float):
+        nonlocal active_motion, active_dir, active_vel
+        target_y = y_max if new_dir > 0.0 else y_min
+        if abs(target_y - current_y) <= edge_margin_m:
+            return True
+        if not _clear_controller_stop():
+            time.sleep(0.3)
+        target_pose = [x0, target_y, z0, rx0, ry0, rz0]
+        ret = mod.movel_line(target_pose, new_vel, max_line_acc, False, False)
+        if ret != 0:
+            print(f"[MotionWorker] movel_line(nonblock) 返回错误 ret={ret}", flush=True)
+            time.sleep(0.20)
+            return False
+        active_motion = True
+        active_dir = new_dir
+        active_vel = new_vel
+        print(f"[MotionWorker] 直线运动到 {'+Y' if new_dir > 0 else '-Y'} 端点 target={target_y:+.3f} vel={new_vel:.3f}m/s", flush=True)
+        return True
 
     try:
         while _read_int8(16):
-            now = time.perf_counter()
-            dt = now - t_last
-            t_last = now
-
             speed = max(_read_double(0), 0.0)
 
-            # 累积相位：speed=0 时项为 0，相位自然冻结
-            phase += base_omega * speed * dt
-            y_target = y0 + range_m * math.sin(phase)
-
-            target_pose = [x0, y_target, z0, rx0, ry0, rz0]
-
-            # ── speed ≈ 0 → 暂停：不发 movel_async，机器人保持当前位置 ──
-            if speed > 0.005:
-                try:
-                    mod.movel_async(target_pose)
-                except Exception as e:
-                    print(f"[MotionWorker] movel_async 异常: {e}", flush=True)
-                    break
-            # speed ≤ 0.005：跳过 movel，不向机器人发送新指令
-            # 伺服保持最后一条 movel_async 的目标位置
-
-            # 写入真实末端 Y 位置（无论是否暂停，都读取实际位置）
             try:
                 actual = list(mod.get_status())
-                _write_double(8, actual[1])
+                current_y = actual[1]
             except Exception:
-                _write_double(8, y_target)
+                current_y = y0
 
-            # 固定 20ms 间隔（~50Hz），给控制器足够时间处理每条指令
-            time.sleep(0.020)
+            _write_double(8, current_y)
+
+            if current_y >= y_max - edge_margin_m:
+                if direction > 0.0:
+                    _stop_motion(f"到达 +Y 端点附近 Y={current_y:+.3f}")
+                direction = -1.0
+            elif current_y <= y_min + edge_margin_m:
+                if direction < 0.0:
+                    _stop_motion(f"到达 -Y 端点附近 Y={current_y:+.3f}")
+                direction = 1.0
+
+            if speed <= 0.005:
+                if not paused_for_safety:
+                    _stop_motion("安全速度为 0")
+                    paused_for_safety = True
+            else:
+                if paused_for_safety:
+                    paused_for_safety = False
+                desired_vel = max(min_line_vel, max_line_vel * min(speed, 1.0))
+                vel_changed = (
+                    active_vel <= 0.0
+                    or abs(desired_vel - active_vel) / max(active_vel, 1e-6) > 0.25
+                )
+                dir_changed = active_dir is None or direction != active_dir
+                if (not active_motion) or dir_changed or vel_changed:
+                    if active_motion:
+                        _stop_motion("重设方向/速度")
+                    if not _start_line(direction, desired_vel, current_y):
+                        continue
+
+            time.sleep(0.030)
 
     except KeyboardInterrupt:
         pass
     finally:
+        _stop_motion("退出")
         try:
             mod.log_out()
         except Exception:

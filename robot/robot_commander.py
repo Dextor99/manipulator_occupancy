@@ -1,10 +1,10 @@
 """
 真实机械臂运动控制接口 — 基于 AUBO i16 SDK 模块级 API。
 
-完全使用模块级 API（robot.init / movej / movel / get_joint / get_status），
+完全使用模块级 API（robot.init / movej / movel_line / get_joint / get_status），
 避免 vpRobotAuboRobots.rtInit 的 readTxt 断言崩溃。
 
-Y 轴往返运动通过笛卡尔空间直线运动实现（movel 直接控制末端 Y 坐标），
+Y 轴往返运动通过笛卡尔空间直线运动实现（movel_line 直接控制末端 Y 坐标），
 比之前通过 J1 近似更精确，末端沿 Y 方向走直线。
 
 用法
@@ -23,7 +23,7 @@ Y 轴往返运动通过笛卡尔空间直线运动实现（movel 直接控制末
 独立子进程
 ----------
 start_y_oscillate 通过 subprocess.Popen 启动 robot/motion_worker.py，
-在主进程完全隔离的独立进程中运行 SDK movel() 循环。
+在主进程完全隔离的独立进程中运行 SDK movel_line() 循环。
 通过 mmap 共享文件（~32 字节）交换 speed_scale / y_pos / running 标志。
 """
 
@@ -47,7 +47,7 @@ class RobotCommander:
     """AUBO i16 机器人运动控制。
 
     运动在独立子进程中运行（subprocess.Popen），
-    SDK movel() 的阻塞调用完全不占用主进程 GIL/CPU。
+    SDK movel_line() 的阻塞调用完全不占用主进程 GIL/CPU。
     """
 
     def __init__(self, ip: str = "192.168.123.96", base_speed: float = 0.05,
@@ -147,7 +147,7 @@ class RobotCommander:
         """启动子进程：Y 轴 ±range_m 正弦往返。
 
         通过 subprocess.Popen 启动 robot/motion_worker.py，
-        独立进程运行 SDK movel() 循环，完全不阻塞主进程。
+        独立进程运行 SDK movel_line() 循环，完全不阻塞主进程。
         """
         if not self._connected:
             print("[RobotCommander] 未连接")
