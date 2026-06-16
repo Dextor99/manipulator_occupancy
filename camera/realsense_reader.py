@@ -1,5 +1,5 @@
 class RealSenseReader:
-    def __init__(self, width: int = 640, height: int = 480, fps: int = 30):
+    def __init__(self, width: int = 1280, height: int = 720, fps: int = 30):
         try:
             import pyrealsense2 as rs
         except ImportError as exc:

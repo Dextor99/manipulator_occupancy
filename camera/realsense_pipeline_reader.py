@@ -37,6 +37,8 @@ class RealSensePipelineReader:
         color_profile = self.profile.get_stream(rs.stream.color)
         intr = color_profile.as_video_stream_profile().get_intrinsics()
         self.intrinsic = {
+            "width": intr.width,
+            "height": intr.height,
             "fx": intr.fx,
             "fy": intr.fy,
             "cx": intr.ppx,
