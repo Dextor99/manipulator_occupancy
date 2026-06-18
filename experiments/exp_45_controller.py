@@ -2,14 +2,11 @@
 from __future__ import annotations
 
 import dataclasses
-import math
-from typing import Any
 
 import numpy as np
 
-from experiments.exp_44_main import RepulsionEvaluator44, normalize
-from experiments.ref_constructor import ReferenceFrame
-from risk.safety_policy import RiskLevel, SafetyPolicy
+from experiments.exp_44_main import Frame44, RepulsionEvaluator44, normalize
+from risk.safety_policy import SafetyPolicy
 
 
 CONTROLLERS_45 = ("ssm", "apf", "ours_scale", "ours_rep", "ours_full")
@@ -33,7 +30,7 @@ class SafeMotionController:
         self,
         ref_velocity: np.ndarray,
         q: np.ndarray,
-        frame: ReferenceFrame,
+        frame: Frame44,
         rep_eval: RepulsionEvaluator44,
     ) -> ControlOutput:
         raise NotImplementedError
@@ -46,47 +43,47 @@ class SafeMotionController:
 
 
 class SSMController(SafeMotionController):
-    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: ReferenceFrame, rep_eval: RepulsionEvaluator44) -> ControlOutput:
-        decision = self._decision(frame.d_ref)
+    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: Frame44, rep_eval: RepulsionEvaluator44) -> ControlOutput:
+        decision = self._decision(frame.ref.d_ref)
         cmd = self._clip(ref_velocity * decision.speed_scale)
-        return ControlOutput(cmd, decision.speed_scale, np.zeros_like(ref_velocity), decision.level.value, frame.d_ref)
+        return ControlOutput(cmd, decision.speed_scale, np.zeros_like(ref_velocity), decision.level.value, frame.ref.d_ref)
 
 
 class APFController(SafeMotionController):
-    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: ReferenceFrame, rep_eval: RepulsionEvaluator44) -> ControlOutput:
-        decision = self._decision(frame.d_ref)
+    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: Frame44, rep_eval: RepulsionEvaluator44) -> ControlOutput:
+        decision = self._decision(frame.ref.d_ref)
         rep = rep_eval.repulsive_velocity("apf", q, frame)
         cmd = self._clip(ref_velocity * decision.speed_scale + rep)
-        return ControlOutput(cmd, decision.speed_scale, rep, decision.level.value, frame.d_ref)
+        return ControlOutput(cmd, decision.speed_scale, rep, decision.level.value, frame.ref.d_ref)
 
 
 class OursScaleController(SafeMotionController):
-    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: ReferenceFrame, rep_eval: RepulsionEvaluator44) -> ControlOutput:
-        decision = self._decision(frame.d_ref)
+    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: Frame44, rep_eval: RepulsionEvaluator44) -> ControlOutput:
+        decision = self._decision(frame.ref.d_ref)
         cmd = self._clip(ref_velocity * decision.speed_scale)
-        return ControlOutput(cmd, decision.speed_scale, np.zeros_like(ref_velocity), decision.level.value, frame.d_ref)
+        return ControlOutput(cmd, decision.speed_scale, np.zeros_like(ref_velocity), decision.level.value, frame.ref.d_ref)
 
 
 class OursRepController(SafeMotionController):
-    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: ReferenceFrame, rep_eval: RepulsionEvaluator44) -> ControlOutput:
-        decision = self._decision(frame.d_ref)
+    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: Frame44, rep_eval: RepulsionEvaluator44) -> ControlOutput:
+        decision = self._decision(frame.ref.d_ref)
         rep = rep_eval.repulsive_velocity("ours", q, frame)
         cmd = self._clip(ref_velocity * decision.speed_scale + rep)
-        return ControlOutput(cmd, decision.speed_scale, rep, decision.level.value, frame.d_ref)
+        return ControlOutput(cmd, decision.speed_scale, rep, decision.level.value, frame.ref.d_ref)
 
 
 class OursFullController(SafeMotionController):
-    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: ReferenceFrame, rep_eval: RepulsionEvaluator44) -> ControlOutput:
-        decision = self._decision(frame.d_ref)
+    def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: Frame44, rep_eval: RepulsionEvaluator44) -> ControlOutput:
+        decision = self._decision(frame.ref.d_ref)
         rep = rep_eval.repulsive_velocity("ours", q, frame)
         candidate = ref_velocity * decision.speed_scale + rep
-        grad = rep_eval.distance_gradient(q, frame.obs_points, links=None)
+        grad = rep_eval.distance_gradient(q, frame.ref.obs_points, links=None)
         # Velocity-level safety filter: remove the component that decreases D_ref.
         if np.linalg.norm(grad) > 1e-9 and float(np.dot(candidate, grad)) < 0.0:
             g = normalize(grad)
             candidate = candidate - np.dot(candidate, g) * g
         cmd = self._clip(candidate)
-        return ControlOutput(cmd, decision.speed_scale, rep, decision.level.value, frame.d_ref)
+        return ControlOutput(cmd, decision.speed_scale, rep, decision.level.value, frame.ref.d_ref)
 
 
 def make_controller(name: str, policy: SafetyPolicy, joint_limit: float = 0.4) -> SafeMotionController:

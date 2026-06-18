@@ -1,0 +1,66 @@
+{
+  "record_dir": "data/recordings/ch4_3_dynamic_04",
+  "empty_record_dir": "data/recordings/ch4_3_empty",
+  "parameters": {
+    "d_safe": 0.15,
+    "eps_q": 0.0001,
+    "dt_v": 0.08,
+    "eta_th": 0.01,
+    "eta_max": 0.3,
+    "prediction_horizon": 0.4,
+    "prediction_step": 0.1,
+    "risk_margin": 0.035,
+    "velocity_radius_scale": 0.1,
+    "ee_links": [
+      "gripper_base_link",
+      "left_link",
+      "right_link",
+      "wrist3_Link"
+    ]
+  },
+  "frame_summary": {
+    "sampled_frames": 18,
+    "ee_risk_frames": 6,
+    "body_risk_frames": 0,
+    "nearest_links": {
+      "gripper_base_link": 4,
+      "left_link": 12,
+      "upperArm_Link": 1,
+      "wrist1_Link": 1
+    }
+  },
+  "metrics": {
+    "apf": {
+      "active_frames": 5,
+      "C_grad_D": 1.0,
+      "G_rep": 0.004325484718098183,
+      "R_body": null,
+      "active_ee_frames": 5,
+      "active_body_frames": 0
+    },
+    "ours_ee_only": {
+      "active_frames": 6,
+      "C_grad_D": 0.9870969579325316,
+      "G_rep": 0.00420837187519459,
+      "R_body": null,
+      "active_ee_frames": 6,
+      "active_body_frames": 0
+    },
+    "ours_wo_temporal": {
+      "active_frames": 6,
+      "C_grad_D": 1.0,
+      "G_rep": 0.00524763697248502,
+      "R_body": null,
+      "active_ee_frames": 6,
+      "active_body_frames": 0
+    },
+    "ours": {
+      "active_frames": 7,
+      "C_grad_D": 0.9975720784349539,
+      "G_rep": 0.013333245414400004,
+      "R_body": null,
+      "active_ee_frames": 7,
+      "active_body_frames": 0
+    }
+  }
+}

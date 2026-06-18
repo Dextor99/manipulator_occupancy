@@ -42,12 +42,26 @@ class ExperimentRunner45:
         delta_r: float = 0.05,
         bg_eps: float = 0.03,
         output_dir: str | Path = "data/results/ch4_5",
+        mesh_samples: int = 20000,
     ):
         self.config = load_config_dir(config_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.ref = ReferenceConstructor(config_dir, urdf_path, bg_eps=bg_eps, robot_exclusion=max(delta_r * 0.7, 0.025))
-        self.rep = RepulsionEvaluator44(config_dir, urdf_path, delta_r=delta_r, bg_eps=bg_eps)
+        self.ref = ReferenceConstructor(
+            config_dir,
+            urdf_path,
+            bg_eps=bg_eps,
+            robot_exclusion=max(delta_r * 0.7, 0.025),
+            mesh_samples=mesh_samples,
+            remove_planes=False,
+        )
+        self.rep = RepulsionEvaluator44(
+            config_dir,
+            urdf_path,
+            delta_r=delta_r,
+            bg_eps=bg_eps,
+            mesh_samples=mesh_samples,
+        )
         self.policy = SafetyPolicy(
             d_safe=self.config["safety"].get("d_safe", 0.15),
             d_slow=self.config["safety"].get("d_slow", 0.10),
@@ -64,23 +78,84 @@ class ExperimentRunner45:
         max_frames: int | None = None,
     ) -> Path:
         ref_series = self.ref.build_series(record_dir, empty_record_dir=empty_record_dir, max_frames=max_frames)
+        eval_frames = self.rep._prepare_frames(ref_series)
         joint_names = self.rep.joint_names
         qs = _q_series(ref_series, joint_names)
         ts_abs = np.array([f.timestamp for f in ref_series], dtype=float)
         ref_qd = _ref_velocities(qs, ts_abs)
+        return self._write_controller_log(
+            record_dir,
+            empty_record_dir,
+            scenario,
+            controller_name,
+            trial_id,
+            eval_frames,
+            qs,
+            ref_qd,
+            joint_names,
+        )
+
+    def run_replay_all(
+        self,
+        record_dir: str | Path,
+        empty_record_dir: str | Path | None,
+        scenario: str,
+        controller_names: list[str],
+        trial_id: int = 0,
+        max_frames: int | None = None,
+    ) -> dict[str, Path]:
+        ref_series = self.ref.build_series(record_dir, empty_record_dir=empty_record_dir, max_frames=max_frames)
+        eval_frames = self.rep._prepare_frames(ref_series)
+        joint_names = self.rep.joint_names
+        qs = _q_series(ref_series, joint_names)
+        ts_abs = np.array([f.timestamp for f in ref_series], dtype=float)
+        ref_qd = _ref_velocities(qs, ts_abs)
+        return {
+            name: self._write_controller_log(
+                record_dir,
+                empty_record_dir,
+                scenario,
+                name,
+                trial_id,
+                eval_frames,
+                qs,
+                ref_qd,
+                joint_names,
+            )
+            for name in controller_names
+        }
+
+    def _write_controller_log(
+        self,
+        record_dir: str | Path,
+        empty_record_dir: str | Path | None,
+        scenario: str,
+        controller_name: str,
+        trial_id: int,
+        eval_frames: list,
+        qs: np.ndarray,
+        ref_qd: np.ndarray,
+        joint_names: list[str],
+    ) -> Path:
         controller = make_controller(controller_name, self.policy)
 
         frames = []
-        for i, frame in enumerate(ref_series):
+        for i, frame in enumerate(eval_frames):
+            ref = frame.ref
             t0 = time.perf_counter()
             out = controller.step(ref_qd[i], qs[i], frame, self.rep)
             t_cmd = (time.perf_counter() - t0) * 1000.0
             frames.append(
                 {
                     "frame_index": i,
-                    "timestamp": frame.timestamp,
-                    "d_ref": frame.d_ref,
-                    "obs_count": int(len(frame.obs_points)),
+                    "timestamp": ref.timestamp,
+                    "d_ref": ref.d_ref,
+                    "obs_count": int(len(ref.obs_points)),
+                    "obs_speed": float(ref.obs_speed),
+                    "estimated_velocity": frame.velocity.tolist(),
+                    "nearest_link": frame.nearest_link,
+                    "nearest_distance": frame.nearest_distance,
+                    "risk_zone": frame.risk_zone,
                     "cmd_velocity": out.cmd_velocity.tolist(),
                     "ref_velocity": ref_qd[i].tolist(),
                     "speed_scale": out.speed_scale,
@@ -107,6 +182,13 @@ class ExperimentRunner45:
             "record_dir": str(record_dir),
             "empty_record_dir": None if empty_record_dir is None else str(empty_record_dir),
             "joint_names": joint_names,
+            "parameters": {
+                "d_safe": self.policy.d_safe,
+                "d_slow": self.policy.d_slow,
+                "d_stop": self.policy.d_stop,
+                "delta_r": self.rep.remover.threshold,
+                "bg_eps": self.ref.bg_eps,
+            },
             "frames": frames,
         }
         out_path = self.output_dir / f"trial_{scenario}_{controller_name}_{trial_id:02d}.json"
@@ -127,17 +209,16 @@ def main() -> None:
     parser.add_argument("--urdf", default="urdf/aubo_i16_gripper.urdf")
     parser.add_argument("--delta-r", type=float, default=0.05)
     parser.add_argument("--bg-eps", type=float, default=0.03)
+    parser.add_argument("--mesh-samples", type=int, default=20000)
     parser.add_argument("--max-frames", type=int, default=None)
     args = parser.parse_args()
 
-    runner = ExperimentRunner45(args.config, args.urdf, args.delta_r, args.bg_eps, args.output)
+    runner = ExperimentRunner45(args.config, args.urdf, args.delta_r, args.bg_eps, args.output, args.mesh_samples)
     controllers = list(CONTROLLERS_45) if args.controller == "all" else [args.controller]
-    paths = {}
-    for name in controllers:
-        path = runner.run_replay(args.record_dir, args.empty_record_dir, args.scenario, name, args.trial_id, args.max_frames)
-        paths[name] = [path]
+    paths = runner.run_replay_all(args.record_dir, args.empty_record_dir, args.scenario, controllers, args.trial_id, args.max_frames)
+    for name, path in paths.items():
         print(f"[exp_45] saved {path}")
-    rows = {name: aggregate_trials(p) for name, p in paths.items()}
+    rows = {name: aggregate_trials([path]) for name, path in paths.items()}
     print(table_45(rows))
 
 

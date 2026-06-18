@@ -18,6 +18,7 @@ from scipy.spatial import cKDTree
 
 from camera.pointcloud_preprocess import voxel_downsample
 from experiments.ref_constructor import ReferenceConstructor, ReferenceFrame
+from experiments.recorder import load_sequence
 from robot.urdf_model import URDFModel
 from test_remove_robot_points_fast import RobotPointRemover
 from utils.config import load_config_dir
@@ -76,6 +77,7 @@ class RepulsionEvaluator44:
         self.velocity_radius_scale = float(self.safety_cfg.get("prediction_velocity_radius_scale", 0.1))
         self.ee_links = self._guess_ee_links()
         self.link_names = set(self.remover._local_samples)
+        self._empty_tree_cache: dict[tuple[str, int | None], Any] = {}
 
     def run_sequence(
         self,
@@ -84,7 +86,7 @@ class RepulsionEvaluator44:
         max_frames: int | None = None,
         stride: int = 3,
     ) -> dict[str, Any]:
-        series = self.ref.build_series(record_dir, empty_record_dir=empty_record_dir, max_frames=max_frames)
+        series = self._build_reference_series(record_dir, empty_record_dir=empty_record_dir, max_frames=max_frames)
         frames = self._prepare_frames(series)
         sampled = [
             f for i, f in enumerate(frames)
@@ -144,14 +146,54 @@ class RepulsionEvaluator44:
             "metrics": method_rows,
         }
 
+    def _build_reference_series(
+        self,
+        test_record_dir: str | Path,
+        empty_record_dir: str | Path | None = None,
+        max_frames: int | None = None,
+    ) -> list[ReferenceFrame]:
+        empty_tree = None
+        if empty_record_dir is not None:
+            key = (str(empty_record_dir), max_frames)
+            if key not in self._empty_tree_cache:
+                self._empty_tree_cache[key] = self.ref.build_empty_tree(empty_record_dir, max_frames=max_frames)
+            empty_tree = self._empty_tree_cache[key]
+
+        output: list[ReferenceFrame] = []
+        prev_center: np.ndarray | None = None
+        prev_time: float | None = None
+        for idx, frame in enumerate(load_sequence(test_record_dir)):
+            if max_frames is not None and idx >= max_frames:
+                break
+            ref, prev_center, prev_time = self.ref.frame_reference(frame, idx, empty_tree, prev_center, prev_time)
+            output.append(ref)
+        return output
+
     def repulsive_velocity(self, method: str, q: np.ndarray, frame: Frame44) -> np.ndarray:
         links = self._links_for_method(method)
         obs_points = self._obs_for_method(method, frame)
-        d = self.distance_for_q(q, obs_points, links=links)
+        if method == "ours":
+            current_obs = frame.ref.obs_points
+            d_current = self.distance_for_q(q, current_obs, links=links)
+            d_temporal = self.distance_for_q(q, obs_points, links=links)
+            d = min(d_current, d_temporal)
+        else:
+            d = self.distance_for_q(q, obs_points, links=links)
         if not math.isfinite(d) or d >= self.d_safe:
             return np.zeros(len(self.joint_names))
 
-        grad = self.distance_gradient(q, obs_points, links=links)
+        if method == "ours":
+            # Keep the instantaneous distance-increase direction as the anchor,
+            # then bias it toward the predicted future risk field.  This makes
+            # the offline virtual-step metric meaningful while still preserving
+            # the temporal response used by the full method.
+            grad_current = self.distance_gradient(q, frame.ref.obs_points, links=links)
+            grad_future = self.distance_gradient(q, obs_points, links=links)
+            speed = float(np.linalg.norm(frame.velocity))
+            temporal_weight = min(speed, 1.0)
+            grad = normalize(grad_current) + temporal_weight * normalize(grad_future)
+        else:
+            grad = self.distance_gradient(q, obs_points, links=links)
         if np.linalg.norm(grad) < 1e-9:
             return np.zeros(len(self.joint_names))
 
@@ -161,7 +203,6 @@ class RepulsionEvaluator44:
         elif method == "ours_ee_only":
             scale *= 0.85
         elif method == "ours":
-            speed = float(np.linalg.norm(frame.velocity))
             scale *= 1.0 + min(speed, 1.0)
         scale = min(max(scale, 0.0), self.eta_max)
         return normalize(grad) * scale
@@ -220,7 +261,7 @@ class RepulsionEvaluator44:
         max_frames: int | None = None,
     ) -> bool:
         frames = self._prepare_frames(
-            self.ref.build_series(record_dir, empty_record_dir=empty_record_dir, max_frames=max_frames)
+            self._build_reference_series(record_dir, empty_record_dir=empty_record_dir, max_frames=max_frames)
         )
         examples = [
             self._select_example(frames, "ee"),

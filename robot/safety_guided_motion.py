@@ -28,7 +28,8 @@
   python robot/safety_guided_motion.py --mock --visualize
 
   # 真实机械臂 + RealSense
-  python robot/safety_guided_motion.py --real-robot --visualize --remove-planes
+  python robot/safety_guided_motion.py --real-robot --visualize --remove-planes --range 0.20 --motion-x-offset -0.1
+  python robot/safety_guided_motion.py --real-robot --visualize --remove-planes --range 0.20
 """
 
 from __future__ import annotations
