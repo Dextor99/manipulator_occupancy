@@ -1,0 +1,55 @@
+{
+  "sources": {
+    "results_43": "data/results/ch4_3/final_dynamic",
+    "results_45": "data/results/ch4_5_virtual",
+    "timing_logs": "data/results/ch4_5_virtual"
+  },
+  "summary": {
+    "usable_for_ablation": true,
+    "usable_for_full_e2e_timing": false,
+    "usable_for_controller_timing": true,
+    "frame_count": 3300,
+    "nonzero_timing_modules": [
+      "T_rep_ms",
+      "T_cmd_ms",
+      "T_frame_ms"
+    ]
+  },
+  "checks": [
+    {
+      "name": "时空预测消融",
+      "passed": true,
+      "detail": "Full T_lead=5.1286, w/o Temporal=4.7356"
+    },
+    {
+      "name": "排斥向量消融",
+      "passed": true,
+      "detail": "Full D_min_ref=0.1968, w/o Rep D_min_ref=0.0561, w/o Rep T_viol=0.4317"
+    },
+    {
+      "name": "安全滤波消融",
+      "passed": true,
+      "detail": "Full D_min_ref=0.1968, w/o Filter D_min_ref=0.1041"
+    },
+    {
+      "name": "试次数量",
+      "passed": true,
+      "detail": "4.5 闭环消融统计 n_trials=10"
+    },
+    {
+      "name": "实时性日志完整性",
+      "passed": false,
+      "detail": "当前 4.5 日志只对控制器/排斥计算段计时；感知预处理、解耦、聚类、跟踪、预测列为 0。"
+    },
+    {
+      "name": "控制段实时性目标",
+      "passed": false,
+      "detail": "T_ctrl^95=199.8850 ms，目标 < 20 ms。"
+    },
+    {
+      "name": "端到端实时性目标",
+      "passed": false,
+      "detail": "T_frame^95=199.8850 ms；但当前缺少完整感知模块计时。"
+    }
+  ]
+}

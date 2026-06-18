@@ -41,18 +41,27 @@ class TimingAnalyzer:
                 "std": float(np.std(vals)),
                 "p95": float(np.percentile(vals, 95)),
                 "ratio": None if total_mean <= 0 else float(np.mean(vals) / total_mean),
+                "nonzero_rows": int(np.count_nonzero(vals)),
             }
+        out["_meta"] = {
+            "frame_count": int(len(rows)),
+            "nonzero_modules": [key for key in TIMING_KEYS if np.count_nonzero([r[key] for r in rows]) > 0],
+        }
         return out
 
     def compute_e2e_stats(self) -> dict[str, float]:
         stats = self.compute_timing_stats()
         frame = stats.get("T_frame_ms", {})
+        cmd = stats.get("T_cmd_ms", {})
         p95 = frame.get("p95", 0.0) or 0.0
         mean = frame.get("mean", 0.0) or 0.0
+        cmd_mean = cmd.get("mean", 0.0) or 0.0
         return {
             "T_e2e_p95_ms": float(p95),
             "f_perc_hz": 0.0 if mean <= 0 else float(1000.0 / mean),
             "T_ctrl_p95_ms": float(stats.get("T_cmd_ms", {}).get("p95", 0.0) or 0.0),
+            "f_ctrl_hz": 0.0 if cmd_mean <= 0 else float(1000.0 / cmd_mean),
+            "frame_count": int(stats.get("_meta", {}).get("frame_count", 0)),
         }
 
 
@@ -64,6 +73,23 @@ def table_timing(stats: dict[str, Any]) -> str:
             continue
         v = stats[key]
         body.append([key, fmt(v["mean"]), fmt(v["std"]), fmt(v["p95"]), fmt(v["ratio"])])
+    return "\n".join([
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+        *["| " + " | ".join(row) + " |" for row in body],
+    ])
+
+
+def table_e2e(stats: dict[str, Any]) -> str:
+    headers = ["指标", "数值"]
+    labels = {
+        "T_e2e_p95_ms": "T_e2e^95 / ms",
+        "f_perc_hz": "f_perc / Hz",
+        "T_ctrl_p95_ms": "T_ctrl^95 / ms",
+        "f_ctrl_hz": "f_ctrl / Hz",
+        "frame_count": "统计帧数",
+    }
+    body = [[labels.get(key, key), fmt(value)] for key, value in stats.items()]
     return "\n".join([
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join(["---"] * len(headers)) + " |",
