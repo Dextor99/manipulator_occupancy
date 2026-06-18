@@ -816,9 +816,17 @@ def run_safety_guided_motion(
             return
         # 启动后台 Y 轴运动线程（传入 base_omega 保持速度和模拟模式一致）
         base_omega = kwargs.get("base_omega", 0.8)
-        commander.start_y_oscillate(range_m=kwargs.get("range_m", 0.40), base_omega=base_omega)
+        motion_x_offset = kwargs.get("motion_x_offset", 0.0)
+        commander.start_y_oscillate(
+            range_m=kwargs.get("range_m", 0.40),
+            base_omega=base_omega,
+            x_offset=motion_x_offset,
+        )
         robot_y_pos = commander.get_y_pos()
-        print(f"[运动] 真实机械臂模式：Y 轴 ±0.40m 往返, base_speed=0.05m/s")
+        print(
+            f"[运动] 真实机械臂模式：Y 轴 ±{kwargs.get('range_m', 0.40):.2f}m 往返, "
+            f"X offset={motion_x_offset:+.3f}m, base_speed=0.05m/s"
+        )
         print(f"[运动] 初始 Y ≈ {robot_y_pos:.3f}m")
     else:
         print("[运动] 模拟 Y 轴 ±0.30m 往返, base_speed=0.1m/s")
@@ -1144,6 +1152,12 @@ def main():
     p.add_argument("--max-accel", type=float, default=None)
     p.add_argument("--base-speed", type=float, default=None)
     p.add_argument("--range", type=float, default=None)
+    p.add_argument(
+        "--motion-x-offset",
+        type=float,
+        default=None,
+        help="真实机械臂 Y 往返前的 TCP X 方向偏移；负数表示减小 X，例如 -0.05",
+    )
 
     args = p.parse_args()
 
@@ -1166,6 +1180,8 @@ def main():
         kwargs["base_speed"] = args.base_speed
     if args.range is not None:
         kwargs["range_m"] = args.range
+    if args.motion_x_offset is not None:
+        kwargs["motion_x_offset"] = args.motion_x_offset
 
     run_safety_guided_motion(
         config_dir=args.config, urdf_path=args.urdf,

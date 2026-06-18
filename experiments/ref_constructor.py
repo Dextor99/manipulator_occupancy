@@ -44,6 +44,7 @@ class ReferenceConstructor:
         voxel_size: float | None = None,
         mesh_samples: int = 50000,
         remove_planes: bool = True,
+        max_background_points: int = 500000,
     ):
         self.config_dir = Path(config_dir)
         self.config = load_config_dir(config_dir)
@@ -53,6 +54,7 @@ class ReferenceConstructor:
         self.bg_eps = float(bg_eps)
         self.robot_exclusion = float(robot_exclusion)
         self.mesh_samples = int(mesh_samples)
+        self.max_background_points = int(max_background_points)
         self.cluster_kwargs: dict[str, Any] = {
             "eps": self.config["safety"].get("cluster_eps", 0.05),
             "min_samples": self.config["safety"].get("cluster_min_points", 25),
@@ -67,17 +69,37 @@ class ReferenceConstructor:
                 "min_plane_points": 80,
             }
 
-    def build_empty_tree(self, empty_record_dir: str | Path | None) -> cKDTree | None:
+    def _compact_background(self, chunks: list[np.ndarray]) -> list[np.ndarray]:
+        if not chunks:
+            return []
+        bg = voxel_downsample(np.vstack(chunks), self.preprocessor.voxel_size)
+        if self.max_background_points > 0 and len(bg) > self.max_background_points:
+            idx = np.linspace(0, len(bg) - 1, self.max_background_points).astype(np.int64)
+            bg = bg[idx]
+        return [bg]
+
+    def build_empty_tree(
+        self,
+        empty_record_dir: str | Path | None,
+        max_frames: int | None = None,
+    ) -> cKDTree | None:
         if empty_record_dir is None:
             return None
         points = []
-        for frame in load_sequence(empty_record_dir):
+        total_points = 0
+        for idx, frame in enumerate(load_sequence(empty_record_dir)):
+            if max_frames is not None and idx >= max_frames:
+                break
             p = self.preprocessor(frame["points_cam"])
             if len(p):
                 points.append(p)
+                total_points += len(p)
+            if self.max_background_points > 0 and total_points > self.max_background_points:
+                points = self._compact_background(points)
+                total_points = len(points[0]) if points else 0
         if not points:
             return None
-        bg = voxel_downsample(np.vstack(points), self.preprocessor.voxel_size)
+        bg = self._compact_background(points)[0]
         return cKDTree(bg)
 
     def robot_surface(self, joint_dict: dict[str, float]) -> np.ndarray:
@@ -120,13 +142,49 @@ class ReferenceConstructor:
         distances, _ = tree.query(obs_points, k=1)
         return float(np.min(distances))
 
+    def frame_reference(
+        self,
+        frame: dict[str, Any],
+        frame_index: int,
+        empty_tree: cKDTree | None,
+        prev_center: np.ndarray | None = None,
+        prev_time: float | None = None,
+    ) -> tuple[ReferenceFrame, np.ndarray | None, float | None]:
+        common = self.preprocessor(frame["points_cam"])
+        robot = self.robot_surface(frame["joint_dict"])
+        obs = self.reference_obstacle(common, robot, empty_tree)
+        d_ref = self.reference_distance(obs, robot)
+        center = obs.mean(axis=0) if len(obs) else None
+        speed = 0.0
+        if center is not None and prev_center is not None and prev_time is not None:
+            dt = max(frame["timestamp"] - prev_time, 1e-6)
+            speed = float(np.linalg.norm(center - prev_center) / dt)
+        if center is not None:
+            prev_center = center
+            prev_time = frame["timestamp"]
+        return (
+            ReferenceFrame(
+                frame_index=frame_index,
+                timestamp=frame["timestamp"],
+                joint_dict=frame["joint_dict"],
+                common_points=common,
+                obs_points=obs,
+                robot_points=robot,
+                d_ref=d_ref,
+                obs_center=center,
+                obs_speed=speed,
+            ),
+            prev_center,
+            prev_time,
+        )
+
     def build_series(
         self,
         test_record_dir: str | Path,
         empty_record_dir: str | Path | None = None,
         max_frames: int | None = None,
     ) -> list[ReferenceFrame]:
-        empty_tree = self.build_empty_tree(empty_record_dir)
+        empty_tree = self.build_empty_tree(empty_record_dir, max_frames=max_frames)
         output: list[ReferenceFrame] = []
         prev_center: np.ndarray | None = None
         prev_time: float | None = None
@@ -134,31 +192,8 @@ class ReferenceConstructor:
         for idx, frame in enumerate(load_sequence(test_record_dir)):
             if max_frames is not None and idx >= max_frames:
                 break
-            common = self.preprocessor(frame["points_cam"])
-            robot = self.robot_surface(frame["joint_dict"])
-            obs = self.reference_obstacle(common, robot, empty_tree)
-            d_ref = self.reference_distance(obs, robot)
-            center = obs.mean(axis=0) if len(obs) else None
-            speed = 0.0
-            if center is not None and prev_center is not None and prev_time is not None:
-                dt = max(frame["timestamp"] - prev_time, 1e-6)
-                speed = float(np.linalg.norm(center - prev_center) / dt)
-            if center is not None:
-                prev_center = center
-                prev_time = frame["timestamp"]
-            output.append(
-                ReferenceFrame(
-                    frame_index=idx,
-                    timestamp=frame["timestamp"],
-                    joint_dict=frame["joint_dict"],
-                    common_points=common,
-                    obs_points=obs,
-                    robot_points=robot,
-                    d_ref=d_ref,
-                    obs_center=center,
-                    obs_speed=speed,
-                )
-            )
+            ref, prev_center, prev_time = self.frame_reference(frame, idx, empty_tree, prev_center, prev_time)
+            output.append(ref)
         return output
 
     @staticmethod

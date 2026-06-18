@@ -11,7 +11,7 @@
 
 用法
 ----
-  python robot/motion_worker.py <shm_path> <robot_ip> <range_m> [base_omega]
+  python robot/motion_worker.py <shm_path> <robot_ip> <range_m> [base_omega] [x_offset]
 
 真实连续运动使用 robot.movel_line(..., block=False) 一次发送到端点，
 运行中监控安全速度和端点位置。旧的 movel_async() 是 IK + JointMove 的
@@ -38,6 +38,7 @@ def main():
     robot_ip = sys.argv[2]
     range_m = float(sys.argv[3])
     base_omega = float(sys.argv[4]) if len(sys.argv) > 4 else 0.8
+    x_offset = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
 
     # ── 打开共享内存 ──
     fd = os.open(shm_path, os.O_RDWR)
@@ -130,6 +131,25 @@ def main():
         print("[MotionWorker] 当前 SDK .so 缺少 movel_line/move_control_stop，请重新编译 pybind robot 模块", flush=True)
         sys.exit(1)
 
+    if abs(x_offset) > 1e-6:
+        target_pose = [x0 + x_offset, y0, z0, rx0, ry0, rz0]
+        print(f"[MotionWorker] 调整往返中心 X: {x0:+.3f} -> {target_pose[0]:+.3f} m", flush=True)
+        try:
+            if hasattr(mod, "movel"):
+                mod.movel(target_pose)
+            else:
+                ret = mod.movel_line(target_pose, 0.03, 0.08, False, True)
+                if ret != 0:
+                    print(f"[MotionWorker] X offset movel_line 返回错误 ret={ret}", flush=True)
+                    sys.exit(1)
+            time.sleep(0.2)
+            status = list(mod.get_status())
+            x0, y0, z0, rx0, ry0, rz0 = status
+            print(f"[MotionWorker] X 调整后位姿: X={x0:.3f} Y={y0:.3f} Z={z0:.3f}", flush=True)
+        except Exception as exc:
+            print(f"[MotionWorker] X offset 调整失败: {exc}", flush=True)
+            sys.exit(1)
+
     # ── 运动循环（非阻塞 LineMove 到端点，支持暂停/恢复） ──
     # TeachStart(MOV_Y) 在程序化 stop/continue/反向时容易让控制器进入 stop state。
     # 这里改为一次发送到 y_min/y_max 端点的非阻塞直线运动，机械臂连续运行；
@@ -153,6 +173,7 @@ def main():
     paused_for_safety = False
     print("[MotionWorker] 开始运动循环 (非阻塞 movel_line 连续往返, 支持暂停)", flush=True)
     print(f"[MotionWorker] line_vel<= {max_line_vel:.3f} m/s  line_acc<= {max_line_acc:.3f} m/s^2", flush=True)
+    print(f"[MotionWorker] X center: {x0:+.3f} m", flush=True)
     print(f"[MotionWorker] Y range: {y_min:+.3f} .. {y_max:+.3f} m", flush=True)
 
     def _stop_motion(reason: str):

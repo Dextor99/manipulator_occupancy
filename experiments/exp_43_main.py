@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 from scipy.spatial import cKDTree
 
-from experiments.decoupling_eval import DecouplingEvaluator, markdown_table
+from experiments.decoupling_eval import DecouplingEvaluator
 from experiments.recorder import load_sequence
 from experiments.ref_constructor import ReferenceConstructor, ReferenceFrame, save_reference_series
 from perception.geometry_fit import make_occupancy_object
@@ -44,6 +44,19 @@ def _min_points_to_robot(points: np.ndarray, robot_points: np.ndarray) -> float:
     return float(np.min(d))
 
 
+def _min_clusters_to_robot(clusters: list[Any], robot_points: np.ndarray) -> float:
+    if not clusters or len(robot_points) == 0:
+        return math.inf
+    tree = cKDTree(robot_points)
+    best = math.inf
+    for cluster in clusters:
+        if len(cluster.points) == 0:
+            continue
+        d, _ = tree.query(cluster.points, k=1)
+        best = min(best, float(np.min(d)))
+    return best
+
+
 def _min_spheres_to_robot(spheres: list[Any], robot_points: np.ndarray) -> float:
     if not spheres or len(robot_points) == 0:
         return math.inf
@@ -64,21 +77,36 @@ class WarningEvaluator43:
         bg_eps: float = 0.03,
         t_req: float = 0.25,
         remove_planes: bool = True,
+        max_background_points: int = 500000,
+        danger_threshold: float | None = None,
+        prediction_velocity_radius_scale: float | None = None,
     ):
         self.config = load_config_dir(config_dir)
         self.safety_cfg = self.config["safety"]
+        self.prediction_velocity_radius_scale = (
+            self.safety_cfg.get("prediction_velocity_radius_scale", 0.2)
+            if prediction_velocity_radius_scale is None
+            else float(prediction_velocity_radius_scale)
+        )
+        self.prediction_horizon = self.safety_cfg.get("prediction_horizon", 0.5)
+        self.risk_margin = self.safety_cfg.get("risk_margin", 0.05)
         self.policy = SafetyPolicy(
             d_safe=self.safety_cfg.get("d_safe", 0.15),
             d_slow=self.safety_cfg.get("d_slow", 0.10),
             d_stop=self.safety_cfg.get("d_stop", 0.05),
         )
         self.t_req = float(t_req)
+        self.danger_threshold = danger_threshold
         self.ref = ReferenceConstructor(
             config_dir=config_dir,
             urdf_path=urdf_path,
             bg_eps=bg_eps,
             robot_exclusion=max(delta_r * 0.7, 0.025),
-            remove_planes=remove_planes,
+            # D_ref is an offline weak truth for external obstacles.  Hand-held
+            # boxes/boards are often planar, so RANSAC plane removal can delete
+            # the obstacle itself and make D_ref = inf for the whole trial.
+            remove_planes=False,
+            max_background_points=max_background_points,
         )
         dec = DecouplingEvaluator(
             config_dir=config_dir,
@@ -103,16 +131,34 @@ class WarningEvaluator43:
         empty_record_dir: str | Path | None = None,
         max_frames: int | None = None,
     ) -> dict[str, Any]:
-        frames = list(load_sequence(test_record_dir))
-        if max_frames is not None:
-            frames = frames[:max_frames]
-        ref_series = self.ref.build_series(test_record_dir, empty_record_dir=empty_record_dir, max_frames=max_frames)
+        empty_tree = self.ref.build_empty_tree(empty_record_dir, max_frames=max_frames)
         trackers = {method: OccupancyTracker(**self.tracker_cfg) for method in METHODS_43}
         raw: dict[str, dict[str, list[Any]]] = {
             method: {"states": [], "distances": []} for method in METHODS_43
         }
+        reference: list[dict[str, Any]] = []
+        prev_center: np.ndarray | None = None
+        prev_time: float | None = None
 
-        for idx, (frame, ref_frame) in enumerate(zip(frames, ref_series)):
+        for idx, frame in enumerate(load_sequence(test_record_dir)):
+            if max_frames is not None and idx >= max_frames:
+                break
+            ref_frame, prev_center, prev_time = self.ref.frame_reference(
+                frame,
+                idx,
+                empty_tree,
+                prev_center=prev_center,
+                prev_time=prev_time,
+            )
+            reference.append(
+                {
+                    "frame_index": ref_frame.frame_index,
+                    "timestamp": ref_frame.timestamp,
+                    "d_ref": ref_frame.d_ref,
+                    "obs_speed": ref_frame.obs_speed,
+                    "obs_count": len(ref_frame.obs_points),
+                }
+            )
             output = self.ours_filter.filter(frame["points_cam"], frame["joint_dict"])
             clusters = FastClusteringFilter(output.external_points, ref_frame.robot_points, **self.cluster_kwargs).clusters
             detections = [
@@ -127,15 +173,21 @@ class WarningEvaluator43:
                 if method == "dsa":
                     distance = _min_points_to_robot(output.external_points, ref_frame.robot_points)
                 elif method in ("ssm", "ours_wo_temporal"):
-                    spheres = [type("Sphere", (), {"center": obj.center, "radius": obj.radius}) for obj in stable]
-                    distance = _min_spheres_to_robot(spheres, ref_frame.robot_points)
+                    # Current-frame object-level baselines should use the
+                    # observed obstacle surface.  A sphere enclosing a flat box
+                    # or board is much larger than its nearest visible surface
+                    # and makes SSM trigger unrealistically early.
+                    distance = _min_clusters_to_robot(clusters, ref_frame.robot_points)
                 else:
                     risk_spheres = predict_risk_spheres(
                         stable,
-                        horizon=self.safety_cfg.get("prediction_horizon", 0.5),
+                        horizon=self.prediction_horizon,
                         step=self.safety_cfg.get("prediction_step", 0.1),
-                        margin=self.safety_cfg.get("risk_margin", 0.05),
+                        margin=self.risk_margin,
                         uncertainty=self.safety_cfg.get("prediction_uncertainty", 0.02),
+                        static_speed_threshold=self.safety_cfg.get("prediction_static_speed_threshold", 0.08),
+                        static_margin=self.safety_cfg.get("prediction_static_margin", 0.0),
+                        velocity_radius_scale=self.prediction_velocity_radius_scale,
                     )
                     distance = _min_spheres_to_robot(risk_spheres, ref_frame.robot_points)
 
@@ -145,38 +197,39 @@ class WarningEvaluator43:
 
         d_stop = self.safety_cfg.get("d_stop", 0.05)
         d_safe = self.safety_cfg.get("d_safe", 0.15)
-        danger = ReferenceConstructor.danger_index(ref_series, d_stop=d_stop)
-        leave = ReferenceConstructor.leave_index(ref_series, d_safe=d_safe, start=(danger or 0))
+        d_danger = float(self.danger_threshold if self.danger_threshold is not None else d_stop)
+        danger = danger_index(reference, d_stop=d_danger)
+        leave = None if danger is None else leave_index(reference, d_safe=d_safe, start=danger)
         method_series = {
-            method: self._build_method_series(method, raw[method], ref_series)
+            method: self._build_method_series(method, raw[method], reference)
             for method in METHODS_43
         }
         metrics = {
-            method: self._metrics(series, ref_series, danger, leave)
+            method: self._metrics(series, reference, danger, leave)
             for method, series in method_series.items()
         }
-        speed = self._median_speed(ref_series)
+        speed = self._median_speed(reference)
         return {
             "record_dir": str(test_record_dir),
             "empty_record_dir": None if empty_record_dir is None else str(empty_record_dir),
+            "parameters": {
+                "d_safe": d_safe,
+                "d_stop": d_stop,
+                "d_danger": d_danger,
+                "t_req": self.t_req,
+                "prediction_horizon": self.prediction_horizon,
+                "risk_margin": self.risk_margin,
+                "prediction_velocity_radius_scale": self.prediction_velocity_radius_scale,
+            },
             "speed_median": speed,
             "danger_index": danger,
             "leave_index": leave,
-            "reference": [
-                {
-                    "frame_index": f.frame_index,
-                    "timestamp": f.timestamp,
-                    "d_ref": f.d_ref,
-                    "obs_speed": f.obs_speed,
-                    "obs_count": len(f.obs_points),
-                }
-                for f in ref_series
-            ],
+            "reference": reference,
             "series": {m: dataclasses.asdict(s) for m, s in method_series.items()},
             "metrics": metrics,
         }
 
-    def _build_method_series(self, method: str, raw: dict[str, list[Any]], ref_series: list[ReferenceFrame]) -> MethodSeries:
+    def _build_method_series(self, method: str, raw: dict[str, list[Any]], reference: list[dict[str, Any]]) -> MethodSeries:
         trigger = None
         for i, state in enumerate(raw["states"]):
             if state != RiskLevel.SAFE.value:
@@ -187,21 +240,24 @@ class WarningEvaluator43:
             states=list(raw["states"]),
             distances=list(raw["distances"]),
             trigger_index=trigger,
-            trigger_d_ref=None if trigger is None else ref_series[trigger].d_ref,
+            trigger_d_ref=None if trigger is None else reference[trigger]["d_ref"],
             n_switch=count_switches(raw["states"]),
         )
 
     def _metrics(
         self,
         series: MethodSeries,
-        ref_series: list[ReferenceFrame],
+        reference: list[dict[str, Any]],
         danger: int | None,
         leave: int | None,
     ) -> dict[str, float | int | None]:
-        times = [f.timestamp for f in ref_series]
+        times = [f["timestamp"] for f in reference]
         t_warn = None if series.trigger_index is None else times[series.trigger_index]
         t_danger = None if danger is None else times[danger]
-        if t_warn is None or t_danger is None:
+        if t_danger is None:
+            t_lead = None
+            miss = None
+        elif t_warn is None:
             t_lead = None
             miss = 1.0
         else:
@@ -211,8 +267,8 @@ class WarningEvaluator43:
         d_safe = self.safety_cfg.get("d_safe", 0.15)
         false_den = 0
         false_num = 0
-        for state, ref in zip(series.states, ref_series):
-            if ref.d_ref > d_safe:
+        for state, ref in zip(series.states, reference):
+            if ref["d_ref"] > d_safe:
                 false_den += 1
                 false_num += int(state != RiskLevel.SAFE.value)
 
@@ -233,9 +289,23 @@ class WarningEvaluator43:
         }
 
     @staticmethod
-    def _median_speed(ref_series: list[ReferenceFrame]) -> float:
-        speeds = [f.obs_speed for f in ref_series if f.obs_speed > 1e-6 and len(f.obs_points) > 0]
+    def _median_speed(reference: list[dict[str, Any]]) -> float:
+        speeds = [f["obs_speed"] for f in reference if f["obs_speed"] > 1e-6 and f["obs_count"] > 0]
         return float(np.median(speeds)) if speeds else 0.0
+
+
+def danger_index(reference: list[dict[str, Any]], d_stop: float) -> int | None:
+    for i, frame in enumerate(reference):
+        if frame["d_ref"] <= d_stop:
+            return i
+    return None
+
+
+def leave_index(reference: list[dict[str, Any]], d_safe: float, start: int = 0) -> int | None:
+    for i in range(max(start, 0), len(reference)):
+        if reference[i]["d_ref"] > d_safe:
+            return i
+    return None
 
 
 def count_switches(states: list[str]) -> int:
@@ -288,10 +358,16 @@ def plot_fig43(result: dict[str, Any], output: str | Path) -> None:
     t0 = ref[0]["timestamp"] if ref else 0.0
     ts = np.array([r["timestamp"] - t0 for r in ref])
     d_ref = np.array([r["d_ref"] for r in ref], dtype=float)
+    d_ref_plot = np.where(np.isfinite(d_ref), d_ref, np.nan)
+    d_safe = result.get("parameters", {}).get("d_safe", 0.15)
+    d_stop = result.get("parameters", {}).get("d_stop", 0.05)
+    d_danger = result.get("parameters", {}).get("d_danger", d_stop)
     fig, axes = plt.subplots(1 + len(METHODS_43), 1, figsize=(9, 7), sharex=True)
-    axes[0].plot(ts, d_ref, label="D_ref")
-    axes[0].axhline(0.15, color="tab:orange", linestyle="--", label="d_safe")
-    axes[0].axhline(0.05, color="tab:red", linestyle="--", label="d_stop")
+    axes[0].plot(ts, d_ref_plot, label="D_ref")
+    axes[0].axhline(d_safe, color="tab:orange", linestyle="--", label="d_safe")
+    axes[0].axhline(d_stop, color="tab:red", linestyle="--", label="d_stop")
+    if abs(d_danger - d_stop) > 1e-9:
+        axes[0].axhline(d_danger, color="tab:purple", linestyle=":", label="d_danger")
     if result.get("danger_index") is not None:
         axes[0].axvline(ts[result["danger_index"]], color="k", linestyle=":", label="t_danger")
     axes[0].set_ylabel("distance (m)")
@@ -330,7 +406,25 @@ def main() -> None:
     parser.add_argument("--delta-r", type=float, default=0.05)
     parser.add_argument("--bg-eps", type=float, default=0.03)
     parser.add_argument("--t-req", type=float, default=0.25)
+    parser.add_argument(
+        "--danger-threshold",
+        type=float,
+        default=None,
+        help="Reference distance threshold for t_danger. Defaults to config d_stop; use 0.10 for warning-zone dynamic trials.",
+    )
     parser.add_argument("--max-frames", type=int, default=None)
+    parser.add_argument(
+        "--max-background-points",
+        type=int,
+        default=500000,
+        help="Maximum downsampled points retained for the empty-scene background KD-tree.",
+    )
+    parser.add_argument(
+        "--prediction-velocity-radius-scale",
+        type=float,
+        default=None,
+        help="Override config prediction_velocity_radius_scale for Ours dynamic risk-sphere expansion.",
+    )
     parser.add_argument("--no-remove-planes", action="store_true")
     parser.add_argument("--plot", action="store_true")
     args = parser.parse_args()
@@ -342,6 +436,9 @@ def main() -> None:
         bg_eps=args.bg_eps,
         t_req=args.t_req,
         remove_planes=not args.no_remove_planes,
+        max_background_points=args.max_background_points,
+        danger_threshold=args.danger_threshold,
+        prediction_velocity_radius_scale=args.prediction_velocity_radius_scale,
     )
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)

@@ -8,10 +8,13 @@ pos_alpha: 0.3           # 位置 EMA 平滑（抑制点云中心帧间抖动）
 motion_gate: 0.005       # 位移门限 (m)：平滑后位移低于此值视为静态
 velocity_dead_zone: 0.01 # 速度死区 (m/s)：最终速度低于此强制归零
 shape_alpha: 0.4         # 形状 EMA 平滑系数：抑制包围盒/包围球尺寸抖动
-prediction_horizon: 0.5
+prediction_horizon: 0.4
 prediction_step: 0.1
-risk_margin: 0.05
+risk_margin: 0.035
 prediction_uncertainty: 0.02
+prediction_static_speed_threshold: 0.08  # 低于该速度视为静态障碍，避免点云中心抖动导致过度预测
+prediction_static_margin: 0.0            # 静态障碍不做额外预测膨胀，避免安全距离外误警
+prediction_velocity_radius_scale: 0.1    # 动态预测半径膨胀系数；中心已按速度外推，半径不宜再按全速度强膨胀
 enable_cluster_split: true     # 启用/禁用子聚类拆分功能，false 时走默认聚类逻辑
 cluster_split_threshold: 300   # 超过此点数的簇尝试子聚类拆分（防合并）
 cluster_sub_eps: 0.12          # 子聚类 eps（比主聚类大，便于分离粘连物体）

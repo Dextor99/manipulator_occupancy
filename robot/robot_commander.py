@@ -143,7 +143,12 @@ class RobotCommander:
     # Y 轴运动控制（子进程）
     # ══════════════════════════════════════════════════════════════
 
-    def start_y_oscillate(self, range_m: float = 0.40, base_omega: float = 0.8):
+    def start_y_oscillate(
+        self,
+        range_m: float = 0.40,
+        base_omega: float = 0.8,
+        x_offset: float = 0.0,
+    ):
         """启动子进程：Y 轴 ±range_m 正弦往返。
 
         通过 subprocess.Popen 启动 robot/motion_worker.py，
@@ -178,7 +183,7 @@ class RobotCommander:
         worker_script = str(Path(__file__).parent / "motion_worker.py")
         self._process = subprocess.Popen(
             [sys.executable, worker_script,
-             self._shm_path, self.ip, str(range_m), str(base_omega)],
+             self._shm_path, self.ip, str(range_m), str(base_omega), str(x_offset)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             # 子进程不需要继承主进程的 Open3D/SDK 连接
@@ -201,7 +206,7 @@ class RobotCommander:
             print("[RobotCommander] 运动进程异常退出")
             return
         print(f"[RobotCommander] Y 轴 ±{range_m}m 正弦往返 "
-              f"(PID={self._process.pid})")
+              f"X offset={x_offset:+.3f}m (PID={self._process.pid})")
 
     def set_speed_scale(self, scale: float):
         """设置速度倍率 (0~1)，通过 mmap 共享内存传递。"""

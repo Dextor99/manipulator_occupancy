@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -25,11 +26,15 @@ class Recorder:
         scene: str = "A",
         obstacle_desc: str = "",
         save_images: bool = False,
+        clean_existing: bool = False,
     ):
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.frame_dir = self.save_dir / "frames"
         self.frame_dir.mkdir(exist_ok=True)
+        if clean_existing:
+            for old_frame in self.frame_dir.glob("frame_*.npz"):
+                old_frame.unlink()
 
         self.config_dir = Path(config_dir)
         self.scene = scene
@@ -88,8 +93,13 @@ def load_sequence(record_dir: str | Path):
     with manifest_path.open("r", encoding="utf-8") as handle:
         manifest = json.load(handle)
     joint_names = manifest.get("joint_names", [])
+    frame_limit = manifest.get("frames")
 
     for frame_path in sorted((record_dir / "frames").glob("frame_*.npz")):
+        if frame_limit is not None:
+            match = re.search(r"frame_(\d+)\.npz$", frame_path.name)
+            if match and int(match.group(1)) >= int(frame_limit):
+                continue
         data = np.load(frame_path)
         if "joint_values" in data.files:
             joint_values = data["joint_values"]
