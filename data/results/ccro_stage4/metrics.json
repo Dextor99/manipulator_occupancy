@@ -1,0 +1,289 @@
+{
+  "accepted": true,
+  "scope": "asynchronous reference-level virtual closed loop; no real-robot commands",
+  "surface_counts": {
+    "base_link": {
+      "coarse": 46,
+      "medium": 110,
+      "dense": 458
+    },
+    "shoulder_Link": {
+      "coarse": 65,
+      "medium": 156,
+      "dense": 649
+    },
+    "upperArm_Link": {
+      "coarse": 165,
+      "medium": 397,
+      "dense": 1654
+    },
+    "foreArm_Link": {
+      "coarse": 88,
+      "medium": 210,
+      "dense": 877
+    },
+    "wrist1_Link": {
+      "coarse": 37,
+      "medium": 89,
+      "dense": 370
+    },
+    "wrist2_Link": {
+      "coarse": 37,
+      "medium": 89,
+      "dense": 370
+    },
+    "wrist3_Link": {
+      "coarse": 16,
+      "medium": 28,
+      "dense": 115
+    },
+    "gripper_base_link": {
+      "coarse": 35,
+      "medium": 84,
+      "dense": 350
+    },
+    "left_link": {
+      "coarse": 16,
+      "medium": 19,
+      "dense": 78
+    },
+    "right_link": {
+      "coarse": 16,
+      "medium": 19,
+      "dense": 78
+    }
+  },
+  "timing": {
+    "accepted_replans": 2,
+    "mean_ms": 1460.2352649999375,
+    "p95_ms": 1502.4464826983603,
+    "max_ms": 1507.136617998185,
+    "hard_budget_ms": 3000.0,
+    "meets_1hz": false
+  },
+  "scenarios": {
+    "A": {
+      "accepted": true,
+      "name": "dynamic_body_replan",
+      "expectation": "accepted_replan",
+      "forecast": {
+        "type": "dynamic",
+        "initial_center": [
+          0.5369600139458761,
+          0.17657744698399191,
+          1.0315042346564043
+        ],
+        "velocity": [
+          0.0,
+          0.02804010678762368,
+          -0.06413854076402628
+        ],
+        "target": {
+          "target_link": "foreArm_Link",
+          "collision_time": 3.86,
+          "target_clearance": 0.05,
+          "time_alignment_error": 0.0,
+          "sampled_initial_clearance": 0.5100552284406074,
+          "sampled_path_clearance": 0.05840639268368143
+        }
+      },
+      "passive": {
+        "sample_count": 161,
+        "min_actual_distance": 0.04984040635400304,
+        "hold_time": 0.0
+      },
+      "active": {
+        "sample_count": 161,
+        "min_actual_distance": 0.06174089577508316,
+        "hold_time": 0.0,
+        "events": [
+          {
+            "attempt_id": 1,
+            "submitted_timestamp": 3.5939992812927812e-06,
+            "completed_timestamp": 3.006603361998714,
+            "planned_switch_timestamp": 3.0000035939992813,
+            "outcome": "accepted",
+            "elapsed_ms": 1507.136617998185,
+            "solver_success": true,
+            "candidate_accepted": true,
+            "candidate_min_distance": 0.06175372835126309,
+            "required_min_distance": 0.06,
+            "rejection_reasons": [],
+            "verification_checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "candidate_goal_error": 5.594315114139762e-16
+          }
+        ],
+        "safety_events": [],
+        "replan_count": 1,
+        "accepted_count": 1,
+        "planning_control_cycles": 60,
+        "goal_error": 5.594315114139762e-16,
+        "finished": true
+      }
+    },
+    "B": {
+      "accepted": true,
+      "name": "far_obstacle_no_trigger",
+      "expectation": "no_trigger",
+      "forecast": {
+        "type": "far",
+        "initial_center": [
+          1.2900353479037063,
+          0.7849740403460369,
+          1.4958286676499501
+        ],
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target": null
+      },
+      "passive": {
+        "sample_count": 161,
+        "min_actual_distance": 1.0821087337393582,
+        "hold_time": 0.0
+      },
+      "active": {
+        "sample_count": 161,
+        "min_actual_distance": 1.0821394404593057,
+        "hold_time": 0.0,
+        "events": [],
+        "safety_events": [],
+        "replan_count": 0,
+        "accepted_count": 0,
+        "planning_control_cycles": 0,
+        "goal_error": 2.0816681711721685e-16,
+        "finished": true
+      }
+    },
+    "C": {
+      "accepted": true,
+      "name": "dynamic_ee_replan",
+      "expectation": "accepted_replan",
+      "forecast": {
+        "type": "dynamic",
+        "initial_center": [
+          1.1045625805710217,
+          0.007651875891031546,
+          1.2215713137215765
+        ],
+        "velocity": [
+          -0.06404776323828264,
+          0.0,
+          -0.10147849045079894
+        ],
+        "target": {
+          "target_link": "right_link",
+          "collision_time": 4.48,
+          "target_clearance": 0.075,
+          "time_alignment_error": 0.0,
+          "sampled_initial_clearance": 0.8581194031377606,
+          "sampled_path_clearance": 0.04663048299548245
+        }
+      },
+      "passive": {
+        "sample_count": 161,
+        "min_actual_distance": 0.042527543268788104,
+        "hold_time": 0.0
+      },
+      "active": {
+        "sample_count": 161,
+        "min_actual_distance": 0.08275644212051828,
+        "hold_time": 0.0,
+        "events": [
+          {
+            "attempt_id": 1,
+            "submitted_timestamp": 2.4049986677709967e-06,
+            "completed_timestamp": 3.0119289360009134,
+            "planned_switch_timestamp": 3.0000024049986678,
+            "outcome": "accepted",
+            "elapsed_ms": 1413.33391200169,
+            "solver_success": true,
+            "candidate_accepted": true,
+            "candidate_min_distance": 0.0827688524878358,
+            "required_min_distance": 0.06,
+            "rejection_reasons": [],
+            "verification_checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "candidate_goal_error": 2.8441001681421824e-16
+          }
+        ],
+        "safety_events": [],
+        "replan_count": 1,
+        "accepted_count": 1,
+        "planning_control_cycles": 60,
+        "goal_error": 2.8441001681421824e-16,
+        "finished": true
+      }
+    },
+    "D": {
+      "accepted": true,
+      "name": "immediate_high_safety_hold",
+      "expectation": "safety_takeover",
+      "forecast": {
+        "type": "high",
+        "initial_center": [
+          0.6505468166870777,
+          -0.0809415952044833,
+          0.3938794670504172
+        ],
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target": {
+          "target_link": "foreArm_Link",
+          "collision_time": 0.0,
+          "target_clearance": 0.0
+        }
+      },
+      "passive": {
+        "sample_count": 161,
+        "min_actual_distance": 0.0,
+        "hold_time": 0.0
+      },
+      "active": {
+        "sample_count": 1,
+        "min_actual_distance": 0.0,
+        "hold_time": 0.05,
+        "events": [],
+        "safety_events": [
+          {
+            "timestamp": 2.3850006982684135e-06,
+            "reason": "future D_min <= d_stop"
+          }
+        ],
+        "replan_count": 0,
+        "accepted_count": 0,
+        "planning_control_cycles": 0,
+        "goal_error": 1.9798989873223327,
+        "finished": false
+      }
+    }
+  }
+}

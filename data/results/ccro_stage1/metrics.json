@@ -1,0 +1,134 @@
+{
+  "accepted": true,
+  "checks": {
+    "optimizer_success": true,
+    "start_position": true,
+    "goal_position": true,
+    "start_velocity": true,
+    "goal_velocity": true,
+    "start_acceleration": true,
+    "goal_acceleration": true,
+    "waypoint_interpolation": true,
+    "gradient": true,
+    "energy_nonincrease": true,
+    "joint_limits": true
+  },
+  "joint_names": [
+    "shoulder_joint",
+    "upperArm_joint",
+    "foreArm_joint",
+    "wrist1_joint",
+    "wrist2_joint",
+    "wrist3_joint"
+  ],
+  "durations": [
+    1.2,
+    1.4,
+    1.6,
+    1.8
+  ],
+  "boundary_errors": {
+    "q_start": 0.0,
+    "qd_start": 0.0,
+    "qdd_start": 3.552713678800501e-15,
+    "q_goal": 3.433175098891678e-16,
+    "qd_goal": 5.661048867003676e-16,
+    "qdd_goal": 2.4113576385871645e-13
+  },
+  "waypoint_error": 2.2887833992611187e-16,
+  "gradient_check": {
+    "energy": 1.0108184144635601,
+    "relative_error": 3.6719407138704014e-11,
+    "cosine_similarity": 1.0000000000000002,
+    "max_absolute_error": 2.566418189076103e-10,
+    "analytic_norm": 13.866684278236983,
+    "numeric_norm": 13.866684278136807
+  },
+  "limits": {
+    "max_abs_q": 1.25,
+    "max_abs_qd": 0.1718749659518353,
+    "max_abs_qdd": 0.08820610073437517,
+    "max_q_violation": 0.0,
+    "max_qd_violation": 0.0,
+    "max_qdd_violation": 0.0
+  },
+  "energy_consistency": {
+    "analytic": 0.07013888888899371,
+    "sampled_jerk_integral": 0.07014083719506015,
+    "absolute_error": 1.9483060664376994e-06
+  },
+  "optimization": {
+    "success": true,
+    "status": 0,
+    "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+    "iterations": 19,
+    "function_evaluations": 22,
+    "initial_energy": 1.0108184144635601,
+    "final_energy": 0.07013888888899371,
+    "final_cost": 0.07013888888899371,
+    "penalty_cost": 0.0,
+    "gradient_norm": 2.579066026524911e-06,
+    "elapsed_ms": 12.346732999503729
+  },
+  "benchmark": {
+    "runs": 100,
+    "construct_mean_ms": 0.03909771998223732,
+    "construct_p95_ms": 0.04026125002383196,
+    "construct_max_ms": 0.047358000301755965,
+    "sample_101_mean_ms": 0.12106783004128374,
+    "sample_101_p95_ms": 0.12285424959372904,
+    "sample_101_max_ms": 0.13030500031163683
+  },
+  "p_inner_initial": [
+    [
+      0.11000000000000001,
+      -0.39,
+      1.19,
+      0.06999999999999999,
+      1.0,
+      -0.06
+    ],
+    [
+      0.23833333333333337,
+      -0.31999999999999995,
+      1.1199999999999999,
+      0.15166666666666667,
+      0.9416666666666667,
+      -0.13
+    ],
+    [
+      0.385,
+      -0.24,
+      1.04,
+      0.24499999999999997,
+      0.875,
+      -0.21
+    ]
+  ],
+  "p_inner_optimized": [
+    [
+      0.031856024297730635,
+      -0.4326239800474853,
+      1.2326239800314793,
+      0.02027202327708854,
+      1.0355199833955553,
+      -0.017376019951842108
+    ],
+    [
+      0.2070605164679023,
+      -0.33705786755274336,
+      1.137057867559939,
+      0.13176582118884486,
+      0.9558815562837657,
+      -0.1129421324475578
+    ],
+    [
+      0.4603059970187433,
+      -0.19892398686646692,
+      0.9989239868617706,
+      0.2929220153222068,
+      0.8407699890620345,
+      -0.25107601313333533
+    ]
+  ]
+}

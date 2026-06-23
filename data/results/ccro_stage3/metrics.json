@@ -1,0 +1,1103 @@
+{
+  "accepted": true,
+  "geometry": "collision",
+  "surface_counts": {
+    "base_link": {
+      "dense": 825,
+      "medium": 183,
+      "coarse": 64
+    },
+    "shoulder_Link": {
+      "dense": 1167,
+      "medium": 259,
+      "coarse": 91
+    },
+    "upperArm_Link": {
+      "dense": 2978,
+      "medium": 662,
+      "coarse": 232
+    },
+    "foreArm_Link": {
+      "dense": 1579,
+      "medium": 351,
+      "coarse": 123
+    },
+    "wrist1_Link": {
+      "dense": 666,
+      "medium": 148,
+      "coarse": 52
+    },
+    "wrist2_Link": {
+      "dense": 666,
+      "medium": 148,
+      "coarse": 52
+    },
+    "wrist3_Link": {
+      "dense": 208,
+      "medium": 46,
+      "coarse": 16
+    },
+    "gripper_base_link": {
+      "dense": 631,
+      "medium": 140,
+      "coarse": 49
+    },
+    "left_link": {
+      "dense": 140,
+      "medium": 31,
+      "coarse": 16
+    },
+    "right_link": {
+      "dense": 140,
+      "medium": 31,
+      "coarse": 16
+    }
+  },
+  "scenarios": {
+    "A": {
+      "accepted": true,
+      "forecast": {
+        "objects": [
+          {
+            "object_id": 1,
+            "initial_center": [
+              0.6910680832921641,
+              0.3858886409932032,
+              1.251533211434198
+            ],
+            "velocity": [
+              0.0,
+              -0.06817308242219476,
+              -0.09875439652520104
+            ],
+            "collision_center": [
+              0.6910680832921641,
+              0.08592707833554632,
+              0.8170138667233134
+            ],
+            "collision_time": 4.3999999999999995,
+            "target_link": "right_link",
+            "endpoint_clearance": 0.39711909562088626,
+            "time_alignment_error": 1.1188630228279524e-16
+          }
+        ],
+        "valid_horizon": 8.0
+      },
+      "methods": {
+        "baseline": {
+          "method": "baseline",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 0.0014320691940795662,
+          "min_distance_sampled": 0.0,
+          "nearest_link": "wrist3_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 1.5999999999999999,
+          "time_below_d_stop": 1.0000000000000002,
+          "path_length_joint": 1.979898987322333,
+          "jerk_integral": 0.08626738238863685,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 613.3876370004145,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          }
+        },
+        "current_full": {
+          "method": "current_full",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 0.0014320691940795662,
+          "min_distance_sampled": 0.0,
+          "nearest_link": "wrist3_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 1.5999999999999999,
+          "time_below_d_stop": 1.0000000000000002,
+          "path_length_joint": 1.979898987322333,
+          "jerk_integral": 0.08626738238863685,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 610.2174689995081,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+            "initial_cost": 0.0043066406250000374,
+            "final_cost": 0.0043066406250000374,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.08613281250000075,
+            "initial_risk": 0.0,
+            "final_risk": 0.0,
+            "initial_min_distance": 0.37767279060313663,
+            "final_min_distance": 0.37767279060313663,
+            "penalty_cost": 0.0,
+            "iterations": 0,
+            "function_evaluations": 1,
+            "gradient_norm": 2.2931986551872714e-09,
+            "elapsed_ms": 20.84890700007236
+          },
+          "p_inner": [
+            [
+              0.05791999938646762,
+              -0.5594560004290535,
+              1.347872000549742,
+              0.046335999511721154,
+              0.9594560004318328,
+              -0.040543999571902245
+            ],
+            [
+              0.36147013596771693,
+              -0.3469709048227864,
+              1.074676877630149,
+              0.2891761087730429,
+              0.7469709048215537,
+              -0.25302909517677175
+            ],
+            [
+              0.8369200019195757,
+              -0.014155998656181274,
+              0.6467719982717041,
+              0.6695360015363525,
+              0.41415599865693437,
+              -0.5858440013441092
+            ]
+          ]
+        },
+        "temporal_ee": {
+          "method": "temporal_ee",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 1.5913676134536892e-08,
+          "min_distance_sampled": 0.11490355889276373,
+          "nearest_link": "right_link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 0.5999999999999999,
+          "time_below_d_stop": 0.0,
+          "path_length_joint": 2.020654859642363,
+          "jerk_integral": 0.10539471311465251,
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.11422808080713735,
+            "nearest_link": "gripper_base_link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 591.7380830005641,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "initial_cost": 17.20384173486035,
+            "final_cost": 0.005262551604393009,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.10521482646081964,
+            "initial_risk": 0.0034399070188470705,
+            "final_risk": 3.620562704052834e-10,
+            "initial_min_distance": 0.0,
+            "final_min_distance": 0.1195719613685316,
+            "penalty_cost": 0.0,
+            "iterations": 43,
+            "function_evaluations": 64,
+            "gradient_norm": 1.1543684124801156e-05,
+            "elapsed_ms": 1165.5080339996857
+          },
+          "p_inner": [
+            [
+              0.03371641296118509,
+              -0.5304119775955846,
+              1.334793901133796,
+              0.049555309947143224,
+              0.9518161501217535,
+              -0.040798085305265804
+            ],
+            [
+              0.2665899533980589,
+              -0.2324000410872734,
+              1.0227776923402847,
+              0.3020002519314809,
+              0.7168027253560537,
+              -0.2539756984067693
+            ],
+            [
+              0.7769626068596879,
+              0.058955637688674616,
+              0.6133464508391314,
+              0.6778427603300066,
+              0.3948740314509987,
+              -0.586394879351211
+            ]
+          ]
+        },
+        "temporal_full": {
+          "method": "temporal_full",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 2.0106446645400716e-08,
+          "min_distance_sampled": 0.11440253854301584,
+          "nearest_link": "right_link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 0.5999999999999999,
+          "time_below_d_stop": 0.0,
+          "path_length_joint": 2.0203528829404256,
+          "jerk_integral": 0.1052891721316664,
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.1137781311190708,
+            "nearest_link": "gripper_base_link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 578.2251919999908,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "initial_cost": 7.3735630455552075,
+            "final_cost": 0.005259876297881315,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.10510968235828022,
+            "initial_risk": 0.0014738512809860415,
+            "final_risk": 8.784359934608056e-10,
+            "initial_min_distance": 0.0,
+            "final_min_distance": 0.11897931938660625,
+            "penalty_cost": 0.0,
+            "iterations": 38,
+            "function_evaluations": 52,
+            "gradient_norm": 4.027547808696812e-06,
+            "elapsed_ms": 2135.8778869998787
+          },
+          "p_inner": [
+            [
+              0.03401076839235257,
+              -0.5304143662899765,
+              1.334693100165555,
+              0.0496075298508281,
+              0.9518381606686893,
+              -0.04077472566513883
+            ],
+            [
+              0.2676845919039884,
+              -0.23236800684157052,
+              1.0223672790677192,
+              0.3022132135060439,
+              0.716870250233289,
+              -0.25388778720371163
+            ],
+            [
+              0.7776017668343302,
+              0.059013731978222884,
+              0.6130728302710422,
+              0.6779889011222725,
+              0.3948998010263157,
+              -0.5863398009710767
+            ]
+          ]
+        }
+      }
+    },
+    "B": {
+      "accepted": true,
+      "forecast": {
+        "objects": [
+          {
+            "object_id": 1,
+            "initial_center": [
+              0.1881720371083706,
+              0.5166850239322271,
+              0.7343901489068823
+            ],
+            "velocity": [
+              0.07939787081491596,
+              -0.07613132147846849,
+              0.0
+            ],
+            "collision_center": [
+              0.48988394620505127,
+              0.227386002314047,
+              0.7343901489068823
+            ],
+            "collision_time": 3.8,
+            "target_link": "foreArm_Link",
+            "endpoint_clearance": 0.34181530587402587,
+            "time_alignment_error": 5.551115123125783e-17
+          }
+        ],
+        "valid_horizon": 8.0
+      },
+      "methods": {
+        "baseline": {
+          "method": "baseline",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 0.00022017080413187746,
+          "min_distance_sampled": 0.0,
+          "nearest_link": "foreArm_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 1.6000000000000003,
+          "time_below_d_stop": 0.7999999999999998,
+          "path_length_joint": 1.979898987322333,
+          "jerk_integral": 0.08626738238863685,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 632.3916519995691,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          }
+        },
+        "current_full": {
+          "method": "current_full",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 0.00022017080413187746,
+          "min_distance_sampled": 0.0,
+          "nearest_link": "foreArm_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 1.6000000000000003,
+          "time_below_d_stop": 0.7999999999999998,
+          "path_length_joint": 1.979898987322333,
+          "jerk_integral": 0.08626738238863685,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 617.4143620000905,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+            "initial_cost": 0.0043066406250000374,
+            "final_cost": 0.0043066406250000374,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.08613281250000075,
+            "initial_risk": 0.0,
+            "final_risk": 0.0,
+            "initial_min_distance": 0.2877060054263476,
+            "final_min_distance": 0.2877060054263476,
+            "penalty_cost": 0.0,
+            "iterations": 0,
+            "function_evaluations": 1,
+            "gradient_norm": 2.2931986551872714e-09,
+            "elapsed_ms": 19.270432999292098
+          },
+          "p_inner": [
+            [
+              0.05791999938646762,
+              -0.5594560004290535,
+              1.347872000549742,
+              0.046335999511721154,
+              0.9594560004318328,
+              -0.040543999571902245
+            ],
+            [
+              0.36147013596771693,
+              -0.3469709048227864,
+              1.074676877630149,
+              0.2891761087730429,
+              0.7469709048215537,
+              -0.25302909517677175
+            ],
+            [
+              0.8369200019195757,
+              -0.014155998656181274,
+              0.6467719982717041,
+              0.6695360015363525,
+              0.41415599865693437,
+              -0.5858440013441092
+            ]
+          ]
+        },
+        "temporal_ee": {
+          "method": "temporal_ee",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 0.0001063868694380059,
+          "min_distance_sampled": 0.0,
+          "nearest_link": "foreArm_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 1.4000000000000001,
+          "time_below_d_stop": 0.7000000000000002,
+          "path_length_joint": 1.9814016616704202,
+          "jerk_integral": 0.08697363748813842,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 619.8020050005653,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "initial_cost": 0.038386964575171205,
+            "final_cost": 0.004342131715389526,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.08683863462459057,
+            "initial_risk": 6.816064790034233e-06,
+            "final_risk": 3.999683199946342e-11,
+            "initial_min_distance": 0.09788750146844026,
+            "final_min_distance": 0.11987067116359044,
+            "penalty_cost": 0.0,
+            "iterations": 22,
+            "function_evaluations": 40,
+            "gradient_norm": 2.3389270066732397e-06,
+            "elapsed_ms": 556.9915430005494
+          },
+          "p_inner": [
+            [
+              0.05345777629682977,
+              -0.5545383895980712,
+              1.3441604539269205,
+              0.047342823519020236,
+              0.9585989422290909,
+              -0.04043287949721765
+            ],
+            [
+              0.3436963428535596,
+              -0.3273813276145803,
+              1.0598891051733605,
+              0.29318642951727614,
+              0.7435578011769406,
+              -0.25258826204805396
+            ],
+            [
+              0.8254070393184766,
+              -0.0014653465028808465,
+              0.637191318756347,
+              0.672133859324185,
+              0.41194531812502416,
+              -0.5855590417819393
+            ]
+          ]
+        },
+        "temporal_full": {
+          "method": "temporal_full",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 7.407752267704391e-08,
+          "min_distance_sampled": 0.10406398984607734,
+          "nearest_link": "foreArm_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 0.5,
+          "time_below_d_stop": 0.0,
+          "path_length_joint": 2.0474069794397556,
+          "jerk_integral": 0.11791862361012236,
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.09773333956375907,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 584.7287970000252,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "initial_cost": 1.0919425353827832,
+            "final_cost": 0.005938558736766574,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.11770362878479633,
+            "initial_risk": 0.0002175271789515566,
+            "final_risk": 1.0675459505351383e-08,
+            "initial_min_distance": 0.0,
+            "final_min_distance": 0.11414943096064692,
+            "penalty_cost": 0.0,
+            "iterations": 22,
+            "function_evaluations": 27,
+            "gradient_norm": 5.212844312308337e-06,
+            "elapsed_ms": 1303.188718000456
+          },
+          "p_inner": [
+            [
+              0.0216263393838025,
+              -0.517512515500077,
+              1.3304448106163973,
+              0.046353213245782295,
+              0.9594516405179503,
+              -0.04054383161850998
+            ],
+            [
+              0.23137950043238256,
+              -0.19249949975072103,
+              1.0105727056691605,
+              0.28923701422328374,
+              0.7469554613252489,
+              -0.2530284994306218
+            ],
+            [
+              0.7643924426438508,
+              0.07487675925281156,
+              0.6098759964899233,
+              0.6695738033358454,
+              0.4141464019110763,
+              -0.5858436295472378
+            ]
+          ]
+        }
+      }
+    },
+    "C": {
+      "accepted": true,
+      "forecast": {
+        "objects": [
+          {
+            "object_id": 1,
+            "initial_center": [
+              0.9183969514000303,
+              0.11186408078520617,
+              0.5641435777634942
+            ],
+            "velocity": [
+              -0.07199697691056976,
+              0.0,
+              0.06940054261847588
+            ],
+            "collision_center": [
+              0.6484082879853936,
+              0.11186408078520617,
+              0.8243956125827787
+            ],
+            "collision_time": 3.75,
+            "target_link": "wrist2_Link",
+            "endpoint_clearance": 0.3853292752105558,
+            "time_alignment_error": 0.0
+          },
+          {
+            "object_id": 2,
+            "initial_center": [
+              0.5719003637057534,
+              -0.38905984005611227,
+              0.9692466040162339
+            ],
+            "velocity": [
+              -0.020243359293701607,
+              0.09792959922569941,
+              -0.0
+            ],
+            "collision_center": [
+              0.4706835672372453,
+              0.10058815607238483,
+              0.9692466040162339
+            ],
+            "collision_time": 5.0,
+            "target_link": "wrist2_Link",
+            "endpoint_clearance": 0.2094499234114187,
+            "time_alignment_error": 6.206335383118183e-17
+          }
+        ],
+        "valid_horizon": 8.0
+      },
+      "methods": {
+        "baseline": {
+          "method": "baseline",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 0.005293068301199563,
+          "min_distance_sampled": 0.0,
+          "nearest_link": "wrist2_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 5.35,
+          "time_below_d_stop": 2.3,
+          "path_length_joint": 1.979898987322333,
+          "jerk_integral": 0.08626738238863685,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 708.4056650001003,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          }
+        },
+        "current_full": {
+          "method": "current_full",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 0.005293068301199563,
+          "min_distance_sampled": 0.0,
+          "nearest_link": "wrist2_Link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 5.35,
+          "time_below_d_stop": 2.3,
+          "path_length_joint": 1.979898987322333,
+          "jerk_integral": 0.08626738238863685,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 700.4633440001271,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+            "initial_cost": 0.0043066406250000374,
+            "final_cost": 0.0043066406250000374,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.08613281250000075,
+            "initial_risk": 0.0,
+            "final_risk": 0.0,
+            "initial_min_distance": 0.1457848477485822,
+            "final_min_distance": 0.1457848477485822,
+            "penalty_cost": 0.0,
+            "iterations": 0,
+            "function_evaluations": 1,
+            "gradient_norm": 2.2931986551872714e-09,
+            "elapsed_ms": 23.321620000388066
+          },
+          "p_inner": [
+            [
+              0.05791999938646762,
+              -0.5594560004290535,
+              1.347872000549742,
+              0.046335999511721154,
+              0.9594560004318328,
+              -0.040543999571902245
+            ],
+            [
+              0.36147013596771693,
+              -0.3469709048227864,
+              1.074676877630149,
+              0.2891761087730429,
+              0.7469709048215537,
+              -0.25302909517677175
+            ],
+            [
+              0.8369200019195757,
+              -0.014155998656181274,
+              0.6467719982717041,
+              0.6695360015363525,
+              0.41415599865693437,
+              -0.5858440013441092
+            ]
+          ]
+        },
+        "temporal_ee": {
+          "method": "temporal_ee",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 5.607165841230461e-05,
+          "min_distance_sampled": 0.02388734714347711,
+          "nearest_link": "wrist2_Link",
+          "nearest_object_id": 2,
+          "time_below_d_safe": 1.9499999999999995,
+          "time_below_d_stop": 0.40000000000000013,
+          "path_length_joint": 2.1962917166124045,
+          "jerk_integral": 0.19970085043600835,
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.012893291126767153,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 686.2478729999566,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "initial_cost": 48.1770526741253,
+            "final_cost": 0.02006327736225129,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.1991929628506015,
+            "initial_risk": 0.009634549206700059,
+            "final_risk": 2.0207258439442425e-06,
+            "initial_min_distance": 0.0,
+            "final_min_distance": 0.0957682222308571,
+            "penalty_cost": 0.0,
+            "iterations": 46,
+            "function_evaluations": 58,
+            "gradient_norm": 1.8934329404026142e-05,
+            "elapsed_ms": 2029.5733100001598
+          },
+          "p_inner": [
+            [
+              -0.020141264323106655,
+              -0.5238026356621005,
+              1.3393272092681474,
+              0.0481176377864188,
+              0.9451775274824777,
+              -0.0419737771276245
+            ],
+            [
+              0.050509577944744505,
+              -0.18825372240778449,
+              1.0307608358161493,
+              0.29902043150407875,
+              0.6881974934863138,
+              -0.2584618862926602
+            ],
+            [
+              0.6249990348862745,
+              0.12828150607720257,
+              0.5966198611766611,
+              0.6819191501050564,
+              0.3695208265144588,
+              -0.5889218531570491
+            ]
+          ]
+        },
+        "temporal_full": {
+          "method": "temporal_full",
+          "solver_success": true,
+          "true_spatiotemporal_risk": 8.702858932499139e-07,
+          "min_distance_sampled": 0.0957682222308571,
+          "nearest_link": "gripper_base_link",
+          "nearest_object_id": 1,
+          "time_below_d_safe": 1.2499999999999993,
+          "time_below_d_stop": 0.0,
+          "path_length_joint": 2.347075139465868,
+          "jerk_integral": 0.283866977128151,
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.09243739749251317,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 705.3185899994787,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "initial_cost": 26.617300438728577,
+            "final_cost": 0.018661619425426417,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.2832061840258133,
+            "initial_risk": 0.005322598759620716,
+            "final_risk": 9.002620448271497e-07,
+            "initial_min_distance": 0.0,
+            "final_min_distance": 0.0957682222308571,
+            "penalty_cost": 0.0,
+            "iterations": 39,
+            "function_evaluations": 47,
+            "gradient_norm": 9.61521627671263e-06,
+            "elapsed_ms": 3872.760197000389
+          },
+          "p_inner": [
+            [
+              -0.06897481829689978,
+              -0.5043550466801873,
+              1.348568614412737,
+              0.052035929157512505,
+              0.9615477215265704,
+              -0.04050000120122553
+            ],
+            [
+              -0.10976363900662157,
+              -0.12653884603083287,
+              1.0678137156311895,
+              0.31268814446232035,
+              0.7535240891144566,
+              -0.25281613826766985
+            ],
+            [
+              0.5568931640137131,
+              0.13762036494273458,
+              0.6297845290110768,
+              0.6866200142486751,
+              0.41458572513325165,
+              -0.5856003614178702
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "recorded_evidence": {
+    "available": true,
+    "path": "/home/hzy/Code/manipulator_occupancy/data/results/ch4_3/final_dynamic/metrics.json",
+    "trials": 8,
+    "temporal_T_lead": 5.128593176603317,
+    "current_T_lead": 4.735648363828659,
+    "lead_gain": 0.3929448127746582,
+    "temporal_false_time": 0.44822218196168523,
+    "current_false_time": 0.21411608287255457,
+    "false_time_increase": 0.23410609908913066,
+    "position_rmse_available": false,
+    "note": "Recorded results contain warning metrics but no stable 3-D center ground truth."
+  },
+  "gradient_check": {
+    "cost": 7.3735630455552075,
+    "relative_error": 1.4109210051790517e-06,
+    "cosine_similarity": 0.9999999999998568,
+    "max_absolute_error": 0.00010581099733997235,
+    "analytic_norm": 106.26953024200195,
+    "numeric_norm": 106.2696689675916
+  },
+  "body_counterexample": true,
+  "current_frame_failure_observed": true
+}
