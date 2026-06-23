@@ -1,0 +1,23 @@
+recording_groups:
+  dynamic: data/recordings/ch4_3_dynamic_*
+  recover: data/recordings/ch4_3_recover_*
+recorded_results:
+  dynamic: data/results/ch4_3/final_dynamic/metrics.json
+  recover: data/results/ch4_3/final_recover/metrics.json
+programmatic_shadow: data/results/ccro_stage4/metrics.json
+truth_file: data/annotations/ccro_p3_truth.csv
+output_dir: data/results/ccro_p3
+prediction:
+  horizon: 0.5
+  step: 0.1
+  uncertainty_radius: 0.04
+synthetic:
+  dt: 0.05
+  duration: 5.0
+  measurement_sigma: 0.003
+  seed: 20260703
+acceptance:
+  minimum_recorded_sequences: 10
+  minimum_timestamp_valid_rate: 0.80
+  synthetic_rmse_max: 0.06
+  synthetic_coverage_min: 0.80

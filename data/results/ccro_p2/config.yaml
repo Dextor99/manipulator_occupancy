@@ -1,0 +1,25 @@
+source_config: config/ccro_stage1.yaml
+output_dir: data/results/ccro_p2
+random_seed: 20260702
+optimizer:
+  lambda_smooth: 1.0
+  lambda_time: 0.05
+  lambda_position: 10.0
+  lambda_velocity: 10.0
+  lambda_acceleration: 10.0
+  samples_per_segment: 12
+  finite_difference_epsilon: 1.0e-6
+  min_total_duration: 3.0
+  max_total_duration: 10.0
+  min_segment_duration: 0.35
+  max_segment_duration: 3.5
+  max_iterations: 250
+  gradient_tolerance: 1.0e-7
+validation:
+  dense_time_step: 0.01
+  gradient_relative_tolerance: 0.002
+  boundary_tolerance: 1.0e-5
+  waypoint_tolerance: 1.0e-7
+  limit_tolerance: 1.0e-8
+  cost_decrease_tolerance: 1.0e-8
+

@@ -1,0 +1,20 @@
+output_dir: data/results/ccro_p7
+mode: dry_run
+allow_real_robot_commands: false
+required_operator_phrase: CCRO_P7_LOW_SPEED_APPROVED
+limits:
+  max_joint_speed: 0.10
+  max_joint_acceleration: 0.20
+  watchdog_timeout: 0.10
+  switch_q_error: 0.02
+  switch_qd_error: 0.05
+readiness:
+  self_collision_ok: false
+  watchdog_ok: false
+  communication_ok: false
+  timestamp_ok: false
+  switch_state_error_ok: false
+  dense_validation_ok: true
+  emergency_stop_ok: false
+  manufacturer_limits_verified: false
+

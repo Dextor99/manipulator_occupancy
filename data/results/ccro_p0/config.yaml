@@ -1,0 +1,26 @@
+environment_lock: config/ccro_environment_lock.yaml
+output_dir: data/results/ccro_p0
+test_path: tests/planning
+required_stage_results:
+  - data/results/ccro_stage1/metrics.json
+  - data/results/ccro_stage2/metrics.json
+  - data/results/ccro_stage3/metrics.json
+  - data/results/ccro_stage4/metrics.json
+snapshot_roots:
+  - planning
+  - tests/planning
+  - NUBSTrajectory-main/include
+snapshot_globs:
+  - experiments/exp_ccro_*.py
+  - config/ccro_*.yaml
+  - requirements-stage*.txt
+  - requirements-ccro-lock.txt
+  - scripts/build_ccro_stage1.sh
+  - scripts/setup_ccro_*.sh
+exclude_parts: [__pycache__, build, data, .pytest_cache]
+exclude_suffixes: [.pyc, .so]
+requirements:
+  python_major_minor: "3.10"
+  minimum_test_count: 19
+  require_nubs_extension: true
+  require_clean_git: false

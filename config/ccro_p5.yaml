@@ -1,0 +1,18 @@
+source_config: config/ccro_stage4.yaml
+source_p4_metrics: data/results/ccro_p4/metrics.json
+output_dir: data/results/ccro_p5
+random_seed: 20260705
+benchmark_runs: 30
+scenarios: [A, C]
+optimized:
+  coarse_surface_points: 300
+  medium_surface_points: 900
+  risk_samples_per_segment: 3
+  max_iterations: 40
+  evaluate_steps: 13
+acceptance:
+  planner_p95_ms: 1000.0
+  planner_timeout_rate_max: 0.05
+  candidate_accept_rate_min: 0.90
+  control_p95_ms: 20.0
+

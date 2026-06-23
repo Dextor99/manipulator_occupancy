@@ -1,0 +1,206 @@
+{
+  "stage": "P4",
+  "scope": "unified URDF/Mesh virtual closed loop; no robot command",
+  "scenarios": {
+    "A": {
+      "expected": "accepted_replan",
+      "forecast": {
+        "type": "dynamic",
+        "initial_center": [
+          0.5369600139458761,
+          0.17657744698399191,
+          1.0315042346564043
+        ],
+        "velocity": [
+          0.0,
+          0.02804010678762368,
+          -0.06413854076402628
+        ],
+        "target": {
+          "target_link": "foreArm_Link",
+          "collision_time": 3.86,
+          "target_clearance": 0.05,
+          "time_alignment_error": 0.0,
+          "sampled_initial_clearance": 0.5100552284406074,
+          "sampled_path_clearance": 0.05840639268368143
+        }
+      },
+      "A4": {
+        "min_distance": 0.04984040635400304,
+        "goal_error": 0.0,
+        "finished": true
+      },
+      "A5": {
+        "min_distance": 0.06173781856197101,
+        "goal_error": 2.8441001681421824e-16,
+        "finished": true,
+        "replan_count": 1,
+        "accepted_count": 1,
+        "planning_control_cycles": 60,
+        "safety_events": []
+      },
+      "A6": {
+        "sample_count": 180,
+        "min_distance": 0.061600609256293654,
+        "time_below_stop": 0.0,
+        "goal_error": 0.00023305069824501308,
+        "finished": true,
+        "control_mean_ms": 1.511457068264457,
+        "control_p95_ms": 8.041035998758161,
+        "control_max_ms": 8.118284000374842,
+        "high_holds": 0,
+        "state_mismatch_holds": 0
+      },
+      "accepted": true
+    },
+    "B": {
+      "expected": "no_trigger",
+      "forecast": {
+        "type": "far",
+        "initial_center": [
+          1.2900353479037063,
+          0.7849740403460369,
+          1.4958286676499501
+        ],
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target": null
+      },
+      "A4": {
+        "min_distance": 1.0821087337393582,
+        "goal_error": 0.0,
+        "finished": true
+      },
+      "A5": {
+        "min_distance": 1.0821414281157218,
+        "goal_error": 2.0816681711721685e-16,
+        "finished": true,
+        "replan_count": 0,
+        "accepted_count": 0,
+        "planning_control_cycles": 0,
+        "safety_events": []
+      },
+      "A6": {
+        "sample_count": 180,
+        "min_distance": 1.082138346409868,
+        "time_below_stop": 0.0,
+        "goal_error": 0.00028668131750889147,
+        "finished": true,
+        "control_mean_ms": 0.6820854906430931,
+        "control_p95_ms": 0.8455729985143989,
+        "control_max_ms": 0.9936569986166432,
+        "high_holds": 0,
+        "state_mismatch_holds": 0
+      },
+      "accepted": true
+    },
+    "C": {
+      "expected": "accepted_replan",
+      "forecast": {
+        "type": "dynamic",
+        "initial_center": [
+          1.1045625805710217,
+          0.007651875891031546,
+          1.2215713137215765
+        ],
+        "velocity": [
+          -0.06404776323828264,
+          0.0,
+          -0.10147849045079894
+        ],
+        "target": {
+          "target_link": "right_link",
+          "collision_time": 4.48,
+          "target_clearance": 0.075,
+          "time_alignment_error": 0.0,
+          "sampled_initial_clearance": 0.8581194031377606,
+          "sampled_path_clearance": 0.04663048299548245
+        }
+      },
+      "A4": {
+        "min_distance": 0.042527543268788104,
+        "goal_error": 0.0,
+        "finished": true
+      },
+      "A5": {
+        "min_distance": 0.08280222474309198,
+        "goal_error": 3.5652682413747997e-16,
+        "finished": true,
+        "replan_count": 1,
+        "accepted_count": 1,
+        "planning_control_cycles": 60,
+        "safety_events": []
+      },
+      "A6": {
+        "sample_count": 180,
+        "min_distance": 0.07689581601323993,
+        "time_below_stop": 0.0,
+        "goal_error": 0.0002893694365959831,
+        "finished": true,
+        "control_mean_ms": 1.3741329253800516,
+        "control_p95_ms": 8.636465998279164,
+        "control_max_ms": 8.89539299896569,
+        "high_holds": 0,
+        "state_mismatch_holds": 0
+      },
+      "accepted": true
+    },
+    "D": {
+      "expected": "safety_takeover",
+      "forecast": {
+        "type": "high",
+        "initial_center": [
+          0.6505468166870777,
+          -0.0809415952044833,
+          0.3938794670504172
+        ],
+        "velocity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "target": {
+          "target_link": "foreArm_Link",
+          "collision_time": 0.0,
+          "target_clearance": 0.0
+        }
+      },
+      "A4": {
+        "min_distance": 0.0,
+        "goal_error": 0.0,
+        "finished": true
+      },
+      "A5": {
+        "min_distance": 0.0,
+        "goal_error": 1.979898987322333,
+        "finished": false,
+        "replan_count": 0,
+        "accepted_count": 0,
+        "planning_control_cycles": 0,
+        "safety_events": [
+          {
+            "timestamp": 2.2479980543721467e-06,
+            "reason": "future D_min <= d_stop"
+          }
+        ]
+      },
+      "A6": {
+        "sample_count": 21,
+        "min_distance": 0.0,
+        "time_below_stop": 1.05,
+        "goal_error": 1.979898987322333,
+        "finished": false,
+        "control_mean_ms": 8.39663100123289,
+        "control_p95_ms": 8.39663100123289,
+        "control_max_ms": 8.39663100123289,
+        "high_holds": 1,
+        "state_mismatch_holds": 20
+      },
+      "accepted": true
+    }
+  },
+  "accepted": true
+}

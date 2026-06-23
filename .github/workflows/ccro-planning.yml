@@ -1,0 +1,38 @@
+name: CCRO-NUBS planning baseline
+
+on:
+  push:
+    paths:
+      - "planning/**"
+      - "experiments/exp_ccro_*.py"
+      - "tests/planning/**"
+      - "config/ccro_*.yaml"
+      - "requirements*.txt"
+      - "scripts/**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  planning-tests:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.10"
+          activate-environment: py310
+          auto-update-conda: true
+      - name: Install build tools and Python dependencies
+        run: |
+          conda install -n py310 -y cmake eigen compilers
+          python -m pip install -r requirements-ccro-lock.txt
+      - name: Build NUBS extension
+        run: |
+          CONDA_BIN="$(command -v conda)" CONDA_ENV=py310 bash scripts/build_ccro_stage1.sh
+      - name: Run planning tests
+        run: python -m pytest -p no:cacheprovider tests/planning -q

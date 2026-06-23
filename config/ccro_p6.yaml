@@ -1,0 +1,12 @@
+source_stage1: data/results/ccro_stage1/metrics.json
+source_p1: data/results/ccro_p1/metrics.json
+source_p2: data/results/ccro_p2/metrics.json
+source_p4: data/results/ccro_p4/metrics.json
+source_p5: data/results/ccro_p5/metrics.json
+stage1_config: config/ccro_stage1.yaml
+output_dir: data/results/ccro_p6
+lambda_time_sweep: [0.02, 0.05, 0.10, 0.20]
+acceptance:
+  source_acceptance_required: true
+  sweep_success_rate_min: 1.0
+

@@ -1,0 +1,75 @@
+{
+  "stage": "P7",
+  "scope": "software readiness only; no robot SDK imported",
+  "decisions": {
+    "dry_run": {
+      "allowed": true,
+      "mode": "dry_run",
+      "failed_checks": [
+        "self_collision_ok",
+        "watchdog_ok",
+        "communication_ok",
+        "timestamp_ok",
+        "switch_state_error_ok",
+        "emergency_stop_ok",
+        "manufacturer_limits_verified"
+      ],
+      "reason": "no trajectory-switch command is permitted"
+    },
+    "shadow": {
+      "allowed": true,
+      "mode": "shadow",
+      "failed_checks": [
+        "self_collision_ok",
+        "watchdog_ok",
+        "communication_ok",
+        "timestamp_ok",
+        "switch_state_error_ok",
+        "emergency_stop_ok",
+        "manufacturer_limits_verified"
+      ],
+      "reason": "no trajectory-switch command is permitted"
+    },
+    "safety_layer": {
+      "allowed": false,
+      "mode": "safety_layer",
+      "failed_checks": [
+        "self_collision_ok",
+        "watchdog_ok",
+        "communication_ok",
+        "timestamp_ok",
+        "switch_state_error_ok",
+        "emergency_stop_ok",
+        "manufacturer_limits_verified"
+      ],
+      "reason": "allow_real_robot_commands is false"
+    },
+    "low_speed_switch": {
+      "allowed": false,
+      "mode": "low_speed_switch",
+      "failed_checks": [
+        "self_collision_ok",
+        "watchdog_ok",
+        "communication_ok",
+        "timestamp_ok",
+        "switch_state_error_ok",
+        "emergency_stop_ok",
+        "manufacturer_limits_verified"
+      ],
+      "reason": "allow_real_robot_commands is false"
+    }
+  },
+  "unsafe_switch_blocked": true,
+  "dry_run_accepted": true,
+  "real_robot_complete": false,
+  "accepted": false,
+  "pending": [
+    "self_collision_ok",
+    "watchdog_ok",
+    "communication_ok",
+    "timestamp_ok",
+    "switch_state_error_ok",
+    "emergency_stop_ok",
+    "manufacturer_limits_verified"
+  ]
+}

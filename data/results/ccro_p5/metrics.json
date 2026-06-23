@@ -1,0 +1,30 @@
+{
+  "stage": "P5",
+  "acceptance_policy": "finite budget permits max-iteration candidates only when every independent dense physical check passes; convergence is reported separately",
+  "optimization": {
+    "coarse_surface_points": 300,
+    "medium_surface_points": 900,
+    "risk_samples_per_segment": 3,
+    "max_iterations": 40,
+    "evaluate_steps": 13
+  },
+  "timing": {
+    "runs": 30,
+    "mean_ms": 848.6546637665015,
+    "p50_ms": 821.557210498213,
+    "p95_ms": 997.5241253014246,
+    "max_ms": 1006.3509530009469,
+    "timeout_rate": 0.03333333333333333,
+    "dense_feasible_accept_rate": 1.0,
+    "strict_accept_rate": 0.5,
+    "solver_convergence_rate": 0.5,
+    "control_p95_ms": 8.636465998279164
+  },
+  "checks": {
+    "planner_p95": true,
+    "timeout_rate": true,
+    "candidate_accept_rate": true,
+    "control_p95": true
+  },
+  "accepted": true
+}

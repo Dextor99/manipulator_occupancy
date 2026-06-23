@@ -1,0 +1,19 @@
+source_config: config/ccro_stage3.yaml
+source_metrics: data/results/ccro_stage3/metrics.json
+p0_metrics: data/results/ccro_p0/metrics.json
+output_dir: data/results/ccro_p1
+random_seed: 20260701
+trials: 30
+evaluation:
+  density: medium
+  time_step: 0.05
+  d_stop: 0.04
+perturbation:
+  center_sigma: 0.003
+  velocity_sigma: 0.005
+  radius_sigma: 0.002
+acceptance:
+  temporal_full_pass_rate_min: 0.90
+  baseline_pass_rate_max: 0.20
+  current_failure_rate_min: 0.80
+  body_counterexample_rate_min: 0.80

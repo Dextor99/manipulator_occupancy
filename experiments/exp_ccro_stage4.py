@@ -315,6 +315,7 @@ def _active_loop(config, baseline, q_goal, durations, evaluator, verifier, facto
                     "time": timestamp,
                     "tau": buffer.elapsed(timestamp),
                     "q": q.tolist(),
+                    "qd": qd.tolist(),
                     "qd_norm": float(np.linalg.norm(qd)),
                     "actual_min_distance": actual.min_distance,
                     "future_min_distance": last_report.min_distance,
