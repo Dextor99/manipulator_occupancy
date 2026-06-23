@@ -1,0 +1,117 @@
+environment:
+  conda_env: py310
+
+robot:
+  urdf_path: urdf/aubo_i16_gripper.urdf
+  joint_names: [shoulder_joint, upperArm_joint, foreArm_joint, wrist1_joint, wrist2_joint, wrist3_joint]
+  q_min: [-6.0, -6.0, -6.0, -6.0, -6.0, -6.0]
+  q_max: [ 6.0,  6.0,  6.0,  6.0,  6.0,  6.0]
+  qd_max: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  qdd_max: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+
+surface:
+  geometry: collision
+  random_seed: 20260623
+  min_points_per_link: 48
+  cache_dir: data/cache/robot_surface
+  density_totals: {coarse: 500, medium: 1200, dense: 5000}
+
+trajectory:
+  segment_count: 4
+  total_duration: 8.0
+  segment_durations: [1.6, 1.8, 2.2, 2.4]
+  q_start: [0.0, -0.60, 1.40, 0.0, 1.00, 0.0]
+  q_goal:  [1.0,  0.10, 0.50, 0.8, 0.30, -0.70]
+  qd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+forecast:
+  base_radius: 0.035
+  margin: 0.005
+  uncertainty: 0.003
+  uncertainty_growth: 0.0005
+  velocity_radius_scale: 0.005
+  valid_horizon: 9.0
+  beyond_horizon: error
+
+risk:
+  d_activate: 0.17
+  d_safe: 0.11
+  d_stop: 0.035
+  fd_epsilon_q: 2.0e-4
+  optimizer_density: coarse
+  validation_density: dense
+  risk_samples_per_segment: 4
+
+replanner:
+  d_replan: 0.13
+  d_safe: 0.11
+  d_accept: 0.060
+  d_stop: 0.035
+  min_improvement: 0.0
+  replan_interval: 0.5
+  hysteresis_enter: 0.015
+  hysteresis_exit: 0.010
+  evaluate_steps: 17
+  evaluate_horizon: 8.0
+  max_replan_attempts: 1
+  planning_budget: 3.00
+  switch_delay: 3.00
+  emergency_lead_time: 0.30
+
+optimizer:
+  lambda_smooth: 0.05
+  lambda_risk: 7000.0
+  lambda_position: 20.0
+  lambda_velocity: 20.0
+  lambda_acceleration: 20.0
+  samples_per_segment: 10
+  finite_difference_epsilon: 1.0e-6
+  sensitivity_epsilon: 1.0e-6
+  max_iterations: 60
+  gradient_tolerance: 1.0e-6
+
+validation:
+  dense_time_step: 0.04
+  epsilon_goal: 1.0e-5
+  epsilon_continuity_q: 1.0e-6
+  epsilon_continuity_qd: 1.0e-5
+  epsilon_continuity_qdd: 1.0e-4
+  limit_tolerance: 1.0e-8
+
+virtual_loop:
+  dt: 0.05
+  wall_clock: true
+  finish_tolerance: 1.0e-4
+
+experiment:
+  random_seed: 20260623
+  output_dir: data/results/ccro_stage4
+  scenarios:
+    A:
+      name: dynamic_body_replan
+      type: dynamic
+      target_links: [upperArm_Link, foreArm_Link, wrist1_Link]
+      time_range: [0.42, 0.62]
+      speed: 0.07
+      target_clearance: 0.050
+      expected: accepted_replan
+    B:
+      name: far_obstacle_no_trigger
+      type: far
+      expected: no_trigger
+    C:
+      name: dynamic_ee_replan
+      type: dynamic
+      target_links: [wrist3_Link, gripper_base_link, left_link, right_link]
+      time_range: [0.38, 0.62]
+      speed: 0.12
+      target_clearance: 0.075
+      expected: accepted_replan
+    D:
+      name: immediate_high_safety_hold
+      type: high
+      target_links: [foreArm_Link]
+      expected: safety_takeover

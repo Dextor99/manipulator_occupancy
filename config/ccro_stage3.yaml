@@ -1,0 +1,91 @@
+environment:
+  conda_env: py310
+
+robot:
+  urdf_path: urdf/aubo_i16_gripper.urdf
+  joint_names: [shoulder_joint, upperArm_joint, foreArm_joint, wrist1_joint, wrist2_joint, wrist3_joint]
+  q_min: [-6.0, -6.0, -6.0, -6.0, -6.0, -6.0]
+  q_max: [ 6.0,  6.0,  6.0,  6.0,  6.0,  6.0]
+  qd_max: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  qdd_max: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+
+surface:
+  geometry: collision
+  random_seed: 20260623
+  min_points_per_link: 64
+  cache_dir: data/cache/robot_surface
+  density_totals: {coarse: 700, medium: 2000, dense: 9000}
+
+trajectory:
+  system_order: 3
+  segment_count: 4
+  total_duration: 8.0
+  segment_durations: [1.6, 1.8, 2.2, 2.4]
+  q_start: [0.0, -0.60, 1.40, 0.0, 1.00, 0.0]
+  q_goal:  [1.0,  0.10, 0.50, 0.8, 0.30, -0.70]
+  qd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+forecast:
+  base_radius: 0.035
+  margin: 0.005
+  uncertainty: 0.005
+  uncertainty_growth: 0.001
+  velocity_radius_scale: 0.01
+  beyond_horizon: error
+
+risk:
+  d_activate: 0.18
+  d_safe: 0.12
+  d_stop: 0.04
+  fd_epsilon_q: 2.0e-4
+  optimizer_density: medium
+  validation_density: dense
+  risk_samples_per_segment: 5
+
+optimizer:
+  lambda_smooth: 0.05
+  lambda_risk: 5000.0
+  lambda_position: 20.0
+  lambda_velocity: 20.0
+  lambda_acceleration: 20.0
+  samples_per_segment: 12
+  finite_difference_epsilon: 1.0e-6
+  sensitivity_epsilon: 1.0e-6
+  max_iterations: 80
+  gradient_tolerance: 1.0e-6
+  gradient_check_epsilon: 1.0e-5
+
+validation:
+  dense_time_step: 0.025
+  epsilon_goal: 1.0e-6
+  epsilon_continuity_q: 1.0e-6
+  epsilon_continuity_qd: 1.0e-5
+  epsilon_continuity_qdd: 1.0e-4
+  limit_tolerance: 1.0e-8
+  gradient_relative_tolerance: 5.0e-2
+
+experiment:
+  random_seed: 20260623
+  output_dir: data/results/ccro_stage3
+  recorded_metrics: data/results/ch4_3/final_dynamic/metrics.json
+  end_effector_links: [wrist3_Link, gripper_base_link, left_link, right_link]
+  methods: [baseline, current_full, temporal_ee, temporal_full]
+  scenarios:
+    A:
+      target_links: [wrist3_Link, gripper_base_link, left_link, right_link]
+      time_range: [0.30, 0.70]
+      obstacle_count: 1
+      speed: 0.12
+    B:
+      target_links: [upperArm_Link, foreArm_Link, wrist1_Link]
+      time_range: [0.30, 0.70]
+      obstacle_count: 1
+      speed: 0.11
+    C:
+      target_links: [foreArm_Link, wrist1_Link, wrist2_Link]
+      time_range: [0.25, 0.75]
+      obstacle_count: 2
+      speed: 0.10

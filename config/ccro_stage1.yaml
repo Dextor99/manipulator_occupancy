@@ -1,0 +1,55 @@
+environment:
+  conda_env: py310
+
+robot:
+  joint_names:
+    - shoulder_joint
+    - upperArm_joint
+    - foreArm_joint
+    - wrist1_joint
+    - wrist2_joint
+    - wrist3_joint
+
+  # Stage-one conservative planning limits, not manufacturer-rated limits.
+  # Verify against the AUBO i16 manual/SDK before any real-robot execution.
+  q_min: [-6.0, -6.0, -6.0, -6.0, -6.0, -6.0]
+  q_max: [ 6.0,  6.0,  6.0,  6.0,  6.0,  6.0]
+  qd_max: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  qdd_max: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+
+trajectory:
+  system_order: 3
+  segment_count: 4
+  total_duration: 6.0
+  segment_durations: [1.2, 1.4, 1.6, 1.8]
+  q_start: [0.0, -0.45, 1.25, 0.0, 1.05, 0.0]
+  q_goal:  [0.55, -0.15, 0.95, 0.35, 0.80, -0.30]
+  qd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+optimizer:
+  lambda_smooth: 1.0
+  lambda_position: 10.0
+  lambda_velocity: 10.0
+  lambda_acceleration: 10.0
+  samples_per_segment: 12
+  finite_difference_epsilon: 1.0e-6
+  max_iterations: 200
+  gradient_tolerance: 1.0e-7
+
+validation:
+  dense_time_step: 0.01
+  boundary_position_tolerance: 1.0e-7
+  boundary_velocity_tolerance: 1.0e-6
+  boundary_acceleration_tolerance: 1.0e-5
+  waypoint_tolerance: 1.0e-7
+  gradient_relative_tolerance: 1.0e-3
+  energy_increase_tolerance: 1.0e-9
+  limit_tolerance: 1.0e-8
+
+experiment:
+  random_seed: 20260623
+  benchmark_runs: 100
+  output_dir: data/results/ccro_stage1
