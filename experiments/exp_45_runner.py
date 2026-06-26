@@ -42,7 +42,7 @@ class ExperimentRunner45:
         delta_r: float = 0.05,
         bg_eps: float = 0.03,
         output_dir: str | Path = "data/results/ch4_5",
-        mesh_samples: int = 20000,
+        mesh_samples: int = 10000,
     ):
         self.config = load_config_dir(config_dir)
         self.output_dir = Path(output_dir)
@@ -209,7 +209,7 @@ def main() -> None:
     parser.add_argument("--urdf", default="urdf/aubo_i16_gripper.urdf")
     parser.add_argument("--delta-r", type=float, default=0.05)
     parser.add_argument("--bg-eps", type=float, default=0.03)
-    parser.add_argument("--mesh-samples", type=int, default=20000)
+    parser.add_argument("--mesh-samples", type=int, default=10000)
     parser.add_argument("--max-frames", type=int, default=None)
     args = parser.parse_args()
 

@@ -75,9 +75,10 @@ class OursRepController(SafeMotionController):
 class OursFullController(SafeMotionController):
     def step(self, ref_velocity: np.ndarray, q: np.ndarray, frame: Frame44, rep_eval: RepulsionEvaluator44) -> ControlOutput:
         decision = self._decision(frame.ref.d_ref)
-        rep = rep_eval.repulsive_velocity("ours", q, frame)
+        details = rep_eval.repulsive_velocity_details("ours", q, frame)
+        rep = details.velocity
         candidate = ref_velocity * decision.speed_scale + rep
-        grad = rep_eval.distance_gradient(q, frame.ref.obs_points, links=None)
+        grad = details.gradient
         # Velocity-level safety filter: remove the component that decreases D_ref.
         if np.linalg.norm(grad) > 1e-9 and float(np.dot(candidate, grad)) < 0.0:
             g = normalize(grad)

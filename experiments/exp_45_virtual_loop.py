@@ -171,7 +171,7 @@ def main() -> None:
     parser.add_argument("--urdf", default="urdf/aubo_i16_gripper.urdf")
     parser.add_argument("--delta-r", type=float, default=0.05)
     parser.add_argument("--bg-eps", type=float, default=0.03)
-    parser.add_argument("--mesh-samples", type=int, default=50000)
+    parser.add_argument("--mesh-samples", type=int, default=10000)
     parser.add_argument("--max-frames", type=int, default=None)
     parser.add_argument("--dt-scale", type=float, default=1.0)
     args = parser.parse_args()

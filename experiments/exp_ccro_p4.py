@@ -4,6 +4,7 @@ import argparse,json,time
 from pathlib import Path
 import numpy as np,yaml
 from experiments.exp_ccro_stage4 import (_active_loop,_baseline,_limits,_make_components,_make_forecast,_passive,_states)
+from planning.fast_sphere_risk import FastSphereRiskEvaluator
 from planning.robot_surface_model import RobotSurfaceModel
 from planning.safety_executor import SafetyExecutor
 
@@ -12,20 +13,32 @@ ROOT=Path(__file__).resolve().parents[1]
 def _summary(rows,dt,goal):
     distances=np.asarray([r["distance"] for r in rows],float); return {"sample_count":len(rows),"min_distance":float(np.min(distances)),"time_below_stop":float(sum(r["distance"]<=r["d_stop"] for r in rows)*dt),"goal_error":float(np.linalg.norm(np.asarray(rows[-1]["q"])-goal)),"finished":bool(np.linalg.norm(np.asarray(rows[-1]["q"])-goal)<=.05)}
 
-def _a6(timeline,evaluator,forecast,goal,config):
+def _make_fast_evaluator(model, source, cfg):
+    rc=source["risk"]; fc=cfg["fast_risk"]
+    return FastSphereRiskEvaluator(
+        model,
+        d_safe=rc["d_safe"],
+        d_activate=rc["d_activate"],
+        fd_epsilon_q=rc["fd_epsilon_q"],
+        density=fc["density"],
+        max_spheres_per_link=fc["max_spheres_per_link"],
+        radius_padding=fc["radius_padding"],
+    )
+
+def _a6(timeline,evaluator,fast_evaluator,forecast,goal,config):
     cc=config["controller"]; source=config["_source"]; rc=source["risk"]; dt=float(source["virtual_loop"]["dt"])
     ex=SafetyExecutor(rc["d_stop"],rc["d_safe"],cc["tracking_gain"],cc["repulsive_gain"],cc["qd_limit"],cc["state_error_limit"])
     q=np.asarray(timeline[0]["q"],float).copy(); rows=[]; timings=[]
     for row in timeline:
         tau=float(row["time"]); qref=np.asarray(row["q"],float); qdref=np.asarray(row["qd"],float)
-        started=time.perf_counter(); risk=evaluator.configuration(q,forecast,tau,density=cc["density"],with_gradient=True); cmd=ex.command(q,qref,qdref,risk.min_distance,risk.gradient_q); timings.append((time.perf_counter()-started)*1000)
+        started=time.perf_counter(); risk=fast_evaluator.configuration(q,forecast,tau,with_gradient=True); cmd=ex.command(q,qref,qdref,risk.min_distance,risk.gradient_q); timings.append((time.perf_counter()-started)*1000)
         dense=evaluator.configuration(q,forecast,tau,density="dense",with_gradient=False); rows.append({"time":tau,"q":q.tolist(),"distance":dense.min_distance,"d_stop":rc["d_stop"],"state":cmd.state,"state_error":cmd.state_error,"speed_scale":cmd.speed_scale}); q=q+cmd.qd*dt
     # One second of safe goal recovery remains within the 9 s forecast horizon.
     tau=float(timeline[-1]["time"])
     for _ in range(int(1.0/dt)):
         tau+=dt
         if tau>forecast.valid_horizon: break
-        risk=evaluator.configuration(q,forecast,tau,density=cc["density"],with_gradient=True); cmd=ex.command(q,goal,np.zeros(6),risk.min_distance,risk.gradient_q); q=q+cmd.qd*dt
+        risk=fast_evaluator.configuration(q,forecast,tau,with_gradient=True); cmd=ex.command(q,goal,np.zeros(6),risk.min_distance,risk.gradient_q); q=q+cmd.qd*dt
         dense=evaluator.configuration(q,forecast,tau,density="dense",with_gradient=False); rows.append({"time":tau,"q":q.tolist(),"distance":dense.min_distance,"d_stop":rc["d_stop"],"state":cmd.state,"state_error":cmd.state_error,"speed_scale":cmd.speed_scale})
     result=_summary(rows,dt,goal); result.update({"control_mean_ms":float(np.mean(timings)),"control_p95_ms":float(np.percentile(timings,95)),"control_max_ms":float(np.max(timings)),"high_holds":sum(r["state"]=="high_hold" for r in rows),"state_mismatch_holds":sum(r["state"]=="state_mismatch_hold" for r in rows)}); return result
 
@@ -35,9 +48,10 @@ def run(config_path=ROOT/"config/ccro_p4.yaml"):
     head,tail,durations=_states(source); limits=_limits(source); baseline=_baseline(source,head,tail,durations,limits).trajectory; goal=tail[:,0]; dt=float(source["virtual_loop"]["dt"]); results={}; checks=[]
     for name,scenario in source["experiment"]["scenarios"].items():
         forecast,info=_make_forecast(source,scenario,model,baseline); evaluator,verifier,factory=_make_components(source,model,limits,forecast)
+        fast_evaluator=_make_fast_evaluator(model,source,cfg)
         passive=_passive(baseline,evaluator,forecast,dt); a4={"min_distance":float(min(r["actual_min_distance"] for r in passive)),"goal_error":0.,"finished":True}
         active=_active_loop(source,baseline,goal,durations,evaluator,verifier,factory,forecast); timeline=active.pop("timeline"); a5={"min_distance":float(min(r["actual_min_distance"] for r in timeline)),"goal_error":active["goal_error"],"finished":active["finished"],"replan_count":active["replan_count"],"accepted_count":active["accepted_count"],"planning_control_cycles":active["planning_control_cycles"],"safety_events":active["safety_events"]}
-        a6=_a6(timeline,evaluator,forecast,goal,cfg)
+        a6=_a6(timeline,evaluator,fast_evaluator,forecast,goal,cfg)
         expected=scenario["expected"]
         if expected=="accepted_replan": ok=a5["accepted_count"]>=1 and a5["min_distance"]>a4["min_distance"]+.002 and a6["min_distance"]>=source["risk"]["d_stop"]-cfg["acceptance"]["distance_tolerance"] and a6["control_p95_ms"]<cfg["acceptance"]["control_p95_ms"]
         elif expected=="no_trigger": ok=a5["replan_count"]==0 and a6["high_holds"]==0

@@ -36,6 +36,14 @@ class Frame44:
     risk_zone: str
 
 
+@dataclasses.dataclass
+class RepulsionDetails44:
+    velocity: np.ndarray
+    gradient: np.ndarray
+    distance: float
+    active_point_count: int
+
+
 class RepulsionEvaluator44:
     def __init__(
         self,
@@ -48,6 +56,8 @@ class RepulsionEvaluator44:
         eta_max: float = 0.3,
         dt_v: float = 0.08,
         max_active: int = 400,
+        max_obstacle_points: int = 500,
+        gradient_mode: str = "fast",
         mesh_samples: int = 50000,
         max_background_points: int = 500000,
     ):
@@ -70,6 +80,10 @@ class RepulsionEvaluator44:
         self.eta_max = float(eta_max)
         self.dt_v = float(dt_v)
         self.max_active = int(max_active)
+        self.max_obstacle_points = int(max_obstacle_points)
+        if gradient_mode not in {"fast", "fd"}:
+            raise ValueError("gradient_mode must be 'fast' or 'fd'")
+        self.gradient_mode = gradient_mode
         self.d_safe = float(self.safety_cfg.get("d_safe", 0.15))
         self.prediction_horizon = float(self.safety_cfg.get("prediction_horizon", 0.4))
         self.prediction_step = float(self.safety_cfg.get("prediction_step", 0.1))
@@ -78,6 +92,10 @@ class RepulsionEvaluator44:
         self.ee_links = self._guess_ee_links()
         self.link_names = set(self.remover._local_samples)
         self._empty_tree_cache: dict[tuple[str, int | None], Any] = {}
+        self._surface_cache: dict[tuple[tuple[float, ...], tuple[str, ...] | None], np.ndarray] = {}
+        self._surface_tree_cache: dict[
+            tuple[tuple[float, ...], tuple[str, ...] | None], cKDTree
+        ] = {}
 
     def run_sequence(
         self,
@@ -170,17 +188,23 @@ class RepulsionEvaluator44:
         return output
 
     def repulsive_velocity(self, method: str, q: np.ndarray, frame: Frame44) -> np.ndarray:
+        return self.repulsive_velocity_details(method, q, frame).velocity
+
+    def repulsive_velocity_details(self, method: str, q: np.ndarray, frame: Frame44) -> RepulsionDetails44:
         links = self._links_for_method(method)
         obs_points = self._obs_for_method(method, frame)
         if method == "ours":
             current_obs = frame.ref.obs_points
-            d_current = self.distance_for_q(q, current_obs, links=links)
+            d_current = float(frame.ref.d_ref)
+            if not math.isfinite(d_current):
+                d_current = self.distance_for_q(q, current_obs, links=links)
             d_temporal = self.distance_for_q(q, obs_points, links=links)
             d = min(d_current, d_temporal)
         else:
             d = self.distance_for_q(q, obs_points, links=links)
         if not math.isfinite(d) or d >= self.d_safe:
-            return np.zeros(len(self.joint_names))
+            zeros = np.zeros(len(self.joint_names))
+            return RepulsionDetails44(zeros, zeros, float(d), int(len(obs_points)))
 
         if method == "ours":
             # Keep the instantaneous distance-increase direction as the anchor,
@@ -195,7 +219,7 @@ class RepulsionEvaluator44:
         else:
             grad = self.distance_gradient(q, obs_points, links=links)
         if np.linalg.norm(grad) < 1e-9:
-            return np.zeros(len(self.joint_names))
+            return RepulsionDetails44(np.zeros(len(self.joint_names)), grad, float(d), int(len(obs_points)))
 
         scale = (self.d_safe - d) / max(self.d_safe, 1e-6) * self.eta_max
         if method == "apf":
@@ -205,9 +229,14 @@ class RepulsionEvaluator44:
         elif method == "ours":
             scale *= 1.0 + min(speed, 1.0)
         scale = min(max(scale, 0.0), self.eta_max)
-        return normalize(grad) * scale
+        return RepulsionDetails44(normalize(grad) * scale, grad, float(d), int(len(obs_points)))
 
     def distance_gradient(self, q: np.ndarray, obs_points: np.ndarray, links: set[str] | None) -> np.ndarray:
+        if self.gradient_mode == "fast":
+            return self.fast_distance_gradient(q, obs_points, links)
+        return self.fd_distance_gradient(q, obs_points, links)
+
+    def fd_distance_gradient(self, q: np.ndarray, obs_points: np.ndarray, links: set[str] | None) -> np.ndarray:
         grad = np.zeros(len(self.joint_names), dtype=float)
         for i in range(len(self.joint_names)):
             qp = q.copy()
@@ -220,24 +249,79 @@ class RepulsionEvaluator44:
                 grad[i] = (dp - dm) / (2.0 * self.eps_q)
         return grad
 
+    def fast_distance_gradient(self, q: np.ndarray, obs_points: np.ndarray, links: set[str] | None) -> np.ndarray:
+        """Approximate ∂D/∂q using the nearest local robot sample only.
+
+        The original finite-difference gradient rebuilds a full robot surface
+        and a KD-tree twice per joint.  For online control we first identify the
+        nearest obstacle/robot point pair, then finite-difference only that
+        local robot sample through FK.  This keeps the direction aligned with
+        the local closest-pair distance while avoiding repeated full-surface
+        distance queries.
+        """
+        pair = self.closest_pair_with_local(q, obs_points, links=links)
+        if pair is None:
+            return np.zeros(len(self.joint_names), dtype=float)
+        obs_point, local_point, link_name, _ = pair
+        grad = np.zeros(len(self.joint_names), dtype=float)
+        for i in range(len(self.joint_names)):
+            qp = q.copy()
+            qm = q.copy()
+            qp[i] += self.eps_q
+            qm[i] -= self.eps_q
+            pp = self._transform_local_point(qp, link_name, local_point)
+            pm = self._transform_local_point(qm, link_name, local_point)
+            dp = float(np.linalg.norm(pp - obs_point))
+            dm = float(np.linalg.norm(pm - obs_point))
+            if math.isfinite(dp) and math.isfinite(dm):
+                grad[i] = (dp - dm) / (2.0 * self.eps_q)
+        return grad
+
     def distance_for_q(self, q: np.ndarray, obs_points: np.ndarray, links: set[str] | None) -> float:
         if len(obs_points) == 0:
             return math.inf
+        obs_points = self._cap_points(obs_points, self.max_obstacle_points)
+        tree = self.surface_tree_for_q(q, links=links)
+        if tree is None:
+            return math.inf
+        distances, _ = tree.query(obs_points, k=1)
+        return float(np.min(distances)) if len(distances) else math.inf
+
+    def surface_tree_for_q(self, q: np.ndarray, links: set[str] | None = None) -> cKDTree | None:
+        key = self._surface_cache_key(q, links)
+        cached = self._surface_tree_cache.get(key)
+        if cached is not None:
+            return cached
         robot = self.surface_for_q(q, links=links)
-        return ReferenceConstructor.reference_distance(obs_points, robot)
+        if len(robot) == 0:
+            return None
+        tree = cKDTree(voxel_downsample(robot, 0.01))
+        self._surface_tree_cache[key] = tree
+        self._trim_surface_cache()
+        return tree
 
     def surface_for_q(self, q: np.ndarray, links: set[str] | None = None) -> np.ndarray:
+        key = self._surface_cache_key(q, links)
+        cached = self._surface_cache.get(key)
+        if cached is not None:
+            return cached
         joint_dict = {name: float(q[i]) for i, name in enumerate(self.joint_names)}
         fk = self.urdf.link_transforms(joint_dict)
         if links is None:
-            return self.remover._transform_to_world(fk)
+            out = self.remover._transform_to_world(fk)
+            self._surface_cache[key] = out
+            self._trim_surface_cache()
+            return out
         pts = []
         for link_name, local in self.remover._local_samples.items():
             if link_name not in links:
                 continue
             T = fk.get(link_name, np.eye(4))
             pts.append(local @ T[:3, :3].T + T[:3, 3])
-        return np.vstack(pts) if pts else np.empty((0, 3))
+        out = np.vstack(pts) if pts else np.empty((0, 3))
+        self._surface_cache[key] = out
+        self._trim_surface_cache()
+        return out
 
     def body_response_rate(self, method: str, frames: list[Frame44]) -> float | None:
         events = 0
@@ -316,10 +400,45 @@ class RepulsionEvaluator44:
         if len(obs_points) == 0 or len(robot) == 0:
             z = np.zeros(3)
             return z, z, math.inf
+        obs_points = self._cap_points(obs_points, self.max_obstacle_points)
         tree = cKDTree(voxel_downsample(robot, 0.01))
         d, idx = tree.query(obs_points, k=1)
         i = int(np.argmin(d))
         return obs_points[i], tree.data[int(idx[i])], float(d[i])
+
+    def closest_pair_with_local(
+        self, q: np.ndarray, obs_points: np.ndarray, links: set[str] | None = None
+    ) -> tuple[np.ndarray, np.ndarray, str, float] | None:
+        obs = self._cap_points(obs_points, self.max_obstacle_points)
+        if len(obs) == 0:
+            return None
+        joint_dict = {name: float(q[i]) for i, name in enumerate(self.joint_names)}
+        fk = self.urdf.link_transforms(joint_dict)
+        selected = set(self.remover._local_samples) if links is None else set(links)
+        best: tuple[np.ndarray, np.ndarray, str, float] | None = None
+        for link_name, local in self.remover._local_samples.items():
+            if link_name not in selected:
+                continue
+            transform = fk.get(link_name)
+            if transform is None or len(local) == 0:
+                continue
+            world = local @ transform[:3, :3].T + transform[:3, 3]
+            tree = cKDTree(voxel_downsample(world, 0.01))
+            d, idx = tree.query(obs, k=1)
+            obs_index = int(np.argmin(d))
+            distance = float(d[obs_index])
+            if best is None or distance < best[3]:
+                # Map the voxelized nearest world point back to the closest
+                # original local sample on the same link.
+                nearest_world = tree.data[int(idx[obs_index])]
+                local_index = int(np.argmin(np.linalg.norm(world - nearest_world, axis=1)))
+                best = (obs[obs_index].copy(), local[local_index].copy(), link_name, distance)
+        return best
+
+    def _transform_local_point(self, q: np.ndarray, link_name: str, local_point: np.ndarray) -> np.ndarray:
+        joint_dict = {name: float(q[i]) for i, name in enumerate(self.joint_names)}
+        transform = self.urdf.link_transforms(joint_dict).get(link_name, np.eye(4))
+        return local_point @ transform[:3, :3].T + transform[:3, 3]
 
     def _obs_for_method(self, method: str, frame: Frame44) -> np.ndarray:
         obs = frame.ref.obs_points
@@ -340,7 +459,29 @@ class RepulsionEvaluator44:
                 radial_unit = np.divide(radial, n, out=np.zeros_like(radial), where=n > 1e-9)
                 shifted = shifted + radial_unit * (self.risk_margin + self.velocity_radius_scale * speed * tau)
             chunks.append(shifted)
-        return np.vstack(chunks)
+        return self._cap_points(np.vstack(chunks), self.max_obstacle_points)
+
+    def _cap_points(self, points: np.ndarray, limit: int) -> np.ndarray:
+        if limit <= 0 or len(points) <= limit:
+            return points
+        indices = np.linspace(0, len(points) - 1, limit).round().astype(int)
+        return np.ascontiguousarray(points[indices], dtype=float)
+
+    def _surface_cache_key(
+        self, q: np.ndarray, links: set[str] | None
+    ) -> tuple[tuple[float, ...], tuple[str, ...] | None]:
+        q_key = tuple(np.round(np.asarray(q, dtype=float), 8).tolist())
+        link_key = None if links is None else tuple(sorted(links))
+        return q_key, link_key
+
+    def _trim_surface_cache(self) -> None:
+        if len(self._surface_cache) <= 64:
+            if len(self._surface_tree_cache) <= 64:
+                return
+        keys = list(dict.fromkeys([*self._surface_cache.keys(), *self._surface_tree_cache.keys()]))
+        for key in keys[: max(len(keys) - 64, 0)]:
+            self._surface_cache.pop(key, None)
+            self._surface_tree_cache.pop(key, None)
 
     def _q_vector(self, joint_dict: dict[str, float]) -> np.ndarray:
         return np.array([joint_dict.get(name, 0.0) for name in self.joint_names], dtype=float)
