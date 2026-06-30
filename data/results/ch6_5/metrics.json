@@ -1,0 +1,190 @@
+{
+  "source": "Chapter 6.5 summary from virtual closed-loop and CCRO rolling replanning results",
+  "source_files": {
+    "virtual": "data/results/ch4_5_virtual/metrics.json",
+    "stage4": "data/results/ccro_stage4/metrics.json",
+    "p4": "data/results/ccro_p4/metrics.json",
+    "p5": "data/results/ccro_p5/metrics.json"
+  },
+  "virtual_loop": [
+    {
+      "method": "ssm",
+      "n_trials": 10,
+      "R_avoid": 0.5,
+      "R_timeout": 0.0,
+      "D_min_ref": 0.05608771446078403,
+      "T_viol": 0.43166680335998536,
+      "J_q_rms": 0.21524012861571543,
+      "T_task": 14.815594553947449
+    },
+    {
+      "method": "apf",
+      "n_trials": 10,
+      "R_avoid": 0.9,
+      "R_timeout": 0.0,
+      "D_min_ref": 0.07984981740884357,
+      "T_viol": 0.022523021697998045,
+      "J_q_rms": 0.22959738217708128,
+      "T_task": 14.815594553947449
+    },
+    {
+      "method": "ours_scale",
+      "n_trials": 10,
+      "R_avoid": 0.5,
+      "R_timeout": 0.0,
+      "D_min_ref": 0.05608771446078403,
+      "T_viol": 0.43166680335998536,
+      "J_q_rms": 0.21524012861571543,
+      "T_task": 14.815594553947449
+    },
+    {
+      "method": "ours_rep",
+      "n_trials": 10,
+      "R_avoid": 1.0,
+      "R_timeout": 0.0,
+      "D_min_ref": 0.10408781493646793,
+      "T_viol": 0.0,
+      "J_q_rms": 0.3714669804156018,
+      "T_task": 14.815594553947449
+    },
+    {
+      "method": "ours_full",
+      "n_trials": 10,
+      "R_avoid": 1.0,
+      "R_timeout": 0.0,
+      "D_min_ref": 0.1968201691059277,
+      "T_viol": 0.0,
+      "J_q_rms": 0.4109066296086299,
+      "T_task": 14.815594553947449
+    }
+  ],
+  "rolling_replan": [
+    {
+      "scenario": "A",
+      "name": "dynamic_body_replan",
+      "expectation": "accepted_replan",
+      "passive_D_min": 0.04984040635400304,
+      "active_D_min": 0.06174089577508316,
+      "improvement": 0.011900489421080122,
+      "replan_count": 1,
+      "accepted_count": 1,
+      "hold_time": 0.0,
+      "safety_events": 0,
+      "finished": true,
+      "goal_error": 5.594315114139762e-16
+    },
+    {
+      "scenario": "B",
+      "name": "far_obstacle_no_trigger",
+      "expectation": "no_trigger",
+      "passive_D_min": 1.0821087337393582,
+      "active_D_min": 1.0821394404593057,
+      "improvement": 3.0706719947426464e-05,
+      "replan_count": 0,
+      "accepted_count": 0,
+      "hold_time": 0.0,
+      "safety_events": 0,
+      "finished": true,
+      "goal_error": 2.0816681711721685e-16
+    },
+    {
+      "scenario": "C",
+      "name": "dynamic_ee_replan",
+      "expectation": "accepted_replan",
+      "passive_D_min": 0.042527543268788104,
+      "active_D_min": 0.08275644212051828,
+      "improvement": 0.04022889885173017,
+      "replan_count": 1,
+      "accepted_count": 1,
+      "hold_time": 0.0,
+      "safety_events": 0,
+      "finished": true,
+      "goal_error": 2.8441001681421824e-16
+    },
+    {
+      "scenario": "D",
+      "name": "immediate_high_safety_hold",
+      "expectation": "safety_takeover",
+      "passive_D_min": 0.0,
+      "active_D_min": 0.0,
+      "improvement": 0.0,
+      "replan_count": 0,
+      "accepted_count": 0,
+      "hold_time": 0.05,
+      "safety_events": 1,
+      "finished": false,
+      "goal_error": 1.9798989873223327
+    }
+  ],
+  "unified_executor": [
+    {
+      "scenario": "A",
+      "expected": "accepted_replan",
+      "A4_D_min": 0.04984040635400304,
+      "A5_D_min": 0.06179936183238946,
+      "A6_D_min": 0.07515846818350333,
+      "A5_replans": 1,
+      "A6_time_below_stop": 0.0,
+      "A6_finished": true,
+      "A6_goal_error": 0.0009322604538850562,
+      "A6_control_p95_ms": 6.275566061958671,
+      "A6_state_mismatch_holds": 0
+    },
+    {
+      "scenario": "B",
+      "expected": "no_trigger",
+      "A4_D_min": 1.0821087337393582,
+      "A5_D_min": 1.082138484119971,
+      "A6_D_min": 1.0821356995916933,
+      "A5_replans": 0,
+      "A6_time_below_stop": 0.0,
+      "A6_finished": true,
+      "A6_goal_error": 0.000285257268321397,
+      "A6_control_p95_ms": 0.8942049462348223,
+      "A6_state_mismatch_holds": 0
+    },
+    {
+      "scenario": "C",
+      "expected": "accepted_replan",
+      "A4_D_min": 0.042527543268788104,
+      "A5_D_min": 0.08279520487699779,
+      "A6_D_min": 0.06392461148027355,
+      "A5_replans": 1,
+      "A6_time_below_stop": 0.0,
+      "A6_finished": true,
+      "A6_goal_error": 0.00020298052584055904,
+      "A6_control_p95_ms": 6.9579159608110785,
+      "A6_state_mismatch_holds": 0
+    },
+    {
+      "scenario": "D",
+      "expected": "safety_takeover",
+      "A4_D_min": 0.0,
+      "A5_D_min": 0.0,
+      "A6_D_min": 0.0,
+      "A5_replans": 0,
+      "A6_time_below_stop": 1.05,
+      "A6_finished": false,
+      "A6_goal_error": 1.9798989873223334,
+      "A6_control_p95_ms": 6.6449439618736506,
+      "A6_state_mismatch_holds": 0
+    }
+  ],
+  "realtime_budget": {
+    "runs": 30,
+    "planner_mean_ms": 848.6546637665015,
+    "planner_p95_ms": 997.5241253014246,
+    "planner_max_ms": 1006.3509530009469,
+    "timeout_rate": 0.03333333333333333,
+    "dense_feasible_accept_rate": 1.0,
+    "strict_accept_rate": 0.5,
+    "solver_convergence_rate": 0.5,
+    "control_p95_ms": 8.636465998279164
+  },
+  "accepted": true,
+  "notes": [
+    "Scenario D is an emergency safety-takeover case; unfinished goal is expected and should not be counted as task failure.",
+    "P4 scenario A A6 now finishes after fail-soft state-mismatch recovery; state_mismatch_holds should remain zero in the current run.",
+    "P5 reports finite-budget dense-feasible acceptance separately from strict solver convergence."
+  ]
+}

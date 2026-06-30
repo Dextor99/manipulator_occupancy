@@ -1,0 +1,395 @@
+{
+  "source": "Chapter 6.4 summary from frozen CCRO-NUBS stage results",
+  "source_files": {
+    "stage1": "data/results/ccro_stage1/metrics.json",
+    "stage2": "data/results/ccro_stage2/metrics.json",
+    "p2": "data/results/ccro_p2/metrics.json",
+    "p6": "data/results/ccro_p6/metrics.json",
+    "external": "data/results/ch6_4_external/metrics.json"
+  },
+  "basic_nubs": {
+    "accepted": true,
+    "start_error": 0.0,
+    "goal_error": 3.433175098891678e-16,
+    "waypoint_error": 2.2887833992611187e-16,
+    "gradient_relative_error": 3.6719407138704014e-11,
+    "gradient_cosine": 1.0000000000000002,
+    "initial_energy": 1.0108184144635601,
+    "final_energy": 0.07013888888899371,
+    "energy_reduction_rate": 0.9306117816163685,
+    "max_q_violation": 0.0,
+    "max_qd_violation": 0.0,
+    "max_qdd_violation": 0.0,
+    "optimization_ms": 12.346732999503729,
+    "construct_mean_ms": 0.03909771998223732,
+    "sample_101_mean_ms": 0.12106783004128374
+  },
+  "time_optimization": [
+    {
+      "method": "fixed",
+      "success": true,
+      "duration": 5.999999999999999,
+      "jerk_energy": 0.07013888888899371,
+      "objective": 0.3701388888889937,
+      "elapsed_ms": 12.195562001579674,
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0
+    },
+    {
+      "method": "total",
+      "success": true,
+      "duration": 6.1581820328306405,
+      "jerk_energy": 0.06158182031087196,
+      "objective": 0.369490921952404,
+      "elapsed_ms": 5.196190999413375,
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0
+    },
+    {
+      "method": "segment",
+      "success": true,
+      "duration": 6.158182069043774,
+      "jerk_energy": 0.06158181850021344,
+      "objective": 0.3694909219524022,
+      "elapsed_ms": 6.494684999779565,
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0
+    }
+  ],
+  "static_risk": [
+    {
+      "scenario": "A",
+      "method": "baseline",
+      "method_name": "NUBS-base",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.0003008903830770139,
+      "nearest_link": "right_link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 0.0017001824541771683,
+      "jerk_energy": null,
+      "optimization_ms": 0.0
+    },
+    {
+      "scenario": "A",
+      "method": "ee_only",
+      "method_name": "NUBS-EEF-risk",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.08129941071736088,
+      "nearest_link": "wrist2_Link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 2.369150577355483e-06,
+      "jerk_energy": 0.11654053405675406,
+      "optimization_ms": 2139.029214999937
+    },
+    {
+      "scenario": "A",
+      "method": "full_body",
+      "method_name": "CCRO-NUBS",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.10646651773087011,
+      "nearest_link": "wrist2_Link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 6.982709801333592e-08,
+      "jerk_energy": 0.1346008826856942,
+      "optimization_ms": 5925.229463000051
+    },
+    {
+      "scenario": "B",
+      "method": "baseline",
+      "method_name": "NUBS-base",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.0004366718674664565,
+      "nearest_link": "foreArm_Link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 8.335285927289646e-05,
+      "jerk_energy": null,
+      "optimization_ms": 0.0
+    },
+    {
+      "scenario": "B",
+      "method": "ee_only",
+      "method_name": "NUBS-EEF-risk",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.0004366718674664565,
+      "nearest_link": "foreArm_Link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 8.335285927289646e-05,
+      "jerk_energy": 0.08613281250000075,
+      "optimization_ms": 14.571208999768714
+    },
+    {
+      "scenario": "B",
+      "method": "full_body",
+      "method_name": "CCRO-NUBS",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.10161951909042548,
+      "nearest_link": "foreArm_Link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 3.876508866939235e-08,
+      "jerk_energy": 0.1154105646879042,
+      "optimization_ms": 6575.343277999764
+    },
+    {
+      "scenario": "C",
+      "method": "baseline",
+      "method_name": "NUBS-base",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.0002930043332644176,
+      "nearest_link": "gripper_base_link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 0.001602246970890521,
+      "jerk_energy": null,
+      "optimization_ms": 0.0
+    },
+    {
+      "scenario": "C",
+      "method": "ee_only",
+      "method_name": "NUBS-EEF-risk",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.05437255896459572,
+      "nearest_link": "foreArm_Link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 7.5181023064872055e-06,
+      "jerk_energy": 0.10811186654045388,
+      "optimization_ms": 2131.683619999876
+    },
+    {
+      "scenario": "C",
+      "method": "full_body",
+      "method_name": "CCRO-NUBS",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.1029394157137289,
+      "nearest_link": "foreArm_Link",
+      "goal_error": 2.0816681711721685e-16,
+      "full_body_risk": 4.096327623374703e-08,
+      "jerk_energy": 0.13818492557582365,
+      "optimization_ms": 23191.553456000292
+    }
+  ],
+  "external_baselines": [
+    {
+      "scenario": "A",
+      "method": "MINCO-base",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.00022178896141602462,
+      "full_body_risk": 0.003486073710776503,
+      "jerk_energy": 1.2507644733253485,
+      "goal_error": 1.4752290795525882e-16,
+      "nearest_link": "gripper_base_link",
+      "elapsed_ms": 0.0
+    },
+    {
+      "scenario": "A",
+      "method": "MINCO-risk",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.11134985210093945,
+      "full_body_risk": 1.3667442900863078e-08,
+      "jerk_energy": 3.7249287474893222,
+      "goal_error": 5.775561153410717e-16,
+      "nearest_link": "wrist2_Link",
+      "elapsed_ms": 985.505479038693
+    },
+    {
+      "scenario": "A",
+      "method": "RRT-Connect + smoothing",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.08490275055956728,
+      "full_body_risk": 1.777259819191771e-05,
+      "jerk_energy": 0.9856956764007488,
+      "goal_error": 2.5172027167143304e-16,
+      "nearest_link": "wrist2_Link",
+      "elapsed_ms": 1362.221447774209
+    },
+    {
+      "scenario": "B",
+      "method": "MINCO-base",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.0004148183363355153,
+      "full_body_risk": 0.0001911635716911166,
+      "jerk_energy": 1.2507644733253485,
+      "goal_error": 1.4752290795525882e-16,
+      "nearest_link": "foreArm_Link",
+      "elapsed_ms": 0.0
+    },
+    {
+      "scenario": "B",
+      "method": "MINCO-risk",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.1100228008096718,
+      "full_body_risk": 6.233907487663164e-10,
+      "jerk_energy": 3.7249287474893222,
+      "goal_error": 5.775561153410717e-16,
+      "nearest_link": "foreArm_Link",
+      "elapsed_ms": 1006.9390169810504
+    },
+    {
+      "scenario": "B",
+      "method": "RRT-Connect + smoothing",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.09245987169761193,
+      "full_body_risk": 1.7222571040369896e-06,
+      "jerk_energy": 2.2012279428733423,
+      "goal_error": 5.417672226377439e-16,
+      "nearest_link": "foreArm_Link",
+      "elapsed_ms": 1423.6464397748932
+    },
+    {
+      "scenario": "C",
+      "method": "MINCO-base",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.00024348479495086615,
+      "full_body_risk": 0.0029925518013129435,
+      "jerk_energy": 1.2507644733253485,
+      "goal_error": 1.4752290795525882e-16,
+      "nearest_link": "wrist2_Link",
+      "elapsed_ms": 0.0
+    },
+    {
+      "scenario": "C",
+      "method": "MINCO-risk",
+      "solver_success": true,
+      "accepted": true,
+      "D_min_dense": 0.18446973750107312,
+      "full_body_risk": 0.0,
+      "jerk_energy": 4.070904228591822,
+      "goal_error": 7.390492082589766e-16,
+      "nearest_link": "wrist1_Link",
+      "elapsed_ms": 1406.8211219273508
+    },
+    {
+      "scenario": "C",
+      "method": "RRT-Connect + smoothing",
+      "solver_success": true,
+      "accepted": false,
+      "D_min_dense": 0.05576183164075954,
+      "full_body_risk": 3.184298810443267e-05,
+      "jerk_energy": 3.080662963765995,
+      "goal_error": 1.594436429147036e-16,
+      "nearest_link": "foreArm_Link",
+      "elapsed_ms": 2791.629806999117
+    }
+  ],
+  "rrt_multiseed": [
+    {
+      "scenario": "A",
+      "n": 5,
+      "success_rate": 1.0,
+      "accepted_rate": 1.0,
+      "D_min_mean": 0.08490275055956728,
+      "D_min_std": 0.028023990098455562,
+      "D_min_ci95": 0.02456411036948364,
+      "J_smooth_mean": 0.9856956764007488,
+      "J_smooth_std": 1.3547476151286433,
+      "elapsed_ms_mean": 1362.221447774209,
+      "elapsed_ms_std": 345.7202428369413
+    },
+    {
+      "scenario": "B",
+      "n": 5,
+      "success_rate": 1.0,
+      "accepted_rate": 1.0,
+      "D_min_mean": 0.09245987169761193,
+      "D_min_std": 0.03919010462631448,
+      "D_min_ci95": 0.03435164129198912,
+      "J_smooth_mean": 2.2012279428733423,
+      "J_smooth_std": 3.1395580191207704,
+      "elapsed_ms_mean": 1423.6464397748932,
+      "elapsed_ms_std": 448.42521703151505
+    },
+    {
+      "scenario": "C",
+      "n": 5,
+      "success_rate": 1.0,
+      "accepted_rate": 0.6,
+      "D_min_mean": 0.05576183164075954,
+      "D_min_std": 0.03610669740580708,
+      "D_min_ci95": 0.03164891569822078,
+      "J_smooth_mean": 3.080662963765995,
+      "J_smooth_std": 5.128239418373728,
+      "elapsed_ms_mean": 2791.629806999117,
+      "elapsed_ms_std": 617.9454757135302
+    }
+  ],
+  "external_references": {
+    "minco": {
+      "paper": "Wang et al., Geometrically Constrained Trajectory Optimization for Multicopters, IEEE T-RO 2022",
+      "repo": "https://github.com/ZJU-FAST-Lab/GCOPTER",
+      "adaptation": "joint-space s=3 minimum-jerk MINCO with shared full-body risk verifier"
+    },
+    "rrt_connect": {
+      "adaptation": "joint-space bidirectional RRT-Connect, shortcut smoothing, MINCO time parameterization"
+    }
+  },
+  "representation": [
+    {
+      "method": "single_quintic",
+      "duration": 5.999999999999999,
+      "jerk_energy": 0.07013888888888895
+    },
+    {
+      "method": "nubs_fixed",
+      "duration": 5.999999999999999,
+      "jerk_energy": 0.07013888888899371
+    },
+    {
+      "method": "nubs_variable",
+      "duration": 6.1581820328306405,
+      "jerk_energy": 0.06158182031087196
+    }
+  ],
+  "lambda_time_sweep": [
+    {
+      "lambda_time": 0.02,
+      "success": true,
+      "duration": 7.174239226968634,
+      "jerk_energy": 0.028696958016642026,
+      "objective": 0.1721817425560147,
+      "max_limit_violation": 0.0
+    },
+    {
+      "lambda_time": 0.05,
+      "success": true,
+      "duration": 6.1581820328306405,
+      "jerk_energy": 0.06158182031087196,
+      "objective": 0.369490921952404,
+      "max_limit_violation": 0.0
+    },
+    {
+      "lambda_time": 0.1,
+      "success": true,
+      "duration": 5.486316479428286,
+      "jerk_energy": 0.10972632952094138,
+      "objective": 0.65835797746377,
+      "max_limit_violation": 0.0
+    },
+    {
+      "lambda_time": 0.2,
+      "success": true,
+      "duration": 4.887752318180432,
+      "jerk_energy": 0.19551009276378573,
+      "objective": 1.1730605563998722,
+      "max_limit_violation": 0.0
+    }
+  ],
+  "missing_external_baselines": [],
+  "accepted": true
+}

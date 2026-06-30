@@ -1,0 +1,3 @@
+- Scenario D is an emergency safety-takeover case; unfinished goal is expected and should not be counted as task failure.
+- P4 scenario A A6 now finishes after fail-soft state-mismatch recovery; state_mismatch_holds should remain zero in the current run.
+- P5 reports finite-budget dense-feasible acceptance separately from strict solver convergence.

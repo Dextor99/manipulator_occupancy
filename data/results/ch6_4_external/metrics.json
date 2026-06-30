@@ -1,0 +1,1437 @@
+{
+  "source": "External baselines reproduced for Chapter 6.4",
+  "references": {
+    "minco": {
+      "paper": "Wang et al., Geometrically Constrained Trajectory Optimization for Multicopters, IEEE T-RO 2022",
+      "repo": "https://github.com/ZJU-FAST-Lab/GCOPTER",
+      "adaptation": "joint-space s=3 minimum-jerk MINCO with shared full-body risk verifier"
+    },
+    "rrt_connect": {
+      "adaptation": "joint-space bidirectional RRT-Connect, shortcut smoothing, MINCO time parameterization"
+    }
+  },
+  "scenarios": {
+    "A": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.7221647193929861,
+              0.028285450924250152,
+              0.8150320019610477
+            ],
+            "surface_point": [
+              0.7101723490430398,
+              0.032383161219111306,
+              0.8243837036098987
+            ],
+            "time": 4.5,
+            "fraction": 0.5625,
+            "link": "right_link",
+            "endpoint_clearance": 0.3915596124677281,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 1800
+      },
+      "methods": {
+        "minco_base": {
+          "method": "minco_base",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.003486073710776503,
+          "full_body_risk_cost": 0.003486073710776503,
+          "optimization_sample_min_distance": 0.0008281541386358598,
+          "nearest_link": "gripper_base_link",
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 1.4752290795525882e-16,
+            "min_distance": 0.00022178896141602462,
+            "nearest_link": "right_link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 0.0,
+            "validation_ms": 3908.8451439747587,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "analytic fixed-knot MINCO baseline",
+            "initial_cost": 0.06253822366626742,
+            "final_cost": 0.06253822366626742,
+            "initial_energy": 1.2507644733253485,
+            "final_energy": 1.2507644733253485,
+            "final_risk": 0.0,
+            "final_min_distance": Infinity,
+            "penalty_cost": 0.0,
+            "iterations": 0,
+            "function_evaluations": 1,
+            "gradient_norm": 0.0,
+            "elapsed_ms": 0.0,
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0
+          },
+          "p_inner": [
+            [
+              0.2,
+              -0.45999999999999996,
+              1.22,
+              0.16000000000000003,
+              0.86,
+              -0.13999999999999999
+            ],
+            [
+              0.42500000000000004,
+              -0.3025,
+              1.0174999999999998,
+              0.3400000000000001,
+              0.7025,
+              -0.2975
+            ],
+            [
+              0.7000000000000001,
+              -0.10999999999999999,
+              0.7699999999999999,
+              0.56,
+              0.51,
+              -0.49
+            ]
+          ]
+        },
+        "minco_risk": {
+          "method": "minco_risk",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 1.3667442900863078e-08,
+          "full_body_risk_cost": 1.3667442900863078e-08,
+          "optimization_sample_min_distance": 0.11137696233208128,
+          "nearest_link": "wrist2_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 5.775561153410717e-16,
+            "min_distance": 0.11134985210093945,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 0.0,
+            "validation_ms": 3951.836042921059,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget derivative-free MINCO-risk refinement",
+            "initial_cost": 18.433175851051526,
+            "final_cost": 0.1862464373744661,
+            "initial_energy": 1.2507644733253485,
+            "final_energy": 3.7249287474893222,
+            "final_risk": 6.83372145043154e-08,
+            "final_min_distance": 0.11137696233208128,
+            "penalty_cost": 0.0,
+            "iterations": 32,
+            "function_evaluations": 33,
+            "gradient_norm": 0.0,
+            "elapsed_ms": 985.505479038693,
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0
+          },
+          "p_inner": [
+            [
+              -0.022156823741596138,
+              -0.6665940957400274,
+              1.4200676938731873,
+              0.11919523061914422,
+              1.0991897740889462,
+              0.19236647170474996
+            ],
+            [
+              0.2102374769385544,
+              -0.14410435232857818,
+              1.29748855165538,
+              -0.07337232440462717,
+              1.172611316394502,
+              0.7143177389681536
+            ],
+            [
+              1.0134091584002871,
+              0.37821834867359383,
+              1.1063850833847841,
+              -0.03792658378782286,
+              0.5968476725552367,
+              -0.025003444015611054
+            ]
+          ]
+        },
+        "rrt_connect_smooth": {
+          "method": "rrt_connect_smooth",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 1.777259819191771e-05,
+          "full_body_risk_cost": 1.777259819191771e-05,
+          "optimization_sample_min_distance": 0.08490275055956728,
+          "nearest_link": "wrist2_Link",
+          "verification": {
+            "accepted": true,
+            "success_rate": 1.0,
+            "min_distance": 0.08490275055956728,
+            "min_distance_std": 0.028023990098455562,
+            "min_distance_ci95": 0.02456411036948364,
+            "goal_error": 2.5172027167143304e-16,
+            "reasons": []
+          },
+          "optimization": {
+            "success": true,
+            "elapsed_ms": 1362.221447774209,
+            "elapsed_ms_std": 345.7202428369413,
+            "elapsed_ms_ci95": 303.0371539590051,
+            "waypoint_count": 3.4,
+            "waypoint_count_std": 0.5477225575051661,
+            "final_energy": 0.9856956764007488,
+            "final_energy_std": 1.3547476151286433,
+            "final_energy_ci95": 1.1874886418350805
+          },
+          "rrt_trials": [
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 2.0210926685379596e-07,
+              "full_body_risk_cost": 2.0210926685379596e-07,
+              "optimization_sample_min_distance": 0.10290003660773432,
+              "nearest_link": "wrist2_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 5.502328482176191e-16,
+                "min_distance": 0.10209259780898179,
+                "nearest_link": "wrist2_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3986.6064239759,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1621.4167909929529,
+                "iterations": 43,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 1.085494666629212
+              },
+              "seed": 20267868
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 3.7476690536997627e-06,
+              "full_body_risk_cost": 3.7476690536997627e-06,
+              "optimization_sample_min_distance": 0.09112737505664156,
+              "nearest_link": "left_link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 3.152427400121712e-16,
+                "min_distance": 0.08333024715426544,
+                "nearest_link": "left_link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3877.4002760183066,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1023.1934699695557,
+                "iterations": 16,
+                "waypoint_count": 3,
+                "duration": 8.0,
+                "final_energy": 0.15841859076217074
+              },
+              "seed": 20267965
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 0.0,
+              "full_body_risk_cost": 0.0,
+              "optimization_sample_min_distance": 0.12464518673505283,
+              "nearest_link": "wrist2_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 2.5172027167143304e-16,
+                "min_distance": 0.12196972765230536,
+                "nearest_link": "wrist2_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3764.4689090084285,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1828.8181639509276,
+                "iterations": 11,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 3.3045903264958465
+              },
+              "seed": 20268062
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 2.7926481843216196e-05,
+              "full_body_risk_cost": 2.7926481843216196e-05,
+              "optimization_sample_min_distance": 0.06940668573591366,
+              "nearest_link": "left_link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 3.433175098891678e-16,
+                "min_distance": 0.06494936312097058,
+                "nearest_link": "left_link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3889.673136989586,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1210.4448549216613,
+                "iterations": 25,
+                "waypoint_count": 3,
+                "duration": 8.0,
+                "final_energy": 0.23146910834881262
+              },
+              "seed": 20268159
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 5.6986730795818784e-05,
+              "full_body_risk_cost": 5.6986730795818784e-05,
+              "optimization_sample_min_distance": 0.057956038844997976,
+              "nearest_link": "left_link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 4.509747244882934e-16,
+                "min_distance": 0.052171817061313165,
+                "nearest_link": "left_link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3888.2906229700893,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1127.233959035948,
+                "iterations": 13,
+                "waypoint_count": 3,
+                "duration": 8.0,
+                "final_energy": 0.14850568976770268
+              },
+              "seed": 20268256
+            }
+          ],
+          "statistics": {
+            "n": 5,
+            "success_rate": 1.0,
+            "accepted_rate": 1.0,
+            "D_min": {
+              "mean": 0.08490275055956728,
+              "std": 0.028023990098455562,
+              "ci95": 0.02456411036948364
+            },
+            "J_smooth": {
+              "mean": 0.9856956764007488,
+              "std": 1.3547476151286433,
+              "ci95": 1.1874886418350805
+            },
+            "elapsed_ms": {
+              "mean": 1362.221447774209,
+              "std": 345.7202428369413,
+              "ci95": 303.0371539590051
+            }
+          }
+        }
+      }
+    },
+    "B": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.4555120616322512,
+              0.2410066914006925,
+              0.75299783109259
+            ],
+            "surface_point": [
+              0.44544684036188287,
+              0.22940158890263146,
+              0.7495228610512772
+            ],
+            "time": 4.0,
+            "fraction": 0.5,
+            "link": "foreArm_Link",
+            "endpoint_clearance": 0.34169593754114663,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 1800
+      },
+      "methods": {
+        "minco_base": {
+          "method": "minco_base",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0001911635716911166,
+          "full_body_risk_cost": 0.0001911635716911166,
+          "optimization_sample_min_distance": 0.0015085296333119487,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 1.4752290795525882e-16,
+            "min_distance": 0.0004148183363355153,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 0.0,
+            "validation_ms": 3995.331953978166,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "analytic fixed-knot MINCO baseline",
+            "initial_cost": 0.06253822366626742,
+            "final_cost": 0.06253822366626742,
+            "initial_energy": 1.2507644733253485,
+            "final_energy": 1.2507644733253485,
+            "final_risk": 0.0,
+            "final_min_distance": Infinity,
+            "penalty_cost": 0.0,
+            "iterations": 0,
+            "function_evaluations": 1,
+            "gradient_norm": 0.0,
+            "elapsed_ms": 0.0,
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0
+          },
+          "p_inner": [
+            [
+              0.2,
+              -0.45999999999999996,
+              1.22,
+              0.16000000000000003,
+              0.86,
+              -0.13999999999999999
+            ],
+            [
+              0.42500000000000004,
+              -0.3025,
+              1.0174999999999998,
+              0.3400000000000001,
+              0.7025,
+              -0.2975
+            ],
+            [
+              0.7000000000000001,
+              -0.10999999999999999,
+              0.7699999999999999,
+              0.56,
+              0.51,
+              -0.49
+            ]
+          ]
+        },
+        "minco_risk": {
+          "method": "minco_risk",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 6.233907487663164e-10,
+          "full_body_risk_cost": 6.233907487663164e-10,
+          "optimization_sample_min_distance": 0.11637751807988901,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 5.775561153410717e-16,
+            "min_distance": 0.1100228008096718,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 0.0,
+            "validation_ms": 4011.9549239752814,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget derivative-free MINCO-risk refinement",
+            "initial_cost": 1.5162558846703513,
+            "final_cost": 0.1862464373744661,
+            "initial_energy": 1.2507644733253485,
+            "final_energy": 3.7249287474893222,
+            "final_risk": 0.0,
+            "final_min_distance": 0.131306377411674,
+            "penalty_cost": 0.0,
+            "iterations": 32,
+            "function_evaluations": 33,
+            "gradient_norm": 0.0,
+            "elapsed_ms": 1006.9390169810504,
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0
+          },
+          "p_inner": [
+            [
+              -0.022156823741596138,
+              -0.6665940957400274,
+              1.4200676938731873,
+              0.11919523061914422,
+              1.0991897740889462,
+              0.19236647170474996
+            ],
+            [
+              0.2102374769385544,
+              -0.14410435232857818,
+              1.29748855165538,
+              -0.07337232440462717,
+              1.172611316394502,
+              0.7143177389681536
+            ],
+            [
+              1.0134091584002871,
+              0.37821834867359383,
+              1.1063850833847841,
+              -0.03792658378782286,
+              0.5968476725552367,
+              -0.025003444015611054
+            ]
+          ]
+        },
+        "rrt_connect_smooth": {
+          "method": "rrt_connect_smooth",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 1.7222571040369896e-06,
+          "full_body_risk_cost": 1.7222571040369896e-06,
+          "optimization_sample_min_distance": 0.09245987169761193,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": true,
+            "success_rate": 1.0,
+            "min_distance": 0.09245987169761193,
+            "min_distance_std": 0.03919010462631448,
+            "min_distance_ci95": 0.03435164129198912,
+            "goal_error": 5.417672226377439e-16,
+            "reasons": []
+          },
+          "optimization": {
+            "success": true,
+            "elapsed_ms": 1423.6464397748932,
+            "elapsed_ms_std": 448.42521703151505,
+            "elapsed_ms_ci95": 393.0620330981651,
+            "waypoint_count": 3.4,
+            "waypoint_count_std": 0.5477225575051661,
+            "final_energy": 2.2012279428733423,
+            "final_energy_std": 3.1395580191207704,
+            "final_energy_ci95": 2.7519439388229814
+          },
+          "rrt_trials": [
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 2.177483267897885e-06,
+              "full_body_risk_cost": 2.177483267897885e-06,
+              "optimization_sample_min_distance": 0.06292435418044834,
+              "nearest_link": "foreArm_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 3.5652682413747997e-16,
+                "min_distance": 0.06288574834202162,
+                "nearest_link": "foreArm_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 4030.967307044193,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1936.9477009167895,
+                "iterations": 43,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 2.9663698774855582
+              },
+              "seed": 20267881
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 0.0,
+              "full_body_risk_cost": 0.0,
+              "optimization_sample_min_distance": 0.13374983538265292,
+              "nearest_link": "foreArm_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 2.5438405243138006e-16,
+                "min_distance": 0.1326981065652651,
+                "nearest_link": "foreArm_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 4005.107017001137,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 976.8050910206512,
+                "iterations": 4,
+                "waypoint_count": 3,
+                "duration": 8.0,
+                "final_energy": 0.17717130949853666
+              },
+              "seed": 20267978
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 0.0,
+              "full_body_risk_cost": 0.0,
+              "optimization_sample_min_distance": 0.13677849616542068,
+              "nearest_link": "foreArm_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 5.417672226377439e-16,
+                "min_distance": 0.1327996152817459,
+                "nearest_link": "foreArm_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3992.9586740909144,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1427.297157002613,
+                "iterations": 20,
+                "waypoint_count": 3,
+                "duration": 8.0,
+                "final_energy": 0.34250285805803005
+              },
+              "seed": 20268075
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 5.798851242069947e-06,
+              "full_body_risk_cost": 5.798851242069947e-06,
+              "optimization_sample_min_distance": 0.04840776648729999,
+              "nearest_link": "foreArm_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 7.952832160537328e-16,
+                "min_distance": 0.047961610882285156,
+                "nearest_link": "foreArm_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3999.205079046078,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 977.054827963002,
+                "iterations": 8,
+                "waypoint_count": 3,
+                "duration": 8.0,
+                "final_energy": 0.12477941709695897
+              },
+              "seed": 20268172
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 6.34951010217117e-07,
+              "full_body_risk_cost": 6.34951010217117e-07,
+              "optimization_sample_min_distance": 0.08802991975074577,
+              "nearest_link": "foreArm_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 3.815760786470701e-16,
+                "min_distance": 0.08595427741674187,
+                "nearest_link": "foreArm_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 3999.6758999768645,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1800.1274219714105,
+                "iterations": 3,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 7.3953162522276275
+              },
+              "seed": 20268269
+            }
+          ],
+          "statistics": {
+            "n": 5,
+            "success_rate": 1.0,
+            "accepted_rate": 1.0,
+            "D_min": {
+              "mean": 0.09245987169761193,
+              "std": 0.03919010462631448,
+              "ci95": 0.03435164129198912
+            },
+            "J_smooth": {
+              "mean": 2.2012279428733423,
+              "std": 3.1395580191207704,
+              "ci95": 2.7519439388229814
+            },
+            "elapsed_ms": {
+              "mean": 1423.6464397748932,
+              "std": 448.42521703151505,
+              "ci95": 393.0620330981651
+            }
+          }
+        }
+      }
+    },
+    "C": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.6602383073401354,
+              0.09917136131666977,
+              0.8256826488707895
+            ],
+            "surface_point": [
+              0.648873285821282,
+              0.09343313629946597,
+              0.8164105639095773
+            ],
+            "time": 3.75,
+            "fraction": 0.46875,
+            "link": "wrist2_Link",
+            "endpoint_clearance": 0.3825051337407695,
+            "radius": 0.035
+          },
+          {
+            "center": [
+              0.2827721666850315,
+              0.24122681355181957,
+              0.8974351849908268
+            ],
+            "surface_point": [
+              0.27715228537284997,
+              0.22909171333118272,
+              0.8891154027417476
+            ],
+            "time": 5.0,
+            "fraction": 0.625,
+            "link": "foreArm_Link",
+            "endpoint_clearance": 0.20740776668748093,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 3600
+      },
+      "methods": {
+        "minco_base": {
+          "method": "minco_base",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0029925518013129435,
+          "full_body_risk_cost": 0.0029925518013129435,
+          "optimization_sample_min_distance": 0.00045848255911748426,
+          "nearest_link": "wrist2_Link",
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 1.4752290795525882e-16,
+            "min_distance": 0.00024348479495086615,
+            "nearest_link": "gripper_base_link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 0.0,
+            "validation_ms": 10647.009733947925,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "analytic fixed-knot MINCO baseline",
+            "initial_cost": 0.06253822366626742,
+            "final_cost": 0.06253822366626742,
+            "initial_energy": 1.2507644733253485,
+            "final_energy": 1.2507644733253485,
+            "final_risk": 0.0,
+            "final_min_distance": Infinity,
+            "penalty_cost": 0.0,
+            "iterations": 0,
+            "function_evaluations": 1,
+            "gradient_norm": 0.0,
+            "elapsed_ms": 0.0,
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0
+          },
+          "p_inner": [
+            [
+              0.2,
+              -0.45999999999999996,
+              1.22,
+              0.16000000000000003,
+              0.86,
+              -0.13999999999999999
+            ],
+            [
+              0.42500000000000004,
+              -0.3025,
+              1.0174999999999998,
+              0.3400000000000001,
+              0.7025,
+              -0.2975
+            ],
+            [
+              0.7000000000000001,
+              -0.10999999999999999,
+              0.7699999999999999,
+              0.56,
+              0.51,
+              -0.49
+            ]
+          ]
+        },
+        "minco_risk": {
+          "method": "minco_risk",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.18891888410216054,
+          "nearest_link": "wrist1_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 7.390492082589766e-16,
+            "min_distance": 0.18446973750107312,
+            "nearest_link": "wrist1_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 0.0,
+            "validation_ms": 10467.951434082352,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget derivative-free MINCO-risk refinement",
+            "initial_cost": 15.160954552760312,
+            "final_cost": 0.20354521142959114,
+            "initial_energy": 1.2507644733253485,
+            "final_energy": 4.070904228591822,
+            "final_risk": 0.0,
+            "final_min_distance": 0.18891888410216054,
+            "penalty_cost": 0.0,
+            "iterations": 32,
+            "function_evaluations": 33,
+            "gradient_norm": 0.0,
+            "elapsed_ms": 1406.8211219273508,
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0
+          },
+          "p_inner": [
+            [
+              -0.10438910663535692,
+              -0.5213526244257379,
+              1.20746298028604,
+              0.017548239383701397,
+              0.9567275277324635,
+              0.042018398601067125
+            ],
+            [
+              -0.26462648853012294,
+              -0.06645183932266224,
+              0.75986089735511,
+              0.05642584961922788,
+              1.0543333393624084,
+              0.7216992719932324
+            ],
+            [
+              0.5769967266688453,
+              0.5487262721882352,
+              0.7341205951904993,
+              0.09661254991739956,
+              0.7401597197141921,
+              0.22558122673844938
+            ]
+          ]
+        },
+        "rrt_connect_smooth": {
+          "method": "rrt_connect_smooth",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 3.184298810443267e-05,
+          "full_body_risk_cost": 3.184298810443267e-05,
+          "optimization_sample_min_distance": 0.05576183164075954,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": false,
+            "success_rate": 0.6,
+            "min_distance": 0.05576183164075954,
+            "min_distance_std": 0.03610669740580708,
+            "min_distance_ci95": 0.03164891569822078,
+            "goal_error": 1.594436429147036e-16,
+            "reasons": [
+              "some_rrt_seeds_failed_dense_verification"
+            ]
+          },
+          "optimization": {
+            "success": true,
+            "elapsed_ms": 2791.629806999117,
+            "elapsed_ms_std": 617.9454757135302,
+            "elapsed_ms_ci95": 541.6530913128883,
+            "waypoint_count": 3.8,
+            "waypoint_count_std": 0.4472135954999579,
+            "final_energy": 3.080662963765995,
+            "final_energy_std": 5.128239418373728,
+            "final_energy_ci95": 4.495100042196035
+          },
+          "rrt_trials": [
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 6.453402382010451e-05,
+              "full_body_risk_cost": 6.453402382010451e-05,
+              "optimization_sample_min_distance": 0.022381253814499104,
+              "nearest_link": "wrist2_Link",
+              "verification": {
+                "accepted": false,
+                "reasons": [
+                  "distance_ok"
+                ],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": false,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 4.062661642740952e-16,
+                "min_distance": 0.014491577208040455,
+                "nearest_link": "wrist2_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 10906.274336972274,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 3011.9547579670325,
+                "iterations": 39,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 0.6602940814732872
+              },
+              "seed": 20267894
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 7.28786420336114e-05,
+              "full_body_risk_cost": 7.28786420336114e-05,
+              "optimization_sample_min_distance": 0.038931585824118396,
+              "nearest_link": "wrist2_Link",
+              "verification": {
+                "accepted": false,
+                "reasons": [
+                  "distance_ok"
+                ],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": false,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 4.272916553455145e-16,
+                "min_distance": 0.03885768575766942,
+                "nearest_link": "wrist2_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 10668.039257987402,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 3413.953688926995,
+                "iterations": 50,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 0.7043636090452066
+              },
+              "seed": 20267991
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 1.668389718910757e-05,
+              "full_body_risk_cost": 1.668389718910757e-05,
+              "optimization_sample_min_distance": 0.04844832207977432,
+              "nearest_link": "foreArm_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 2.5589376332604516e-16,
+                "min_distance": 0.04813607021728904,
+                "nearest_link": "foreArm_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 10600.546758971177,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 1762.7595770172775,
+                "iterations": 5,
+                "waypoint_count": 3,
+                "duration": 8.0,
+                "final_energy": 0.11514673516350737
+              },
+              "seed": 20268088
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 2.6862343849274746e-09,
+              "full_body_risk_cost": 2.6862343849274746e-09,
+              "optimization_sample_min_distance": 0.11430320080096504,
+              "nearest_link": "foreArm_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 1.594436429147036e-16,
+                "min_distance": 0.11105395865958512,
+                "nearest_link": "foreArm_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 10072.727922932245,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 2973.2932900078595,
+                "iterations": 8,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 12.19483906929194
+              },
+              "seed": 20268185
+            },
+            {
+              "method": "rrt_connect_smooth",
+              "solver_success": true,
+              "optimized_links": null,
+              "risk_cost_for_method": 5.115691244954918e-06,
+              "full_body_risk_cost": 5.115691244954918e-06,
+              "optimization_sample_min_distance": 0.06691813492030069,
+              "nearest_link": "wrist2_Link",
+              "verification": {
+                "accepted": true,
+                "reasons": [],
+                "checks": {
+                  "solver_ok": true,
+                  "finite_ok": true,
+                  "goal_ok": true,
+                  "distance_ok": true,
+                  "position_ok": true,
+                  "velocity_ok": true,
+                  "acceleration_ok": true,
+                  "continuity_q_ok": true,
+                  "continuity_qd_ok": true,
+                  "continuity_qdd_ok": true
+                },
+                "goal_error": 1.1102230246251565e-16,
+                "min_distance": 0.06626986636121368,
+                "nearest_link": "wrist2_Link",
+                "max_q_violation": 0.0,
+                "max_qd_violation": 0.0,
+                "max_qdd_violation": 0.0,
+                "continuity_q": 0.0,
+                "continuity_qd": 0.0,
+                "continuity_qdd": 0.0,
+                "validation_ms": 10597.432146081701,
+                "self_collision_checked": false
+              },
+              "optimization": {
+                "success": true,
+                "elapsed_ms": 2796.1877210764214,
+                "iterations": 24,
+                "waypoint_count": 4,
+                "duration": 8.0,
+                "final_energy": 1.7286713238560343
+              },
+              "seed": 20268282
+            }
+          ],
+          "statistics": {
+            "n": 5,
+            "success_rate": 1.0,
+            "accepted_rate": 0.6,
+            "D_min": {
+              "mean": 0.05576183164075954,
+              "std": 0.03610669740580708,
+              "ci95": 0.03164891569822078
+            },
+            "J_smooth": {
+              "mean": 3.080662963765995,
+              "std": 5.128239418373728,
+              "ci95": 4.495100042196035
+            },
+            "elapsed_ms": {
+              "mean": 2791.629806999117,
+              "std": 617.9454757135302,
+              "ci95": 541.6530913128883
+            }
+          }
+        }
+      }
+    }
+  },
+  "accepted": true
+}

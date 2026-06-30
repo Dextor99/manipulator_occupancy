@@ -1,0 +1,250 @@
+{
+  "source": "Chapter 6.7 ablation and timing summary",
+  "source_files": {
+    "p1": "data/results/ccro_p1/metrics.json",
+    "p5": "data/results/ccro_p5/metrics.json",
+    "p6": "data/results/ccro_p6/metrics.json",
+    "ch4_6_ablation": "data/results/ch4_6/ablation.json",
+    "ch4_6_timing": "data/results/ch4_6/timing.json",
+    "ch4_6_quality": "data/results/ch4_6/quality_check.json"
+  },
+  "risk_ablation": [
+    {
+      "method": "baseline",
+      "n": 90,
+      "pass_rate": 0.0,
+      "d_min_mean": 0.00045399976306245487,
+      "d_min_p05": 0.0,
+      "d_min_min": 0.0,
+      "time_below_d_stop_mean": 1.422777777777778
+    },
+    {
+      "method": "current_full",
+      "n": 90,
+      "pass_rate": 0.0,
+      "d_min_mean": 0.00045399976306245487,
+      "d_min_p05": 0.0,
+      "d_min_min": 0.0,
+      "time_below_d_stop_mean": 1.422777777777778
+    },
+    {
+      "method": "temporal_ee",
+      "n": 90,
+      "pass_rate": 0.34444444444444444,
+      "d_min_mean": 0.04382410894574926,
+      "d_min_p05": 0.0,
+      "d_min_min": 0.0,
+      "time_below_d_stop_mean": 0.3894444444444445
+    },
+    {
+      "method": "temporal_full",
+      "n": 90,
+      "pass_rate": 0.9777777777777777,
+      "d_min_mean": 0.09735039663949722,
+      "d_min_p05": 0.056794917255525795,
+      "d_min_min": 0.0,
+      "time_below_d_stop_mean": 0.009444444444444441
+    }
+  ],
+  "control_ablation": [
+    {
+      "method": "Full",
+      "T_lead": 5.128593176603317,
+      "D_min_ref": 0.1968201691059277,
+      "T_viol": 0.0,
+      "R_avoid": 1.0,
+      "R_timeout": 0.0,
+      "J_q_rms": 0.4109066296086299
+    },
+    {
+      "method": "w/o Temporal Risk",
+      "T_lead": 4.735648363828659,
+      "D_min_ref": 0.1968201691059277,
+      "T_viol": 0.0,
+      "R_avoid": 1.0,
+      "R_timeout": 0.0,
+      "J_q_rms": 0.4109066296086299
+    },
+    {
+      "method": "w/o Repulsive Vector",
+      "T_lead": 5.128593176603317,
+      "D_min_ref": 0.05608771446078403,
+      "T_viol": 0.43166680335998536,
+      "R_avoid": 0.5,
+      "R_timeout": 0.0,
+      "J_q_rms": 0.21524012861571543
+    },
+    {
+      "method": "w/o Safety Filter",
+      "T_lead": 5.128593176603317,
+      "D_min_ref": 0.10408781493646793,
+      "T_viol": 0.0,
+      "R_avoid": 1.0,
+      "R_timeout": 0.0,
+      "J_q_rms": 0.3714669804156018
+    }
+  ],
+  "timing_modules": [
+    {
+      "module": "T_pre_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_dec_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_obj_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_trk_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_risk_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_rep_ms",
+      "mean_ms": 40.88825329943299,
+      "p95_ms": 199.8849805462667,
+      "ratio": 1.0,
+      "nonzero_rows": 3300
+    },
+    {
+      "module": "T_cmd_ms",
+      "mean_ms": 40.88825329943299,
+      "p95_ms": 199.8849805462667,
+      "ratio": 1.0,
+      "nonzero_rows": 3300
+    },
+    {
+      "module": "T_frame_ms",
+      "mean_ms": 40.88825329943299,
+      "p95_ms": 199.8849805462667,
+      "ratio": 1.0,
+      "nonzero_rows": 3300
+    }
+  ],
+  "realtime_planning": {
+    "runs": 30,
+    "mean_ms": 848.6546637665015,
+    "p95_ms": 997.5241253014246,
+    "max_ms": 1006.3509530009469,
+    "timeout_rate": 0.03333333333333333,
+    "dense_feasible_accept_rate": 1.0,
+    "strict_accept_rate": 0.5,
+    "solver_convergence_rate": 0.5,
+    "control_p95_ms": 8.636465998279164
+  },
+  "representation": [
+    {
+      "method": "single_quintic",
+      "duration": 5.999999999999999,
+      "jerk_energy": 0.07013888888888895
+    },
+    {
+      "method": "nubs_fixed",
+      "duration": 5.999999999999999,
+      "jerk_energy": 0.07013888888899371
+    },
+    {
+      "method": "nubs_variable",
+      "duration": 6.1581820328306405,
+      "jerk_energy": 0.06158182031087196
+    }
+  ],
+  "lambda_time_sweep": [
+    {
+      "lambda_time": 0.02,
+      "success": true,
+      "duration": 7.174239226968634,
+      "jerk_energy": 0.028696958016642026,
+      "objective": 0.1721817425560147,
+      "max_limit_violation": 0.0
+    },
+    {
+      "lambda_time": 0.05,
+      "success": true,
+      "duration": 6.1581820328306405,
+      "jerk_energy": 0.06158182031087196,
+      "objective": 0.369490921952404,
+      "max_limit_violation": 0.0
+    },
+    {
+      "lambda_time": 0.1,
+      "success": true,
+      "duration": 5.486316479428286,
+      "jerk_energy": 0.10972632952094138,
+      "objective": 0.65835797746377,
+      "max_limit_violation": 0.0
+    },
+    {
+      "lambda_time": 0.2,
+      "success": true,
+      "duration": 4.887752318180432,
+      "jerk_energy": 0.19551009276378573,
+      "objective": 1.1730605563998722,
+      "max_limit_violation": 0.0
+    }
+  ],
+  "quality_checks": [
+    {
+      "name": "时空预测消融",
+      "passed": true,
+      "detail": "Full T_lead=5.1286, w/o Temporal=4.7356"
+    },
+    {
+      "name": "排斥向量消融",
+      "passed": true,
+      "detail": "Full D_min_ref=0.1968, w/o Rep D_min_ref=0.0561, w/o Rep T_viol=0.4317"
+    },
+    {
+      "name": "安全滤波消融",
+      "passed": true,
+      "detail": "Full D_min_ref=0.1968, w/o Filter D_min_ref=0.1041"
+    },
+    {
+      "name": "试次数量",
+      "passed": true,
+      "detail": "4.5 闭环消融统计 n_trials=10"
+    },
+    {
+      "name": "实时性日志完整性",
+      "passed": false,
+      "detail": "当前 4.5 日志只对控制器/排斥计算段计时；感知预处理、解耦、聚类、跟踪、预测列为 0。"
+    },
+    {
+      "name": "控制段实时性目标",
+      "passed": false,
+      "detail": "T_ctrl^95=199.8850 ms，目标 < 20 ms。"
+    },
+    {
+      "name": "端到端实时性目标",
+      "passed": false,
+      "detail": "T_frame^95=199.8850 ms；但当前缺少完整感知模块计时。"
+    }
+  ],
+  "accepted": true,
+  "consistency_notes": [
+    "Simulation and real replay agree that temporal full-body risk is necessary for body-link obstacles.",
+    "Current real timing logs contain controller-side timing but not complete RGB-D preprocessing timing; use 6.6/6.7 timing claims conservatively.",
+    "P5 optimized planner timing is the best current source for online replanning budget."
+  ]
+}

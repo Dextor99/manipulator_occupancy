@@ -1,0 +1,103 @@
+{
+  "source": "Chapter 6.8 discussion summary",
+  "availability": {
+    "6.2 sim": {
+      "path": "data/results/ch6_2_sim/metrics.json",
+      "exists": true
+    },
+    "6.2 real": {
+      "path": "data/results/ch6_2_real/metrics.json",
+      "exists": true
+    },
+    "6.3 sim": {
+      "path": "data/results/ch6_3_sim/metrics.json",
+      "exists": true
+    },
+    "6.3 real": {
+      "path": "data/results/ch6_3_real/metrics.json",
+      "exists": true
+    },
+    "6.4": {
+      "path": "data/results/ch6_4/metrics.json",
+      "exists": true
+    },
+    "6.5": {
+      "path": "data/results/ch6_5/metrics.json",
+      "exists": true
+    },
+    "6.6": {
+      "path": "data/results/ch6_6/metrics.json",
+      "exists": true
+    },
+    "6.7": {
+      "path": "data/results/ch6_7/metrics.json",
+      "exists": true
+    }
+  },
+  "evidence_chain": [
+    {
+      "claim": "对象级时空占据可支持动态障碍预警",
+      "section": "6.2",
+      "evidence": "sim/real occupancy and warning tables",
+      "table": "data/results/ch6_2_sim/table_6_2_sim.md; data/results/ch6_2_real/table_6_2_real_warning.md",
+      "paper_ready": true,
+      "boundary": "真实结果为回放/统计预警，不是实机轨迹切换。"
+    },
+    {
+      "claim": "全身风险距离能发现末端方法遗漏的中间连杆风险",
+      "section": "6.3",
+      "evidence": "body-link sim and real replay counterexamples",
+      "table": "data/results/ch6_3_sim/table_6_3_sim.md; data/results/ch6_3_real/table_6_3_real_methods.md",
+      "paper_ready": true,
+      "boundary": "真实部分为采集序列回放，不发送新控制命令。"
+    },
+    {
+      "claim": "CCRO-NUBS 可在静态风险场景中生成通过 dense 复核的连续轨迹",
+      "section": "6.4",
+      "evidence": "NUBS internal ablation + MINCO/RRT external baselines",
+      "table": "data/results/ch6_4/table_6_4_static_risk.md; data/results/ch6_4/table_6_4_external_baselines.md",
+      "paper_ready": true,
+      "boundary": "MINCO/RRT 为关节空间复现基线，不宣称官方工程直接部署。"
+    },
+    {
+      "claim": "动态障碍下风险触发重规划可提升最小距离并支持安全接管",
+      "section": "6.5",
+      "evidence": "virtual closed loop and rolling replanning",
+      "table": "data/results/ch6_5/table_6_5_virtual_loop.md; data/results/ch6_5/table_6_5_rolling_replan.md",
+      "paper_ready": true,
+      "boundary": "主要为虚拟闭环和软件闭环。"
+    },
+    {
+      "claim": "真实系统具备感知回放安全响应和 fail-closed 软件门控",
+      "section": "6.6",
+      "evidence": "real replay + P7 dry-run",
+      "table": "data/results/ch6_6/table_6_6_real_dynamic_response.md; data/results/ch6_6/table_6_6_readiness_gate.md",
+      "paper_ready": true,
+      "boundary": "真实在线 NUBS 轨迹切换仍 pending。"
+    },
+    {
+      "claim": "时序预测、全身风险、排斥向量和安全滤波均有独立贡献",
+      "section": "6.7",
+      "evidence": "risk and control ablations",
+      "table": "data/results/ch6_7/table_6_7_risk_ablation.md; data/results/ch6_7/table_6_7_control_ablation.md",
+      "paper_ready": true,
+      "boundary": "真实端到端完整分模块计时仍需补非零感知日志。"
+    }
+  ],
+  "limitations": [
+    "动态障碍预测采用短时匀速模型，复杂非线性人手运动下可能保守或滞后。",
+    "Mesh 表面距离和有限差分风险梯度在高采样密度下耗时较高。",
+    "在线 NUBS 重规划适合触发式低频执行，不适合每帧高频优化。",
+    "真实 RGB-D 噪声、遮挡和外参误差会导致误触发和恢复延迟。",
+    "真实在线轨迹切换仍需通过 P7 的 watchdog、通信、时间戳、急停和厂家限位检查。"
+  ],
+  "next_steps": [
+    "补真实端到端非零分模块计时。",
+    "完成 P7 low_speed_switch 实机闭环并记录 Real-N1/N2/N3。",
+    "增加 RRT-Connect 多随机种子统计。",
+    "生成 6.2-6.7 的最终论文图。",
+    "如需严格官方基线，额外部署 GCOPTER C++/ROS 并说明任务迁移边界。"
+  ],
+  "paper_ready": true,
+  "real_online_switch_complete": false
+}

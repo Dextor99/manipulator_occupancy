@@ -16,10 +16,11 @@ class SafetyExecutor:
         self.d_stop=d_stop; self.d_safe=d_safe; self.kp=tracking_gain; self.kr=repulsive_gain; self.qd_limit=qd_limit; self.state_error_limit=state_error_limit
     def command(self,q, q_ref, qd_ref, distance, risk_gradient):
         error=float(np.linalg.norm(q_ref-q))
-        if error>self.state_error_limit: return SafetyCommand(np.zeros_like(q),"state_mismatch_hold",0.,error)
         if distance<=self.d_stop: return SafetyCommand(np.zeros_like(q),"high_hold",0.,error)
+        if error>self.state_error_limit:
+            recover=self.kp*(q_ref-q)
+            return SafetyCommand(np.clip(recover,-self.qd_limit,self.qd_limit),"state_mismatch_recover",0.5,error)
         scale=1. if distance>=self.d_safe else (distance-self.d_stop)/(self.d_safe-self.d_stop)
         gradient=np.zeros_like(q) if risk_gradient is None else np.asarray(risk_gradient,float)
         qd=scale*(qd_ref+self.kp*(q_ref-q))-self.kr*gradient
         return SafetyCommand(np.clip(qd,-self.qd_limit,self.qd_limit),"low" if scale==1 else "medium",float(scale),error)
-

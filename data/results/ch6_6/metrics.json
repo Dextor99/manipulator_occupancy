@@ -1,0 +1,201 @@
+{
+  "source": "Chapter 6.6 real-system evidence summary",
+  "source_files": {
+    "real_occupancy": "data/results/ch6_2_real/metrics.json",
+    "real_body_risk": "data/results/ch6_3_real/metrics.json",
+    "ch4_6_timing": "data/results/ch4_6/timing.json",
+    "ch4_6_quality": "data/results/ch4_6/quality_check.json",
+    "p7": "data/results/ccro_p7/metrics.json"
+  },
+  "real_dynamic_response": [
+    {
+      "scene": "static_safe",
+      "trials": 1,
+      "T_lead": null,
+      "R_miss": null,
+      "R_false_time": 0.010025062656641603,
+      "D_trigger_ref": 0.2074871067283925,
+      "T_recover": null,
+      "N_switch": 6.0
+    },
+    {
+      "scene": "dynamic_approach",
+      "trials": 8,
+      "T_lead": 5.128593176603317,
+      "R_miss": 0.0,
+      "R_false_time": 0.44822218196168523,
+      "D_trigger_ref": 0.3550832712129981,
+      "T_recover": 0.8488276898860931,
+      "N_switch": 14.25
+    },
+    {
+      "scene": "recover",
+      "trials": 3,
+      "T_lead": 1.2807931105295818,
+      "R_miss": 0.0,
+      "R_false_time": 0.09495460539663218,
+      "D_trigger_ref": 0.23760854990732852,
+      "T_recover": 0.37324802080790204,
+      "N_switch": 6.333333333333333
+    }
+  ],
+  "real_body_risk": [
+    {
+      "scene": "ee_risk",
+      "trials": 8,
+      "sampled_frames": 140,
+      "ee_risk_frames": 27,
+      "body_risk_frames": 0,
+      "C_grad_D": 0.9939229407006168,
+      "G_rep": 0.0078277427527879,
+      "R_body": null,
+      "active_frames": 33,
+      "top_links": "left_link:58, gripper_base_link:57, upperArm_Link:13"
+    },
+    {
+      "scene": "body_risk",
+      "trials": 3,
+      "sampled_frames": 185,
+      "ee_risk_frames": 0,
+      "body_risk_frames": 118,
+      "C_grad_D": 0.9968264430157955,
+      "G_rep": 0.004625474011759651,
+      "R_body": 0.9606060606060606,
+      "active_frames": 132,
+      "top_links": "wrist1_Link:109, upperArm_Link:71, wrist2_Link:3"
+    }
+  ],
+  "timing": [
+    {
+      "module": "T_pre_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_dec_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_obj_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_trk_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_risk_ms",
+      "mean_ms": 0.0,
+      "p95_ms": 0.0,
+      "ratio": 0.0,
+      "nonzero_rows": 0
+    },
+    {
+      "module": "T_rep_ms",
+      "mean_ms": 40.88825329943299,
+      "p95_ms": 199.8849805462667,
+      "ratio": 1.0,
+      "nonzero_rows": 3300
+    },
+    {
+      "module": "T_cmd_ms",
+      "mean_ms": 40.88825329943299,
+      "p95_ms": 199.8849805462667,
+      "ratio": 1.0,
+      "nonzero_rows": 3300
+    },
+    {
+      "module": "T_frame_ms",
+      "mean_ms": 40.88825329943299,
+      "p95_ms": 199.8849805462667,
+      "ratio": 1.0,
+      "nonzero_rows": 3300
+    }
+  ],
+  "timing_e2e": {
+    "T_e2e_p95_ms": 199.8849805462667,
+    "f_perc_hz": 24.45690190473036,
+    "T_ctrl_p95_ms": 199.8849805462667,
+    "f_ctrl_hz": 24.45690190473036,
+    "frame_count": 3300
+  },
+  "quality_checks": [
+    {
+      "name": "时空预测消融",
+      "passed": true,
+      "detail": "Full T_lead=5.1286, w/o Temporal=4.7356"
+    },
+    {
+      "name": "排斥向量消融",
+      "passed": true,
+      "detail": "Full D_min_ref=0.1968, w/o Rep D_min_ref=0.0561, w/o Rep T_viol=0.4317"
+    },
+    {
+      "name": "安全滤波消融",
+      "passed": true,
+      "detail": "Full D_min_ref=0.1968, w/o Filter D_min_ref=0.1041"
+    },
+    {
+      "name": "试次数量",
+      "passed": true,
+      "detail": "4.5 闭环消融统计 n_trials=10"
+    },
+    {
+      "name": "实时性日志完整性",
+      "passed": false,
+      "detail": "当前 4.5 日志只对控制器/排斥计算段计时；感知预处理、解耦、聚类、跟踪、预测列为 0。"
+    },
+    {
+      "name": "控制段实时性目标",
+      "passed": false,
+      "detail": "T_ctrl^95=199.8850 ms，目标 < 20 ms。"
+    },
+    {
+      "name": "端到端实时性目标",
+      "passed": false,
+      "detail": "T_frame^95=199.8850 ms；但当前缺少完整感知模块计时。"
+    }
+  ],
+  "readiness": [
+    {
+      "mode": "dry_run",
+      "allowed": true,
+      "reason": "no trajectory-switch command is permitted",
+      "failed_checks": "self_collision_ok, watchdog_ok, communication_ok, timestamp_ok, switch_state_error_ok, emergency_stop_ok, manufacturer_limits_verified"
+    },
+    {
+      "mode": "shadow",
+      "allowed": true,
+      "reason": "no trajectory-switch command is permitted",
+      "failed_checks": "self_collision_ok, watchdog_ok, communication_ok, timestamp_ok, switch_state_error_ok, emergency_stop_ok, manufacturer_limits_verified"
+    },
+    {
+      "mode": "safety_layer",
+      "allowed": false,
+      "reason": "allow_real_robot_commands is false",
+      "failed_checks": "self_collision_ok, watchdog_ok, communication_ok, timestamp_ok, switch_state_error_ok, emergency_stop_ok, manufacturer_limits_verified"
+    },
+    {
+      "mode": "low_speed_switch",
+      "allowed": false,
+      "reason": "allow_real_robot_commands is false",
+      "failed_checks": "self_collision_ok, watchdog_ok, communication_ok, timestamp_ok, switch_state_error_ok, emergency_stop_ok, manufacturer_limits_verified"
+    }
+  ],
+  "dry_run_accepted": true,
+  "unsafe_switch_blocked": true,
+  "real_robot_complete": false,
+  "accepted": true,
+  "paper_claim_boundary": "Use as real sensing/replay + software readiness evidence. Do not claim completed real robot online trajectory switching until P7 pending checks pass."
+}
