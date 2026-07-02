@@ -1,0 +1,64 @@
+experiment_id: E1_occupancy_risk_final
+title: E1 risk perception and whole-body risk evaluation
+purpose:
+  - Compare object-level spatiotemporal risk against current-frame and voxel or OctoMap-like occupancy.
+  - Compare whole-body mesh risk against sparse end-effector/body-current internal variants.
+  - Reuse real RGB-D replay as system evidence without overstating real-time online replanning.
+
+output_layout:
+  occupancy_sim: data/results/ch6_e1_e5/E1_occupancy_risk_final/occupancy_sim
+  whole_body_internal: data/results/ch6_e1_e5/E1_occupancy_risk_final/whole_body_internal
+  real_support: data/results/ch6_e1_e5/E1_occupancy_risk_final/real_support
+  pending_external_apf: data/results/ch6_e1_e5/E1_occupancy_risk_final/critical_point_apf
+
+scenarios:
+  - id: R1
+    name: ee_near
+    source: experiments/exp_63_sim_risk_distance.py
+    target_trials: 30
+    role: end-effector near-field sanity check
+  - id: R2
+    name: body_near
+    source: experiments/exp_63_sim_risk_distance.py
+    target_trials: 30
+    role: middle-link/body near-field whole-body risk evidence
+  - id: R3
+    name: crossing
+    source: experiments/exp_62_sim_occupancy_risk.py
+    target_trials: 20
+    role: dynamic crossing warning lead-time comparison
+  - id: R4
+    name: approach
+    source: experiments/exp_62_sim_occupancy_risk.py
+    target_trials: 20
+    role: dynamic approach warning lead-time comparison
+
+methods:
+  main_occupancy:
+    - Current Clustering
+    - Voxel Occupancy
+    - OctoMap-like
+    - Ours-STRO
+  internal_whole_body:
+    - EEF-only
+    - Body-current
+    - Ours-CCRO
+  missing_main_external:
+    - Critical-point APF risk
+
+reuse_sources:
+  occupancy_sim_old: data/results/ch6_2_sim
+  whole_body_sim_old: data/results/ch6_3_sim
+  real_occupancy_replay: data/results/ch6_2_real
+  real_body_risk_replay: data/results/ch6_3_real
+
+decision:
+  usable_directly:
+    - exp_62_sim_occupancy_risk.py logic and metrics, but rerun with 20 trials for formal E1.
+    - exp_63_sim_risk_distance.py logic and 30-trial whole-body internal evidence.
+    - ch6_2_real and ch6_3_real replay tables/figures as real-system support.
+  needs_new:
+    - Critical-point APF risk baseline for the formal external-style whole-body risk comparison.
+  put_in_ablation_or_auxiliary:
+    - EEF-only
+    - Body-current

@@ -1,0 +1,316 @@
+{
+  "source": "reused Chapter 4 real replay results for Chapter 6.2",
+  "decoupling_sources": {
+    "empty_robot": "data/results/ch4_2/scene_A_delta_0p050.json",
+    "single_static": "data/results/ch4_2/scene_B_delta_0p050.json",
+    "multi_static": "data/results/ch4_2/scene_B2_delta_0p050.json"
+  },
+  "warning_sources": {
+    "static_safe": "data/results/ch4_3/final_static_A/metrics.json",
+    "dynamic_approach": "data/results/ch4_3/final_dynamic/metrics.json",
+    "recover": "data/results/ch4_3/final_recover/metrics.json"
+  },
+  "decoupling": {
+    "empty_robot": {
+      "record_dir": "data/recordings/ch4_2_scene_A",
+      "delta_r": 0.05,
+      "delta_eval": 0.1,
+      "omegas": null,
+      "metrics": {
+        "workspace": {
+          "frames": 373,
+          "T_dec_ms_mean": 0.0,
+          "T_dec_ms_std": 0.0,
+          "N_res": 3.613941018766756,
+          "R_res": 1.0,
+          "R_false": 1.0
+        },
+        "ksi_like": {
+          "frames": 373,
+          "T_dec_ms_mean": 39.233542879358005,
+          "T_dec_ms_std": 2.699214113908085,
+          "N_res": 0.0,
+          "R_res": 0.09051789674887595,
+          "R_false": 0.0
+        },
+        "ours": {
+          "frames": 373,
+          "T_dec_ms_mean": 6.500080576409312,
+          "T_dec_ms_std": 1.1773458654975473,
+          "N_res": 0.002680965147453083,
+          "R_res": 0.06286729303075426,
+          "R_false": 0.002680965147453083
+        }
+      },
+      "recording": {
+        "record_dir": "data/recordings/ch4_2_scene_A",
+        "frame_count": 373,
+        "scene": "A",
+        "obstacle_desc": "empty workspace, robot-only motion",
+        "duration": null,
+        "source": null
+      }
+    },
+    "single_static": {
+      "record_dir": "data/recordings/ch4_2_scene_B",
+      "delta_r": 0.05,
+      "delta_eval": 0.1,
+      "omegas": null,
+      "metrics": {
+        "workspace": {
+          "frames": 377,
+          "T_dec_ms_mean": 0.0,
+          "T_dec_ms_std": 0.0,
+          "visible_frames": 377,
+          "R_keep": 1.0,
+          "R_over": 0.0,
+          "R_det": 0.9946949602122016,
+          "sigma_c": 0.016880110820407353
+        },
+        "ksi_like": {
+          "frames": 377,
+          "T_dec_ms_mean": 39.90386856498808,
+          "T_dec_ms_std": 2.752330362450704,
+          "visible_frames": 377,
+          "R_keep": 0.9198319521178637,
+          "R_over": 0.08016804788213627,
+          "R_det": 0.44297082228116713,
+          "sigma_c": 0.05999095835097307
+        },
+        "ours": {
+          "frames": 377,
+          "T_dec_ms_mean": 6.2874292970715056,
+          "T_dec_ms_std": 1.1338034660167187,
+          "visible_frames": 377,
+          "R_keep": 1.0,
+          "R_over": 0.0,
+          "R_det": 1.0,
+          "sigma_c": 0.01684141879381292
+        }
+      },
+      "recording": {
+        "record_dir": "data/recordings/ch4_2_scene_B",
+        "frame_count": 377,
+        "scene": "B",
+        "obstacle_desc": "static box near robot link",
+        "duration": null,
+        "source": null
+      }
+    },
+    "multi_static": {
+      "record_dir": "data/recordings/ch4_2_scene_B2",
+      "delta_r": 0.05,
+      "delta_eval": 0.1,
+      "omegas": [
+        [
+          0.537,
+          0.684,
+          -0.475,
+          -0.218,
+          0.235,
+          0.41
+        ],
+        [
+          0.547,
+          0.642,
+          0.047,
+          0.145,
+          0.235,
+          0.425
+        ]
+      ],
+      "metrics": {
+        "workspace": {
+          "frames": 381,
+          "T_dec_ms_mean": 0.0,
+          "T_dec_ms_std": 0.0,
+          "obstacle_count": 2,
+          "visible_frames_1": 381,
+          "R_keep_1": 1.0,
+          "R_over_1": 0.0,
+          "R_det_1": 0.984251968503937,
+          "sigma_c_1": 0.01916685819299052,
+          "visible_frames_2": 45,
+          "R_keep_2": 1.0,
+          "R_over_2": 0.0,
+          "R_det_2": 1.0,
+          "sigma_c_2": 0.00962326514203803,
+          "visible_pairs": 426,
+          "visible_frames": 426,
+          "R_keep": 1.0,
+          "R_over": 0.0,
+          "R_det": 0.9859154929577465,
+          "sigma_c": 0.014395061667514275
+        },
+        "ksi_like": {
+          "frames": 381,
+          "T_dec_ms_mean": 40.62754842258082,
+          "T_dec_ms_std": 2.5158608701091723,
+          "obstacle_count": 2,
+          "visible_frames_1": 381,
+          "R_keep_1": 0.8510107422414078,
+          "R_over_1": 0.14898925775859218,
+          "R_det_1": 0.4435695538057743,
+          "sigma_c_1": 0.06943545797576074,
+          "visible_frames_2": 45,
+          "R_keep_2": 0.9196013289036545,
+          "R_over_2": 0.08039867109634546,
+          "R_det_2": 0.4444444444444444,
+          "sigma_c_2": 0.04397126940110049,
+          "visible_pairs": 426,
+          "visible_frames": 426,
+          "R_keep": 0.8521317955735106,
+          "R_over": 0.1478682044264894,
+          "R_det": 0.44366197183098594,
+          "sigma_c": 0.05670336368843062
+        },
+        "ours": {
+          "frames": 381,
+          "T_dec_ms_mean": 6.236540349080439,
+          "T_dec_ms_std": 1.053798783769737,
+          "obstacle_count": 2,
+          "visible_frames_1": 381,
+          "R_keep_1": 0.9999116773573865,
+          "R_over_1": 8.832264261349199e-05,
+          "R_det_1": 1.0,
+          "sigma_c_1": 0.016445688451238644,
+          "visible_frames_2": 45,
+          "R_keep_2": 0.9993355481727575,
+          "R_over_2": 0.0006644518272425071,
+          "R_det_2": 1.0,
+          "sigma_c_2": 0.010034290742249267,
+          "visible_pairs": 426,
+          "visible_frames": 426,
+          "R_keep": 0.999902261028214,
+          "R_over": 9.773897178599888e-05,
+          "R_det": 1.0,
+          "sigma_c": 0.013239989596743955
+        }
+      },
+      "recording": {
+        "record_dir": "data/recordings/ch4_2_scene_B2",
+        "frame_count": 381,
+        "scene": "B2",
+        "obstacle_desc": "two static boxes near different robot links",
+        "duration": null,
+        "source": null
+      }
+    }
+  },
+  "warning": {
+    "static_safe": {
+      "trials": 1,
+      "metrics": {
+        "dsa": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 1.0,
+          "D_trigger_ref": 0.15425124162830745,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ssm": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 0.0,
+          "D_trigger_ref": null,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ours_wo_temporal": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 0.0,
+          "D_trigger_ref": null,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ours": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 0.010025062656641603,
+          "D_trigger_ref": 0.2074871067283925,
+          "T_recover": null,
+          "N_switch": 6.0
+        }
+      },
+      "source_path": "data/results/ch4_3/final_static_A/metrics.json"
+    },
+    "dynamic_approach": {
+      "trials": 8,
+      "metrics": {
+        "dsa": {
+          "T_lead": 8.389327704906464,
+          "R_miss": 0.0,
+          "R_false_time": 1.0,
+          "D_trigger_ref": Infinity,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ssm": {
+          "T_lead": 4.735648363828659,
+          "R_miss": 0.0,
+          "R_false_time": 0.21411608287255457,
+          "D_trigger_ref": Infinity,
+          "T_recover": 0.11470305919647217,
+          "N_switch": 13.75
+        },
+        "ours_wo_temporal": {
+          "T_lead": 4.735648363828659,
+          "R_miss": 0.0,
+          "R_false_time": 0.21411608287255457,
+          "D_trigger_ref": Infinity,
+          "T_recover": 0.11470305919647217,
+          "N_switch": 13.75
+        },
+        "ours": {
+          "T_lead": 5.128593176603317,
+          "R_miss": 0.0,
+          "R_false_time": 0.44822218196168523,
+          "D_trigger_ref": 0.3550832712129981,
+          "T_recover": 0.8488276898860931,
+          "N_switch": 14.25
+        }
+      },
+      "source_path": "data/results/ch4_3/final_dynamic/metrics.json"
+    },
+    "recover": {
+      "trials": 3,
+      "metrics": {
+        "dsa": {
+          "T_lead": 8.628471930821737,
+          "R_miss": 0.0,
+          "R_false_time": 1.0,
+          "D_trigger_ref": Infinity,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ssm": {
+          "T_lead": 0.4494642416636149,
+          "R_miss": 0.0,
+          "R_false_time": 0.0,
+          "D_trigger_ref": 0.1451172297852359,
+          "T_recover": 0.0,
+          "N_switch": 6.0
+        },
+        "ours_wo_temporal": {
+          "T_lead": 0.4494642416636149,
+          "R_miss": 0.0,
+          "R_false_time": 0.0,
+          "D_trigger_ref": 0.1451172297852359,
+          "T_recover": 0.0,
+          "N_switch": 6.0
+        },
+        "ours": {
+          "T_lead": 1.2807931105295818,
+          "R_miss": 0.0,
+          "R_false_time": 0.09495460539663218,
+          "D_trigger_ref": 0.23760854990732852,
+          "T_recover": 0.37324802080790204,
+          "N_switch": 6.333333333333333
+        }
+      },
+      "source_path": "data/results/ch4_3/final_recover/metrics.json"
+    }
+  }
+}

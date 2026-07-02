@@ -1,0 +1,4230 @@
+{
+  "scene": "approach",
+  "seed": 6419,
+  "parameters": {
+    "output": "data/results/ch6_e1_e5/E1_occupancy_risk_final/occupancy_sim",
+    "scenes": "static_safe,approach,crossing,leave",
+    "trials": 20,
+    "seed": 6200,
+    "frames": 90,
+    "dt": 0.08,
+    "self_filter_radius": 0.035,
+    "cluster_eps": 0.065,
+    "cluster_min_points": 25,
+    "voxel_size": 0.05,
+    "octomap_decay_frames": 14,
+    "d_safe": 0.16,
+    "d_slow": 0.1,
+    "d_stop": 0.05,
+    "danger_threshold": 0.08,
+    "t_req": 0.25,
+    "shape_margin": 0.015,
+    "min_track_age": 2,
+    "prediction_horizon": 0.65,
+    "prediction_step": 0.1,
+    "risk_margin": 0.04,
+    "prediction_uncertainty": 0.015,
+    "static_speed_threshold": 0.03,
+    "static_margin": 0.01,
+    "velocity_radius_scale": 0.8,
+    "plot": true
+  },
+  "reference": [
+    {
+      "frame_index": 0,
+      "timestamp": 0.0,
+      "d_true": 0.5366871371340353,
+      "active": true
+    },
+    {
+      "frame_index": 1,
+      "timestamp": 0.08,
+      "d_true": 0.5259181170722188,
+      "active": true
+    },
+    {
+      "frame_index": 2,
+      "timestamp": 0.16,
+      "d_true": 0.5197999746750763,
+      "active": true
+    },
+    {
+      "frame_index": 3,
+      "timestamp": 0.24,
+      "d_true": 0.5107934776317657,
+      "active": true
+    },
+    {
+      "frame_index": 4,
+      "timestamp": 0.32,
+      "d_true": 0.503990606871202,
+      "active": true
+    },
+    {
+      "frame_index": 5,
+      "timestamp": 0.4,
+      "d_true": 0.4918573062096098,
+      "active": true
+    },
+    {
+      "frame_index": 6,
+      "timestamp": 0.48,
+      "d_true": 0.484646835564609,
+      "active": true
+    },
+    {
+      "frame_index": 7,
+      "timestamp": 0.56,
+      "d_true": 0.47705413156323523,
+      "active": true
+    },
+    {
+      "frame_index": 8,
+      "timestamp": 0.64,
+      "d_true": 0.46737814195115684,
+      "active": true
+    },
+    {
+      "frame_index": 9,
+      "timestamp": 0.72,
+      "d_true": 0.4591147794555935,
+      "active": true
+    },
+    {
+      "frame_index": 10,
+      "timestamp": 0.8,
+      "d_true": 0.44876981195428617,
+      "active": true
+    },
+    {
+      "frame_index": 11,
+      "timestamp": 0.88,
+      "d_true": 0.446514809044313,
+      "active": true
+    },
+    {
+      "frame_index": 12,
+      "timestamp": 0.96,
+      "d_true": 0.4326478541336871,
+      "active": true
+    },
+    {
+      "frame_index": 13,
+      "timestamp": 1.04,
+      "d_true": 0.4267851591456563,
+      "active": true
+    },
+    {
+      "frame_index": 14,
+      "timestamp": 1.12,
+      "d_true": 0.4179989192448869,
+      "active": true
+    },
+    {
+      "frame_index": 15,
+      "timestamp": 1.2,
+      "d_true": 0.4094907510471605,
+      "active": true
+    },
+    {
+      "frame_index": 16,
+      "timestamp": 1.28,
+      "d_true": 0.39967502699342555,
+      "active": true
+    },
+    {
+      "frame_index": 17,
+      "timestamp": 1.36,
+      "d_true": 0.3940696498713793,
+      "active": true
+    },
+    {
+      "frame_index": 18,
+      "timestamp": 1.44,
+      "d_true": 0.3844195579378599,
+      "active": true
+    },
+    {
+      "frame_index": 19,
+      "timestamp": 1.52,
+      "d_true": 0.3778405451045207,
+      "active": true
+    },
+    {
+      "frame_index": 20,
+      "timestamp": 1.6,
+      "d_true": 0.3692499772238277,
+      "active": true
+    },
+    {
+      "frame_index": 21,
+      "timestamp": 1.68,
+      "d_true": 0.36074296450136756,
+      "active": true
+    },
+    {
+      "frame_index": 22,
+      "timestamp": 1.76,
+      "d_true": 0.3533115313760823,
+      "active": true
+    },
+    {
+      "frame_index": 23,
+      "timestamp": 1.84,
+      "d_true": 0.34639509777496497,
+      "active": true
+    },
+    {
+      "frame_index": 24,
+      "timestamp": 1.92,
+      "d_true": 0.3381902312022705,
+      "active": true
+    },
+    {
+      "frame_index": 25,
+      "timestamp": 2.0,
+      "d_true": 0.3309785394926691,
+      "active": true
+    },
+    {
+      "frame_index": 26,
+      "timestamp": 2.08,
+      "d_true": 0.3224369357354169,
+      "active": true
+    },
+    {
+      "frame_index": 27,
+      "timestamp": 2.16,
+      "d_true": 0.31188637883925585,
+      "active": true
+    },
+    {
+      "frame_index": 28,
+      "timestamp": 2.24,
+      "d_true": 0.3051056545950337,
+      "active": true
+    },
+    {
+      "frame_index": 29,
+      "timestamp": 2.32,
+      "d_true": 0.29851099342316245,
+      "active": true
+    },
+    {
+      "frame_index": 30,
+      "timestamp": 2.4,
+      "d_true": 0.29089605897411824,
+      "active": true
+    },
+    {
+      "frame_index": 31,
+      "timestamp": 2.48,
+      "d_true": 0.28284325442979635,
+      "active": true
+    },
+    {
+      "frame_index": 32,
+      "timestamp": 2.56,
+      "d_true": 0.27575366521889244,
+      "active": true
+    },
+    {
+      "frame_index": 33,
+      "timestamp": 2.64,
+      "d_true": 0.2731414146185928,
+      "active": true
+    },
+    {
+      "frame_index": 34,
+      "timestamp": 2.72,
+      "d_true": 0.26372137772878523,
+      "active": true
+    },
+    {
+      "frame_index": 35,
+      "timestamp": 2.8000000000000003,
+      "d_true": 0.25471839609910873,
+      "active": true
+    },
+    {
+      "frame_index": 36,
+      "timestamp": 2.88,
+      "d_true": 0.24445804697929202,
+      "active": true
+    },
+    {
+      "frame_index": 37,
+      "timestamp": 2.96,
+      "d_true": 0.23823889748801902,
+      "active": true
+    },
+    {
+      "frame_index": 38,
+      "timestamp": 3.04,
+      "d_true": 0.23011315074335326,
+      "active": true
+    },
+    {
+      "frame_index": 39,
+      "timestamp": 3.12,
+      "d_true": 0.22348806609095967,
+      "active": true
+    },
+    {
+      "frame_index": 40,
+      "timestamp": 3.2,
+      "d_true": 0.21351555140980272,
+      "active": true
+    },
+    {
+      "frame_index": 41,
+      "timestamp": 3.2800000000000002,
+      "d_true": 0.21132624408363865,
+      "active": true
+    },
+    {
+      "frame_index": 42,
+      "timestamp": 3.36,
+      "d_true": 0.2064703557356226,
+      "active": true
+    },
+    {
+      "frame_index": 43,
+      "timestamp": 3.44,
+      "d_true": 0.19608858505191834,
+      "active": true
+    },
+    {
+      "frame_index": 44,
+      "timestamp": 3.52,
+      "d_true": 0.19196644240946048,
+      "active": true
+    },
+    {
+      "frame_index": 45,
+      "timestamp": 3.6,
+      "d_true": 0.18173221953608318,
+      "active": true
+    },
+    {
+      "frame_index": 46,
+      "timestamp": 3.68,
+      "d_true": 0.1768029698965458,
+      "active": true
+    },
+    {
+      "frame_index": 47,
+      "timestamp": 3.7600000000000002,
+      "d_true": 0.16744144932503074,
+      "active": true
+    },
+    {
+      "frame_index": 48,
+      "timestamp": 3.84,
+      "d_true": 0.1608715517533039,
+      "active": true
+    },
+    {
+      "frame_index": 49,
+      "timestamp": 3.92,
+      "d_true": 0.15574807531947366,
+      "active": true
+    },
+    {
+      "frame_index": 50,
+      "timestamp": 4.0,
+      "d_true": 0.14759161201719911,
+      "active": true
+    },
+    {
+      "frame_index": 51,
+      "timestamp": 4.08,
+      "d_true": 0.1378330741902334,
+      "active": true
+    },
+    {
+      "frame_index": 52,
+      "timestamp": 4.16,
+      "d_true": 0.1355382187128829,
+      "active": true
+    },
+    {
+      "frame_index": 53,
+      "timestamp": 4.24,
+      "d_true": 0.12886852951797864,
+      "active": true
+    },
+    {
+      "frame_index": 54,
+      "timestamp": 4.32,
+      "d_true": 0.1196209659698208,
+      "active": true
+    },
+    {
+      "frame_index": 55,
+      "timestamp": 4.4,
+      "d_true": 0.11226477090023715,
+      "active": true
+    },
+    {
+      "frame_index": 56,
+      "timestamp": 4.48,
+      "d_true": 0.10575209653722381,
+      "active": true
+    },
+    {
+      "frame_index": 57,
+      "timestamp": 4.5600000000000005,
+      "d_true": 0.10158517026666317,
+      "active": true
+    },
+    {
+      "frame_index": 58,
+      "timestamp": 4.64,
+      "d_true": 0.09493436453974308,
+      "active": true
+    },
+    {
+      "frame_index": 59,
+      "timestamp": 4.72,
+      "d_true": 0.08696548037610183,
+      "active": true
+    },
+    {
+      "frame_index": 60,
+      "timestamp": 4.8,
+      "d_true": 0.08054297335010233,
+      "active": true
+    },
+    {
+      "frame_index": 61,
+      "timestamp": 4.88,
+      "d_true": 0.07487720357948666,
+      "active": true
+    },
+    {
+      "frame_index": 62,
+      "timestamp": 4.96,
+      "d_true": 0.06765635890982052,
+      "active": true
+    },
+    {
+      "frame_index": 63,
+      "timestamp": 5.04,
+      "d_true": 0.06097106931204089,
+      "active": true
+    },
+    {
+      "frame_index": 64,
+      "timestamp": 5.12,
+      "d_true": 0.05456159648706146,
+      "active": true
+    },
+    {
+      "frame_index": 65,
+      "timestamp": 5.2,
+      "d_true": 0.04780283613563439,
+      "active": true
+    },
+    {
+      "frame_index": 66,
+      "timestamp": 5.28,
+      "d_true": 0.04171448208917208,
+      "active": true
+    },
+    {
+      "frame_index": 67,
+      "timestamp": 5.36,
+      "d_true": 0.03583810984686427,
+      "active": true
+    },
+    {
+      "frame_index": 68,
+      "timestamp": 5.44,
+      "d_true": 0.0269904508050424,
+      "active": true
+    },
+    {
+      "frame_index": 69,
+      "timestamp": 5.5200000000000005,
+      "d_true": 0.022493305851318986,
+      "active": true
+    },
+    {
+      "frame_index": 70,
+      "timestamp": 5.6000000000000005,
+      "d_true": 0.016827531256478255,
+      "active": true
+    },
+    {
+      "frame_index": 71,
+      "timestamp": 5.68,
+      "d_true": 0.007148132929711726,
+      "active": true
+    },
+    {
+      "frame_index": 72,
+      "timestamp": 5.76,
+      "d_true": 0.005238894243137608,
+      "active": true
+    },
+    {
+      "frame_index": 73,
+      "timestamp": 5.84,
+      "d_true": -0.004666450990766416,
+      "active": true
+    },
+    {
+      "frame_index": 74,
+      "timestamp": 5.92,
+      "d_true": -0.007236367840965367,
+      "active": true
+    },
+    {
+      "frame_index": 75,
+      "timestamp": 6.0,
+      "d_true": -0.014214326783898591,
+      "active": true
+    },
+    {
+      "frame_index": 76,
+      "timestamp": 6.08,
+      "d_true": -0.01863661396268996,
+      "active": true
+    },
+    {
+      "frame_index": 77,
+      "timestamp": 6.16,
+      "d_true": -0.025094123152749493,
+      "active": true
+    },
+    {
+      "frame_index": 78,
+      "timestamp": 6.24,
+      "d_true": -0.034499838183652404,
+      "active": true
+    },
+    {
+      "frame_index": 79,
+      "timestamp": 6.32,
+      "d_true": -0.03182790181237147,
+      "active": true
+    },
+    {
+      "frame_index": 80,
+      "timestamp": 6.4,
+      "d_true": -0.04810102087566075,
+      "active": true
+    },
+    {
+      "frame_index": 81,
+      "timestamp": 6.48,
+      "d_true": -0.05121307874210934,
+      "active": true
+    },
+    {
+      "frame_index": 82,
+      "timestamp": 6.5600000000000005,
+      "d_true": -0.04243793618063492,
+      "active": true
+    },
+    {
+      "frame_index": 83,
+      "timestamp": 6.640000000000001,
+      "d_true": -0.03853033395461679,
+      "active": true
+    },
+    {
+      "frame_index": 84,
+      "timestamp": 6.72,
+      "d_true": -0.02824568950244009,
+      "active": true
+    },
+    {
+      "frame_index": 85,
+      "timestamp": 6.8,
+      "d_true": -0.028577148862604103,
+      "active": true
+    },
+    {
+      "frame_index": 86,
+      "timestamp": 6.88,
+      "d_true": -0.02309756369977032,
+      "active": true
+    },
+    {
+      "frame_index": 87,
+      "timestamp": 6.96,
+      "d_true": -0.02477145448917987,
+      "active": true
+    },
+    {
+      "frame_index": 88,
+      "timestamp": 7.04,
+      "d_true": -0.030587769688169,
+      "active": true
+    },
+    {
+      "frame_index": 89,
+      "timestamp": 7.12,
+      "d_true": -0.032644923055307466,
+      "active": true
+    }
+  ],
+  "metrics": {
+    "current_clustering": {
+      "R_det": 0.9222222222222223,
+      "R_keep": 0.9030808080808082,
+      "R_over": 0.0018397816442480227,
+      "R_ghost": 0.0,
+      "T_lead": 1.1999999999999997,
+      "R_miss": 0.0,
+      "R_false_time": 0.0,
+      "T_process_ms_mean": 0.6794989613505701,
+      "T_process_ms_p95": 0.8803943055681883
+    },
+    "voxel_occupancy": {
+      "R_det": 0.9222222222222223,
+      "R_keep": 0.8950505050505051,
+      "R_over": 0.012480898353670477,
+      "R_ghost": 0.0,
+      "T_lead": 1.1999999999999997,
+      "R_miss": 0.0,
+      "R_false_time": 0.0,
+      "T_process_ms_mean": 0.6713659735396504,
+      "T_process_ms_p95": 0.8102813153527676
+    },
+    "octomap_decay": {
+      "R_det": 1.0,
+      "R_keep": 0.91989898989899,
+      "R_over": 0.30803244797292073,
+      "R_ghost": 0.0,
+      "T_lead": 1.1999999999999997,
+      "R_miss": 0.0,
+      "R_false_time": 0.0,
+      "T_process_ms_mean": 0.7789760103656186,
+      "T_process_ms_p95": 0.8781715587247163
+    },
+    "ours_stro": {
+      "R_det": 0.9222222222222223,
+      "R_keep": 0.9055050505050506,
+      "R_over": 0.0024015527037259455,
+      "R_ghost": 0.0,
+      "T_lead": 3.5199999999999996,
+      "R_miss": 0.0,
+      "R_false_time": 0.4,
+      "T_process_ms_mean": 0.7680741824313171,
+      "T_process_ms_p95": 0.9485019952990115
+    }
+  },
+  "series": {
+    "current_clustering": [
+      {
+        "timestamp": 0.0,
+        "distance": 0.5330161418630558,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.247449079528451
+      },
+      {
+        "timestamp": 0.08,
+        "distance": 0.5229803712604425,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7968080462887883
+      },
+      {
+        "timestamp": 0.16,
+        "distance": 0.516413510185183,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8424510015174747
+      },
+      {
+        "timestamp": 0.24,
+        "distance": 0.5071538594118234,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0045045045045045045,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8116180542856455
+      },
+      {
+        "timestamp": 0.32,
+        "distance": 0.4841697422372574,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8117700926959515
+      },
+      {
+        "timestamp": 0.4,
+        "distance": 0.48978060070060697,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7982930401340127
+      },
+      {
+        "timestamp": 0.48,
+        "distance": 0.48066774581546046,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.808696961030364
+      },
+      {
+        "timestamp": 0.56,
+        "distance": 0.47783277641268007,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8398209465667605
+      },
+      {
+        "timestamp": 0.64,
+        "distance": 0.464540765720007,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.0328839998692274
+      },
+      {
+        "timestamp": 0.72,
+        "distance": 0.45948936613135677,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8976500248536468
+      },
+      {
+        "timestamp": 0.8,
+        "distance": 0.45038423074973927,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7782200118526816
+      },
+      {
+        "timestamp": 0.88,
+        "distance": 0.4421162609687107,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8076740195974708
+      },
+      {
+        "timestamp": 0.96,
+        "distance": 0.42968845027433555,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7680179551243782
+      },
+      {
+        "timestamp": 1.04,
+        "distance": 0.4256276056947862,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7884100778028369
+      },
+      {
+        "timestamp": 1.12,
+        "distance": 0.3937810164251873,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8029489545151591
+      },
+      {
+        "timestamp": 1.2,
+        "distance": 0.40825022966898955,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7785420166328549
+      },
+      {
+        "timestamp": 1.28,
+        "distance": 0.39572302255448694,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8083420107141137
+      },
+      {
+        "timestamp": 1.36,
+        "distance": 0.360127470341196,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0045045045045045045,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8163409074768424
+      },
+      {
+        "timestamp": 1.44,
+        "distance": 0.383421615378762,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7925740210339427
+      },
+      {
+        "timestamp": 1.52,
+        "distance": 0.374663008316403,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7909040432423353
+      },
+      {
+        "timestamp": 1.6,
+        "distance": 0.36477698163606986,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8052889024838805
+      },
+      {
+        "timestamp": 1.68,
+        "distance": 0.3548278521035686,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7993819890543818
+      },
+      {
+        "timestamp": 1.76,
+        "distance": 0.3165221483653321,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.008968609865470852,
+        "ghost_ratio": 0.004484304932735426,
+        "process_time_ms": 0.7998859509825706
+      },
+      {
+        "timestamp": 1.84,
+        "distance": 0.3431766686724573,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.04524886877828054,
+        "process_time_ms": 0.8593039819970727
+      },
+      {
+        "timestamp": 1.92,
+        "distance": 0.3349246953532082,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.14479638009049775,
+        "process_time_ms": 0.8022120455279946
+      },
+      {
+        "timestamp": 2.0,
+        "distance": 0.327759915228716,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.18636363636363637,
+        "process_time_ms": 0.7692570798099041
+      },
+      {
+        "timestamp": 2.08,
+        "distance": 0.31731801270785887,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.23076923076923078,
+        "process_time_ms": 0.7696830434724689
+      },
+      {
+        "timestamp": 2.16,
+        "distance": 0.3094401642491806,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.2986425339366516,
+        "process_time_ms": 0.764459022320807
+      },
+      {
+        "timestamp": 2.24,
+        "distance": 0.30550986397380514,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.3936651583710407,
+        "process_time_ms": 0.8251999970525503
+      },
+      {
+        "timestamp": 2.32,
+        "distance": 0.29696243486925633,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7705829339101911
+      },
+      {
+        "timestamp": 2.4,
+        "distance": 0.26817982300343474,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8430180605500937
+      },
+      {
+        "timestamp": 2.48,
+        "distance": 0.27668877887025434,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7204230641946197
+      },
+      {
+        "timestamp": 2.56,
+        "distance": 0.27258653058076976,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7348819635808468
+      },
+      {
+        "timestamp": 2.64,
+        "distance": 0.2673503065606119,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7491139695048332
+      },
+      {
+        "timestamp": 2.72,
+        "distance": 0.26044945459822916,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7572319591417909
+      },
+      {
+        "timestamp": 2.8000000000000003,
+        "distance": 0.25398688282843584,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7328970823436975
+      },
+      {
+        "timestamp": 2.88,
+        "distance": 0.24087696071461787,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7371569517999887
+      },
+      {
+        "timestamp": 2.96,
+        "distance": 0.23260701669815784,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7923630764707923
+      },
+      {
+        "timestamp": 3.04,
+        "distance": 0.22673652007188014,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7251029601320624
+      },
+      {
+        "timestamp": 3.12,
+        "distance": 0.22112026995662176,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0045045045045045045,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7875909795984626
+      },
+      {
+        "timestamp": 3.2,
+        "distance": 0.21240345783500675,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0045045045045045045,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7508239941671491
+      },
+      {
+        "timestamp": 3.2800000000000002,
+        "distance": 0.21054488242105265,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7620339747518301
+      },
+      {
+        "timestamp": 3.36,
+        "distance": 0.20526027373452357,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7314920658245683
+      },
+      {
+        "timestamp": 3.44,
+        "distance": 0.19612841589542646,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7097829366102815
+      },
+      {
+        "timestamp": 3.52,
+        "distance": 0.18856905385496323,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7120219524949789
+      },
+      {
+        "timestamp": 3.6,
+        "distance": 0.17822279337219618,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7443259237334132
+      },
+      {
+        "timestamp": 3.68,
+        "distance": 0.13726000498585633,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.009009009009009009,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7933060405775905
+      },
+      {
+        "timestamp": 3.7600000000000002,
+        "distance": 0.16387219121520902,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7798520382493734
+      },
+      {
+        "timestamp": 3.84,
+        "distance": 0.1621777827784554,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.1128910118713975
+      },
+      {
+        "timestamp": 3.92,
+        "distance": 0.15590998676054643,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.1668269289657474
+      },
+      {
+        "timestamp": 4.0,
+        "distance": 0.1446073009973216,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7053030421957374
+      },
+      {
+        "timestamp": 4.08,
+        "distance": 0.13559849428533582,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6895840633660555
+      },
+      {
+        "timestamp": 4.16,
+        "distance": 0.1344949809456304,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0045045045045045045,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7169260643422604
+      },
+      {
+        "timestamp": 4.24,
+        "distance": 0.1263478221511153,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.698175048455596
+      },
+      {
+        "timestamp": 4.32,
+        "distance": 0.11828200565323425,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7021699566394091
+      },
+      {
+        "timestamp": 4.4,
+        "distance": 0.10853050993774385,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6825079908594489
+      },
+      {
+        "timestamp": 4.48,
+        "distance": 0.1069824510427201,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7296579424291849
+      },
+      {
+        "timestamp": 4.5600000000000005,
+        "distance": 0.0979030592720274,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004524886877828055,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6941399769857526
+      },
+      {
+        "timestamp": 4.64,
+        "distance": 0.09142630350387765,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6914939731359482
+      },
+      {
+        "timestamp": 4.72,
+        "distance": 0.08291689313307149,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6608749972656369
+      },
+      {
+        "timestamp": 4.8,
+        "distance": 0.07654577445261307,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.653135939501226
+      },
+      {
+        "timestamp": 4.88,
+        "distance": 0.07089297043602891,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6550590042024851
+      },
+      {
+        "timestamp": 4.96,
+        "distance": 0.06506707301792447,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8055639918893576
+      },
+      {
+        "timestamp": 5.04,
+        "distance": 0.05933553031654219,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6696819327771664
+      },
+      {
+        "timestamp": 5.12,
+        "distance": 0.055382648878590915,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6626439280807972
+      },
+      {
+        "timestamp": 5.2,
+        "distance": 0.03899897999383293,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.009009009009009009,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.638758996501565
+      },
+      {
+        "timestamp": 5.28,
+        "distance": 0.03847104524731978,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6384990410879254
+      },
+      {
+        "timestamp": 5.36,
+        "distance": 0.037427903149197375,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6534570129588246
+      },
+      {
+        "timestamp": 5.44,
+        "distance": 0.03562146857239859,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6406540051102638
+      },
+      {
+        "timestamp": 5.5200000000000005,
+        "distance": 0.035536494053241566,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6180539494380355
+      },
+      {
+        "timestamp": 5.6000000000000005,
+        "distance": 0.03512713095840053,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5974980304017663
+      },
+      {
+        "timestamp": 5.68,
+        "distance": 0.03570552530165691,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0055248618784530384,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5921329138800502
+      },
+      {
+        "timestamp": 5.76,
+        "distance": 0.03515384666740739,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0055248618784530384,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5707819946110249
+      },
+      {
+        "timestamp": 5.84,
+        "distance": 0.03573033237869745,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9863636363636363,
+        "over_ratio": 0.006711409395973154,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5538170225918293
+      },
+      {
+        "timestamp": 5.92,
+        "distance": 0.035323809409023764,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9636363636363636,
+        "over_ratio": 0.014925373134328358,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5275289295241237
+      },
+      {
+        "timestamp": 6.0,
+        "distance": 0.0354526509229034,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9590909090909091,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5468979943543673
+      },
+      {
+        "timestamp": 6.08,
+        "distance": 0.035649031095472204,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9136363636363637,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5442569963634014
+      },
+      {
+        "timestamp": 6.16,
+        "distance": 0.03524605859495317,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8727272727272727,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.7478991596638656,
+        "process_time_ms": 0.5236410070210695
+      },
+      {
+        "timestamp": 6.24,
+        "distance": 0.0352287695259848,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8318181818181818,
+        "over_ratio": 0.009523809523809525,
+        "ghost_ratio": 0.6476190476190476,
+        "process_time_ms": 0.5052259657531977
+      },
+      {
+        "timestamp": 6.32,
+        "distance": 0.03524923882331924,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8181818181818182,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.5402298850574713,
+        "process_time_ms": 0.4860700573772192
+      },
+      {
+        "timestamp": 6.4,
+        "distance": 0.03507039295672004,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.7,
+        "over_ratio": 0.012987012987012988,
+        "ghost_ratio": 0.5844155844155844,
+        "process_time_ms": 0.48360193613916636
+      },
+      {
+        "timestamp": 6.48,
+        "distance": 0.035357783404882756,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.6909090909090909,
+        "over_ratio": 0.015625,
+        "ghost_ratio": 0.484375,
+        "process_time_ms": 0.4558039363473654
+      },
+      {
+        "timestamp": 6.5600000000000005,
+        "distance": 0.035144720386286354,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.5409090909090909,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.3684210526315789,
+        "process_time_ms": 0.41725696064531803
+      },
+      {
+        "timestamp": 6.640000000000001,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01688092015683651
+      },
+      {
+        "timestamp": 6.72,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01674797385931015
+      },
+      {
+        "timestamp": 6.8,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01646694727241993
+      },
+      {
+        "timestamp": 6.88,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01614296343177557
+      },
+      {
+        "timestamp": 6.96,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.016594072803854942
+      },
+      {
+        "timestamp": 7.04,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.016795936971902847
+      },
+      {
+        "timestamp": 7.12,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.016615958884358406
+      }
+    ],
+    "voxel_occupancy": [
+      {
+        "timestamp": 0.0,
+        "distance": 0.5485325051162827,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7553240284323692
+      },
+      {
+        "timestamp": 0.08,
+        "distance": 0.5439002296157417,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.742086092941463
+      },
+      {
+        "timestamp": 0.16,
+        "distance": 0.5168585944531222,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8271409897133708
+      },
+      {
+        "timestamp": 0.24,
+        "distance": 0.5135611749839187,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.030303030303030304,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7656129309907556
+      },
+      {
+        "timestamp": 0.32,
+        "distance": 0.5098612583307737,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7343969773501158
+      },
+      {
+        "timestamp": 0.4,
+        "distance": 0.49163101362828393,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7344720652326941
+      },
+      {
+        "timestamp": 0.48,
+        "distance": 0.5010235734147154,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7224639412015676
+      },
+      {
+        "timestamp": 0.56,
+        "distance": 0.4943046279806687,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.1312890565022826
+      },
+      {
+        "timestamp": 0.64,
+        "distance": 0.464540765720007,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.735193956643343
+      },
+      {
+        "timestamp": 0.72,
+        "distance": 0.4601618742912013,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.03125,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7763410685583949
+      },
+      {
+        "timestamp": 0.8,
+        "distance": 0.4548575663743955,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7418919121846557
+      },
+      {
+        "timestamp": 0.88,
+        "distance": 0.45612238390106824,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7367610232904553
+      },
+      {
+        "timestamp": 0.96,
+        "distance": 0.4463601920368113,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7038800977170467
+      },
+      {
+        "timestamp": 1.04,
+        "distance": 0.4395181881440355,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.712038017809391
+      },
+      {
+        "timestamp": 1.12,
+        "distance": 0.3937810164251873,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7264040177688003
+      },
+      {
+        "timestamp": 1.2,
+        "distance": 0.3986692920197093,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7326140766963363
+      },
+      {
+        "timestamp": 1.28,
+        "distance": 0.39724185367735093,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7501719519495964
+      },
+      {
+        "timestamp": 1.36,
+        "distance": 0.360127470341196,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.034482758620689655,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.742558971978724
+      },
+      {
+        "timestamp": 1.44,
+        "distance": 0.39537178984235555,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.710244057700038
+      },
+      {
+        "timestamp": 1.52,
+        "distance": 0.39002866092089844,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7230989867821336
+      },
+      {
+        "timestamp": 1.6,
+        "distance": 0.3845775700485989,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.71294407825917
+      },
+      {
+        "timestamp": 1.68,
+        "distance": 0.3548278521035686,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7506180554628372
+      },
+      {
+        "timestamp": 1.76,
+        "distance": 0.3165221483653321,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0625,
+        "ghost_ratio": 0.03125,
+        "process_time_ms": 0.7896750466898084
+      },
+      {
+        "timestamp": 1.84,
+        "distance": 0.34928292839071784,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.13333333333333333,
+        "process_time_ms": 0.7508120033890009
+      },
+      {
+        "timestamp": 1.92,
+        "distance": 0.34575816965190387,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.16666666666666666,
+        "process_time_ms": 0.7124259136617184
+      },
+      {
+        "timestamp": 2.0,
+        "distance": 0.3424175631559018,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.18181818181818182,
+        "process_time_ms": 0.6979930913075805
+      },
+      {
+        "timestamp": 2.08,
+        "distance": 0.33489711279467865,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.04,
+        "ghost_ratio": 0.16,
+        "process_time_ms": 0.7226950256153941
+      },
+      {
+        "timestamp": 2.16,
+        "distance": 0.331542341962742,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.19230769230769232,
+        "process_time_ms": 0.7260030834004283
+      },
+      {
+        "timestamp": 2.24,
+        "distance": 0.31100182979874463,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.034482758620689655,
+        "ghost_ratio": 0.2413793103448276,
+        "process_time_ms": 0.7619759999215603
+      },
+      {
+        "timestamp": 2.32,
+        "distance": 0.29775325309339024,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7126330165192485
+      },
+      {
+        "timestamp": 2.4,
+        "distance": 0.29354237327539434,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.9611900895833969
+      },
+      {
+        "timestamp": 2.48,
+        "distance": 0.2899241593770748,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7242119172587991
+      },
+      {
+        "timestamp": 2.56,
+        "distance": 0.2879736520879553,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7100009825080633
+      },
+      {
+        "timestamp": 2.64,
+        "distance": 0.2882430283925728,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6889139767736197
+      },
+      {
+        "timestamp": 2.72,
+        "distance": 0.2811653082929465,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.04,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7287129992619157
+      },
+      {
+        "timestamp": 2.8000000000000003,
+        "distance": 0.2549651763779388,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7646080339327455
+      },
+      {
+        "timestamp": 2.88,
+        "distance": 0.2451278352533922,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7250859634950757
+      },
+      {
+        "timestamp": 2.96,
+        "distance": 0.2442561615938918,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7470960263162851
+      },
+      {
+        "timestamp": 3.04,
+        "distance": 0.24152470722873118,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6896709091961384
+      },
+      {
+        "timestamp": 3.12,
+        "distance": 0.23899655054743504,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.047619047619047616,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6999309407547116
+      },
+      {
+        "timestamp": 3.2,
+        "distance": 0.23221219827297276,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6922059692442417
+      },
+      {
+        "timestamp": 3.2800000000000002,
+        "distance": 0.21054488242105265,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7464239606633782
+      },
+      {
+        "timestamp": 3.36,
+        "distance": 0.20613074739665532,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.034482758620689655,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7261789869517088
+      },
+      {
+        "timestamp": 3.44,
+        "distance": 0.201637667812957,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7297369884327054
+      },
+      {
+        "timestamp": 3.52,
+        "distance": 0.20062477520966698,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7225709268823266
+      },
+      {
+        "timestamp": 3.6,
+        "distance": 0.19575232670525738,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6970620015636086
+      },
+      {
+        "timestamp": 3.68,
+        "distance": 0.13726000498585633,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.08333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7114439504221082
+      },
+      {
+        "timestamp": 3.7600000000000002,
+        "distance": 0.18883693012238764,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7261609425768256
+      },
+      {
+        "timestamp": 3.84,
+        "distance": 0.18456849340961623,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.034482758620689655,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.1532549979165196
+      },
+      {
+        "timestamp": 3.92,
+        "distance": 0.15615921474838898,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.3223380083218217
+      },
+      {
+        "timestamp": 4.0,
+        "distance": 0.15306786739503064,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.038461538461538464,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7097559282556176
+      },
+      {
+        "timestamp": 4.08,
+        "distance": 0.14936906262728258,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6914640543982387
+      },
+      {
+        "timestamp": 4.16,
+        "distance": 0.15283662803347695,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.043478260869565216,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6898459978401661
+      },
+      {
+        "timestamp": 4.24,
+        "distance": 0.1436057827811155,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7071879226714373
+      },
+      {
+        "timestamp": 4.32,
+        "distance": 0.14002973422860748,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7033579749986529
+      },
+      {
+        "timestamp": 4.4,
+        "distance": 0.10853050993774385,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.03225806451612903,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7515029283240438
+      },
+      {
+        "timestamp": 4.48,
+        "distance": 0.11076494631444629,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7335140835493803
+      },
+      {
+        "timestamp": 4.5600000000000005,
+        "distance": 0.11219941740447345,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.04,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7002030033618212
+      },
+      {
+        "timestamp": 4.64,
+        "distance": 0.10679435568872371,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6726339925080538
+      },
+      {
+        "timestamp": 4.72,
+        "distance": 0.10432482219569632,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6682690000161529
+      },
+      {
+        "timestamp": 4.8,
+        "distance": 0.099196480981916,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6924680201336741
+      },
+      {
+        "timestamp": 4.88,
+        "distance": 0.07089297043602891,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7500710198655725
+      },
+      {
+        "timestamp": 4.96,
+        "distance": 0.06830427359455578,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7064449600875378
+      },
+      {
+        "timestamp": 5.04,
+        "distance": 0.06793535161695136,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7086279802024364
+      },
+      {
+        "timestamp": 5.12,
+        "distance": 0.06842085788422834,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6938929436728358
+      },
+      {
+        "timestamp": 5.2,
+        "distance": 0.03899897999383293,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.08695652173913043,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6788299651816487
+      },
+      {
+        "timestamp": 5.28,
+        "distance": 0.05193812928490052,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6791419582441449
+      },
+      {
+        "timestamp": 5.36,
+        "distance": 0.056474577571254125,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7202510023489594
+      },
+      {
+        "timestamp": 5.44,
+        "distance": 0.03721990918575841,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7394480053335428
+      },
+      {
+        "timestamp": 5.5200000000000005,
+        "distance": 0.035625471135271695,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7407439406961203
+      },
+      {
+        "timestamp": 5.6000000000000005,
+        "distance": 0.03512713095840053,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6708221044391394
+      },
+      {
+        "timestamp": 5.68,
+        "distance": 0.03593938178347167,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.04,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6665869150310755
+      },
+      {
+        "timestamp": 5.76,
+        "distance": 0.04019097939940768,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9772727272727273,
+        "over_ratio": 0.045454545454545456,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6553210550919175
+      },
+      {
+        "timestamp": 5.84,
+        "distance": 0.03841495710679447,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9227272727272727,
+        "over_ratio": 0.047619047619047616,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6330629112198949
+      },
+      {
+        "timestamp": 5.92,
+        "distance": 0.03955099207206309,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9318181818181818,
+        "over_ratio": 0.041666666666666664,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.68658497184515
+      },
+      {
+        "timestamp": 6.0,
+        "distance": 0.04023382349511355,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8954545454545455,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.648622983135283
+      },
+      {
+        "timestamp": 6.08,
+        "distance": 0.03551196750508975,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8681818181818182,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6251310696825385
+      },
+      {
+        "timestamp": 6.16,
+        "distance": 0.03780243593292964,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8318181818181818,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.5,
+        "process_time_ms": 0.6135780131444335
+      },
+      {
+        "timestamp": 6.24,
+        "distance": 0.036917552712616514,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8,
+        "over_ratio": 0.05263157894736842,
+        "ghost_ratio": 0.47368421052631576,
+        "process_time_ms": 0.6006229668855667
+      },
+      {
+        "timestamp": 6.32,
+        "distance": 0.030253343378538026,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.7136363636363636,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.42857142857142855,
+        "process_time_ms": 0.5778920603916049
+      },
+      {
+        "timestamp": 6.4,
+        "distance": 0.03180658760782222,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.5636363636363636,
+        "over_ratio": 0.09090909090909091,
+        "ghost_ratio": 0.5454545454545454,
+        "process_time_ms": 0.5426460411399603
+      },
+      {
+        "timestamp": 6.48,
+        "distance": 0.034861151854334825,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.5636363636363636,
+        "over_ratio": 0.09090909090909091,
+        "ghost_ratio": 0.5454545454545454,
+        "process_time_ms": 0.5425499984994531
+      },
+      {
+        "timestamp": 6.5600000000000005,
+        "distance": 0.03806801807475174,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.4863636363636364,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.4,
+        "process_time_ms": 0.5244449712336063
+      },
+      {
+        "timestamp": 6.640000000000001,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01667393371462822
+      },
+      {
+        "timestamp": 6.72,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.012362026609480381
+      },
+      {
+        "timestamp": 6.8,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.011630007065832615
+      },
+      {
+        "timestamp": 6.88,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.012240023352205753
+      },
+      {
+        "timestamp": 6.96,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.011788913980126381
+      },
+      {
+        "timestamp": 7.04,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.012249918654561043
+      },
+      {
+        "timestamp": 7.12,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.011913944035768509
+      }
+    ],
+    "octomap_decay": [
+      {
+        "timestamp": 0.0,
+        "distance": 0.5485325051162827,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6843910086899996
+      },
+      {
+        "timestamp": 0.08,
+        "distance": 0.5439002296157417,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7303840247914195
+      },
+      {
+        "timestamp": 0.16,
+        "distance": 0.5168585944531222,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7695090025663376
+      },
+      {
+        "timestamp": 0.24,
+        "distance": 0.5135611749839187,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.029411764705882353,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7974939653649926
+      },
+      {
+        "timestamp": 0.32,
+        "distance": 0.5098612583307737,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.029411764705882353,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7494209567084908
+      },
+      {
+        "timestamp": 0.4,
+        "distance": 0.49163101362828393,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.02702702702702703,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7900249911472201
+      },
+      {
+        "timestamp": 0.48,
+        "distance": 0.48939009698254177,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.02564102564102564,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.767742982134223
+      },
+      {
+        "timestamp": 0.56,
+        "distance": 0.4899772131125625,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.025,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7768520154058933
+      },
+      {
+        "timestamp": 0.64,
+        "distance": 0.464540765720007,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.023809523809523808,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7738610729575157
+      },
+      {
+        "timestamp": 0.72,
+        "distance": 0.4601618742912013,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.13043478260869565,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8328969124704599
+      },
+      {
+        "timestamp": 0.8,
+        "distance": 0.4548575663743955,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.1276595744680851,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.2166999513283372
+      },
+      {
+        "timestamp": 0.88,
+        "distance": 0.45612238390106824,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.14893617021276595,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7868580287322402
+      },
+      {
+        "timestamp": 0.96,
+        "distance": 0.4463601920368113,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.23404255319148937,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8245860226452351
+      },
+      {
+        "timestamp": 1.04,
+        "distance": 0.4395181881440355,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.28,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8251349208876491
+      },
+      {
+        "timestamp": 1.12,
+        "distance": 0.3937810164251873,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2641509433962264,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8382409578189254
+      },
+      {
+        "timestamp": 1.2,
+        "distance": 0.3986692920197093,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.32142857142857145,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8118939585983753
+      },
+      {
+        "timestamp": 1.28,
+        "distance": 0.39724185367735093,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3103448275862069,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8536819368600845
+      },
+      {
+        "timestamp": 1.36,
+        "distance": 0.360127470341196,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3220338983050847,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8311140118166804
+      },
+      {
+        "timestamp": 1.44,
+        "distance": 0.3594975660555236,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2641509433962264,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8046169532462955
+      },
+      {
+        "timestamp": 1.52,
+        "distance": 0.3596460744059234,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8801609510555863
+      },
+      {
+        "timestamp": 1.6,
+        "distance": 0.3583211237313483,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.28846153846153844,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8069409523159266
+      },
+      {
+        "timestamp": 1.68,
+        "distance": 0.3548278521035686,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2777777777777778,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8074420038610697
+      },
+      {
+        "timestamp": 1.76,
+        "distance": 0.3165221483653321,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.31666666666666665,
+        "ghost_ratio": 0.016666666666666666,
+        "process_time_ms": 0.8656700374558568
+      },
+      {
+        "timestamp": 1.84,
+        "distance": 0.3193972048180062,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.32786885245901637,
+        "ghost_ratio": 0.08196721311475409,
+        "process_time_ms": 0.8415309712290764
+      },
+      {
+        "timestamp": 1.92,
+        "distance": 0.3152337398762087,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.29310344827586204,
+        "ghost_ratio": 0.08620689655172414,
+        "process_time_ms": 0.8207029895856977
+      },
+      {
+        "timestamp": 2.0,
+        "distance": 0.3160600437445961,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2641509433962264,
+        "ghost_ratio": 0.09433962264150944,
+        "process_time_ms": 0.8015399798750877
+      },
+      {
+        "timestamp": 2.08,
+        "distance": 0.3116155597927256,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2777777777777778,
+        "ghost_ratio": 0.09259259259259259,
+        "process_time_ms": 0.8420400554314256
+      },
+      {
+        "timestamp": 2.16,
+        "distance": 0.3249977553730578,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2909090909090909,
+        "ghost_ratio": 0.09090909090909091,
+        "process_time_ms": 0.8310789708048105
+      },
+      {
+        "timestamp": 2.24,
+        "distance": 0.31100182979874463,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.30357142857142855,
+        "ghost_ratio": 0.125,
+        "process_time_ms": 0.8278450695797801
+      },
+      {
+        "timestamp": 2.32,
+        "distance": 0.29775325309339024,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3448275862068966,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7966579869389534
+      },
+      {
+        "timestamp": 2.4,
+        "distance": 0.29354237327539434,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3275862068965517,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.814491999335587
+      },
+      {
+        "timestamp": 2.48,
+        "distance": 0.2899241593770748,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.1297849705442786
+      },
+      {
+        "timestamp": 2.56,
+        "distance": 0.2879736520879553,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3018867924528302,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7829359965398908
+      },
+      {
+        "timestamp": 2.64,
+        "distance": 0.2882430283925728,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.32075471698113206,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7898760959506035
+      },
+      {
+        "timestamp": 2.72,
+        "distance": 0.2811653082929465,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.32075471698113206,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.780227012000978
+      },
+      {
+        "timestamp": 2.8000000000000003,
+        "distance": 0.2549651763779388,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3389830508474576,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8470169268548489
+      },
+      {
+        "timestamp": 2.88,
+        "distance": 0.2451278352533922,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8056120714172721
+      },
+      {
+        "timestamp": 2.96,
+        "distance": 0.2442561615938918,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2982456140350877,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8142269216477871
+      },
+      {
+        "timestamp": 3.04,
+        "distance": 0.24152470722873118,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.24528301886792453,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.771232065744698
+      },
+      {
+        "timestamp": 3.12,
+        "distance": 0.23899655054743504,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.29411764705882354,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7690960774198174
+      },
+      {
+        "timestamp": 3.2,
+        "distance": 0.23221219827297276,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3076923076923077,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7832079427316785
+      },
+      {
+        "timestamp": 3.2800000000000002,
+        "distance": 0.21054488242105265,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2727272727272727,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8202909957617521
+      },
+      {
+        "timestamp": 3.36,
+        "distance": 0.20613074739665532,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3389830508474576,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8757400792092085
+      },
+      {
+        "timestamp": 3.44,
+        "distance": 0.201637667812957,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3220338983050847,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8098840480670333
+      },
+      {
+        "timestamp": 3.52,
+        "distance": 0.20062477520966698,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.25,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.827574054710567
+      },
+      {
+        "timestamp": 3.6,
+        "distance": 0.19575232670525738,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3392857142857143,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7695810636505485
+      },
+      {
+        "timestamp": 3.68,
+        "distance": 0.13726000498585633,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.35185185185185186,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8000390371307731
+      },
+      {
+        "timestamp": 3.7600000000000002,
+        "distance": 0.13381264466463286,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.36363636363636365,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8233450353145599
+      },
+      {
+        "timestamp": 3.84,
+        "distance": 0.1333506493727585,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3684210526315789,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.2618829496204853
+      },
+      {
+        "timestamp": 3.92,
+        "distance": 0.1476532321593128,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3220338983050847,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.4228089712560177
+      },
+      {
+        "timestamp": 4.0,
+        "distance": 0.15306786739503064,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8461649995297194
+      },
+      {
+        "timestamp": 4.08,
+        "distance": 0.14936906262728258,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.32142857142857145,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7768520154058933
+      },
+      {
+        "timestamp": 4.16,
+        "distance": 0.15283662803347695,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2641509433962264,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8092750795185566
+      },
+      {
+        "timestamp": 4.24,
+        "distance": 0.1436057827811155,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2909090909090909,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8100059349089861
+      },
+      {
+        "timestamp": 4.32,
+        "distance": 0.14002973422860748,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2909090909090909,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7817080477252603
+      },
+      {
+        "timestamp": 4.4,
+        "distance": 0.10853050993774385,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3220338983050847,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8376220939680934
+      },
+      {
+        "timestamp": 4.48,
+        "distance": 0.11076494631444629,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3103448275862069,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.794248073361814
+      },
+      {
+        "timestamp": 4.5600000000000005,
+        "distance": 0.11219941740447345,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3157894736842105,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7785760099068284
+      },
+      {
+        "timestamp": 4.64,
+        "distance": 0.10679435568872371,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.35185185185185186,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7588170701637864
+      },
+      {
+        "timestamp": 4.72,
+        "distance": 0.10432482219569632,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3888888888888889,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7629259489476681
+      },
+      {
+        "timestamp": 4.8,
+        "distance": 0.099196480981916,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.767814926803112
+      },
+      {
+        "timestamp": 4.88,
+        "distance": 0.07089297043602891,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3508771929824561,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8305569645017385
+      },
+      {
+        "timestamp": 4.96,
+        "distance": 0.06830427359455578,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8101899875327945
+      },
+      {
+        "timestamp": 5.04,
+        "distance": 0.06793535161695136,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.35,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7834070129320025
+      },
+      {
+        "timestamp": 5.12,
+        "distance": 0.06842085788422834,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.32727272727272727,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7831479888409376
+      },
+      {
+        "timestamp": 5.2,
+        "distance": 0.03899897999383293,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3333333333333333,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7598740048706532
+      },
+      {
+        "timestamp": 5.28,
+        "distance": 0.05193812928490052,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3269230769230769,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.754890963435173
+      },
+      {
+        "timestamp": 5.36,
+        "distance": 0.056474577571254125,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2909090909090909,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8309860713779926
+      },
+      {
+        "timestamp": 5.44,
+        "distance": 0.03721990918575841,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3389830508474576,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8181879529729486
+      },
+      {
+        "timestamp": 5.5200000000000005,
+        "distance": 0.035625471135271695,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3220338983050847,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7632990600541234
+      },
+      {
+        "timestamp": 5.6000000000000005,
+        "distance": 0.03512713095840053,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2727272727272727,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.761086936108768
+      },
+      {
+        "timestamp": 5.68,
+        "distance": 0.03262522877628858,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.2962962962962963,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8273699786514044
+      },
+      {
+        "timestamp": 5.76,
+        "distance": 0.0330639970380749,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.3137254901960784,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7264639716595411
+      },
+      {
+        "timestamp": 5.84,
+        "distance": 0.030577299042982686,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9454545454545454,
+        "over_ratio": 0.3018867924528302,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7061630021780729
+      },
+      {
+        "timestamp": 5.92,
+        "distance": 0.03361744430134777,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9636363636363636,
+        "over_ratio": 0.34545454545454546,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7201150292530656
+      },
+      {
+        "timestamp": 6.0,
+        "distance": 0.02223146669686304,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9090909090909091,
+        "over_ratio": 0.36363636363636365,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7152860052883625
+      },
+      {
+        "timestamp": 6.08,
+        "distance": 0.036159108746940324,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8863636363636364,
+        "over_ratio": 0.36363636363636365,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.6949780508875847
+      },
+      {
+        "timestamp": 6.16,
+        "distance": 0.033649076795523696,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8363636363636363,
+        "over_ratio": 0.32,
+        "ghost_ratio": 0.78,
+        "process_time_ms": 0.6838350091129541
+      },
+      {
+        "timestamp": 6.24,
+        "distance": 0.03705266496598942,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8045454545454546,
+        "over_ratio": 0.3191489361702128,
+        "ghost_ratio": 0.7446808510638298,
+        "process_time_ms": 0.6798050599172711
+      },
+      {
+        "timestamp": 6.32,
+        "distance": 0.03112546884846109,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.7227272727272728,
+        "over_ratio": 0.4,
+        "ghost_ratio": 0.7333333333333333,
+        "process_time_ms": 0.6503069307655096
+      },
+      {
+        "timestamp": 6.4,
+        "distance": 0.03150516873279281,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.6272727272727273,
+        "over_ratio": 0.4418604651162791,
+        "ghost_ratio": 0.7441860465116279,
+        "process_time_ms": 0.6344529101625085
+      },
+      {
+        "timestamp": 6.48,
+        "distance": 0.034803716978847404,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.6045454545454545,
+        "over_ratio": 0.4772727272727273,
+        "ghost_ratio": 0.75,
+        "process_time_ms": 0.6200759671628475
+      },
+      {
+        "timestamp": 6.5600000000000005,
+        "distance": 0.03736062461248385,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.5227272727272727,
+        "over_ratio": 0.4772727272727273,
+        "ghost_ratio": 0.75,
+        "process_time_ms": 0.6034419639036059
+      },
+      {
+        "timestamp": 6.640000000000001,
+        "distance": 0.037300579189239666,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.5045454545454545,
+        "over_ratio": 0.4772727272727273,
+        "ghost_ratio": 0.75,
+        "process_time_ms": 0.47764298506081104
+      },
+      {
+        "timestamp": 6.72,
+        "distance": 0.039198839761774434,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.41818181818181815,
+        "over_ratio": 0.46153846153846156,
+        "ghost_ratio": 0.717948717948718,
+        "process_time_ms": 0.4540990339592099
+      },
+      {
+        "timestamp": 6.8,
+        "distance": 0.03600051379922191,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.36818181818181817,
+        "over_ratio": 0.5135135135135135,
+        "ghost_ratio": 0.7027027027027027,
+        "process_time_ms": 0.45143195893615484
+      },
+      {
+        "timestamp": 6.88,
+        "distance": 0.03724774543242964,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.3,
+        "over_ratio": 0.53125,
+        "ghost_ratio": 0.65625,
+        "process_time_ms": 0.4425640217959881
+      },
+      {
+        "timestamp": 6.96,
+        "distance": 0.03787235182852823,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.19090909090909092,
+        "over_ratio": 0.6666666666666666,
+        "ghost_ratio": 0.6333333333333333,
+        "process_time_ms": 0.44568395242094994
+      },
+      {
+        "timestamp": 7.04,
+        "distance": 0.03745212730705536,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.10909090909090909,
+        "over_ratio": 0.7931034482758621,
+        "ghost_ratio": 0.6551724137931034,
+        "process_time_ms": 0.4353719996288419
+      },
+      {
+        "timestamp": 7.12,
+        "distance": 0.036533674678162986,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.07727272727272727,
+        "over_ratio": 0.8571428571428571,
+        "ghost_ratio": 0.6428571428571429,
+        "process_time_ms": 0.43324800208210945
+      }
+    ],
+    "ours_stro": [
+      {
+        "timestamp": 0.0,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.5308189429342747
+      },
+      {
+        "timestamp": 0.08,
+        "distance": 0.42035471259362056,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.796142965555191
+      },
+      {
+        "timestamp": 0.16,
+        "distance": 0.36992898547498176,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7855120347812772
+      },
+      {
+        "timestamp": 0.24,
+        "distance": 0.43164471409649474,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0043859649122807015,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.3146239798516035
+      },
+      {
+        "timestamp": 0.32,
+        "distance": 0.33926202929857774,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8396049961447716
+      },
+      {
+        "timestamp": 0.4,
+        "distance": 0.2615390246409326,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.9040359873324633
+      },
+      {
+        "timestamp": 0.48,
+        "distance": 0.25222967197706647,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8195469854399562
+      },
+      {
+        "timestamp": 0.56,
+        "distance": 0.2720680622542287,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8301219204440713
+      },
+      {
+        "timestamp": 0.64,
+        "distance": 0.28186713520396134,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.803306931629777
+      },
+      {
+        "timestamp": 0.72,
+        "distance": 0.3416702023659658,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7888090331107378
+      },
+      {
+        "timestamp": 0.8,
+        "distance": 0.2612090564905836,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.0719120036810637
+      },
+      {
+        "timestamp": 0.88,
+        "distance": 0.24989746170538668,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.821624998934567
+      },
+      {
+        "timestamp": 0.96,
+        "distance": 0.2281440678525693,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.9463850874453783
+      },
+      {
+        "timestamp": 1.04,
+        "distance": 0.22003199990433697,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8228480583056808
+      },
+      {
+        "timestamp": 1.12,
+        "distance": 0.18607398463045727,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8185190381482244
+      },
+      {
+        "timestamp": 1.2,
+        "distance": 0.2075507329120076,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8167600026354194
+      },
+      {
+        "timestamp": 1.28,
+        "distance": 0.2185039080979379,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8078180253505707
+      },
+      {
+        "timestamp": 1.36,
+        "distance": 0.12049438298423032,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.008771929824561403,
+        "ghost_ratio": 0.0043859649122807015,
+        "process_time_ms": 0.8511400083079934
+      },
+      {
+        "timestamp": 1.44,
+        "distance": 0.20318846672067492,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.791574944742024
+      },
+      {
+        "timestamp": 1.52,
+        "distance": 0.21429103456739734,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8229849627241492
+      },
+      {
+        "timestamp": 1.6,
+        "distance": 0.19304426195246716,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8494840003550053
+      },
+      {
+        "timestamp": 1.68,
+        "distance": 0.17532243446006268,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8377199992537498
+      },
+      {
+        "timestamp": 1.76,
+        "distance": 0.08249983876452083,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.013100436681222707,
+        "ghost_ratio": 0.017467248908296942,
+        "process_time_ms": 0.7978529902175069
+      },
+      {
+        "timestamp": 1.84,
+        "distance": 0.16512500202504393,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.048458149779735685,
+        "process_time_ms": 0.8143869927152991
+      },
+      {
+        "timestamp": 1.92,
+        "distance": 0.14859437641304413,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.15418502202643172,
+        "process_time_ms": 0.8465909631922841
+      },
+      {
+        "timestamp": 2.0,
+        "distance": 0.16634591831119017,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.1902654867256637,
+        "process_time_ms": 0.7920999778434634
+      },
+      {
+        "timestamp": 2.08,
+        "distance": 0.17681111766448265,
+        "state": "SAFE",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.22466960352422907,
+        "process_time_ms": 0.9316999930888414
+      },
+      {
+        "timestamp": 2.16,
+        "distance": 0.0898313523156466,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.31277533039647576,
+        "process_time_ms": 0.8088250178843737
+      },
+      {
+        "timestamp": 2.24,
+        "distance": 0.10388578069797694,
+        "state": "WARNING",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.4052863436123348,
+        "process_time_ms": 0.8225459605455399
+      },
+      {
+        "timestamp": 2.32,
+        "distance": 0.09102578987481474,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8383030071854591
+      },
+      {
+        "timestamp": 2.4,
+        "distance": 0.05040316262038952,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8719098987057805
+      },
+      {
+        "timestamp": 2.48,
+        "distance": 0.07596454822729021,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.9599470067769289
+      },
+      {
+        "timestamp": 2.56,
+        "distance": 0.0900369761551637,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8024200797080994
+      },
+      {
+        "timestamp": 2.64,
+        "distance": 0.08405695955108011,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.9362599812448025
+      },
+      {
+        "timestamp": 2.72,
+        "distance": 0.08135886641518308,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7881959900259972
+      },
+      {
+        "timestamp": 2.8000000000000003,
+        "distance": 0.0649752636981814,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7882029749453068
+      },
+      {
+        "timestamp": 2.88,
+        "distance": 0.05454964012176919,
+        "state": "SLOW",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8316120365634561
+      },
+      {
+        "timestamp": 2.96,
+        "distance": 0.04701613290813028,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7913870504125953
+      },
+      {
+        "timestamp": 3.04,
+        "distance": 0.04990121092875652,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8030419703572989
+      },
+      {
+        "timestamp": 3.12,
+        "distance": 0.025754868647539342,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0043859649122807015,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8508861064910889
+      },
+      {
+        "timestamp": 3.2,
+        "distance": -0.0315209952375069,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0043859649122807015,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8693330455571413
+      },
+      {
+        "timestamp": 3.2800000000000002,
+        "distance": 0.024725032763633997,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.798524939455092
+      },
+      {
+        "timestamp": 3.36,
+        "distance": -0.008800430836391093,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8427120046690106
+      },
+      {
+        "timestamp": 3.44,
+        "distance": 0.004951659079916959,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8475900394842029
+      },
+      {
+        "timestamp": 3.52,
+        "distance": -0.02318017950739429,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8336560567840934
+      },
+      {
+        "timestamp": 3.6,
+        "distance": -0.03813391151809045,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8239500457420945
+      },
+      {
+        "timestamp": 3.68,
+        "distance": -0.1500024734147062,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.021929824561403508,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8942160056903958
+      },
+      {
+        "timestamp": 3.7600000000000002,
+        "distance": -0.024147321596944687,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8802029769867659
+      },
+      {
+        "timestamp": 3.84,
+        "distance": 0.025229042801916374,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.013215859030837005,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 1.2334130005910993
+      },
+      {
+        "timestamp": 3.92,
+        "distance": 0.0020314942337097686,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.9127580560743809
+      },
+      {
+        "timestamp": 4.0,
+        "distance": -0.08034057823605359,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8405969711020589
+      },
+      {
+        "timestamp": 4.08,
+        "distance": -0.06306459750709148,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8169169304892421
+      },
+      {
+        "timestamp": 4.16,
+        "distance": 0.026738529192835703,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0043859649122807015,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.852384022437036
+      },
+      {
+        "timestamp": 4.24,
+        "distance": -0.06303497149430093,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8033859776332974
+      },
+      {
+        "timestamp": 4.32,
+        "distance": -0.08662946229488519,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.82917301915586
+      },
+      {
+        "timestamp": 4.4,
+        "distance": -0.10621845812437206,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7641309639438987
+      },
+      {
+        "timestamp": 4.48,
+        "distance": -0.09881368910117135,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8498689858242869
+      },
+      {
+        "timestamp": 4.5600000000000005,
+        "distance": -0.11085941351027552,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.004405286343612335,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8321639616042376
+      },
+      {
+        "timestamp": 4.64,
+        "distance": -0.11618458252210499,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8024559356272221
+      },
+      {
+        "timestamp": 4.72,
+        "distance": -0.12070805406751346,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8267739322036505
+      },
+      {
+        "timestamp": 4.8,
+        "distance": -0.09254117098836202,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8392970776185393
+      },
+      {
+        "timestamp": 4.88,
+        "distance": -0.11292714049749393,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7978200446814299
+      },
+      {
+        "timestamp": 4.96,
+        "distance": -0.15263037856153885,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7896570023149252
+      },
+      {
+        "timestamp": 5.04,
+        "distance": -0.1316763673520728,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8025310235098004
+      },
+      {
+        "timestamp": 5.12,
+        "distance": -0.15013717462295953,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8124118903651834
+      },
+      {
+        "timestamp": 5.2,
+        "distance": -0.21903640881366745,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.017543859649122806,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.846880953758955
+      },
+      {
+        "timestamp": 5.28,
+        "distance": -0.17358360960845728,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8322709472849965
+      },
+      {
+        "timestamp": 5.36,
+        "distance": -0.1440996773480628,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8572740480303764
+      },
+      {
+        "timestamp": 5.44,
+        "distance": -0.14218834871474825,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.772746978327632
+      },
+      {
+        "timestamp": 5.5200000000000005,
+        "distance": -0.148349267628834,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7841249462217093
+      },
+      {
+        "timestamp": 5.6000000000000005,
+        "distance": -0.14682411258161598,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7923980010673404
+      },
+      {
+        "timestamp": 5.68,
+        "distance": -0.17691208530822708,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0053475935828877,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.9502340108156204
+      },
+      {
+        "timestamp": 5.76,
+        "distance": -0.11613890285473596,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.0053475935828877,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8130889618769288
+      },
+      {
+        "timestamp": 5.84,
+        "distance": -0.2015215017181623,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9863636363636363,
+        "over_ratio": 0.012903225806451613,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.824508024379611
+      },
+      {
+        "timestamp": 5.92,
+        "distance": -0.2203695295789111,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9636363636363636,
+        "over_ratio": 0.014285714285714285,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7664869772270322
+      },
+      {
+        "timestamp": 6.0,
+        "distance": -0.18828973068164595,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 1.0,
+        "over_ratio": 0.006329113924050633,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.8040060056373477
+      },
+      {
+        "timestamp": 6.08,
+        "distance": -0.12253253174534312,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.9136363636363637,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.7750450167804956
+      },
+      {
+        "timestamp": 6.16,
+        "distance": -0.13900003971835556,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8727272727272727,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.744,
+        "process_time_ms": 0.7579500088468194
+      },
+      {
+        "timestamp": 6.24,
+        "distance": -0.04001297472265951,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8318181818181818,
+        "over_ratio": 0.009433962264150943,
+        "ghost_ratio": 0.6509433962264151,
+        "process_time_ms": 0.5893729394301772
+      },
+      {
+        "timestamp": 6.32,
+        "distance": -0.18075610682276566,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.8909090909090909,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.5053763440860215,
+        "process_time_ms": 0.7110029691830277
+      },
+      {
+        "timestamp": 6.4,
+        "distance": -0.15905609285882938,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.7090909090909091,
+        "over_ratio": 0.012048192771084338,
+        "ghost_ratio": 0.5542168674698795,
+        "process_time_ms": 0.7200089748948812
+      },
+      {
+        "timestamp": 6.48,
+        "distance": -0.1914968237826817,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.7181818181818181,
+        "over_ratio": 0.014285714285714285,
+        "ghost_ratio": 0.44285714285714284,
+        "process_time_ms": 0.7372120162472129
+      },
+      {
+        "timestamp": 6.5600000000000005,
+        "distance": -0.17371928371004333,
+        "state": "STOP",
+        "detected": true,
+        "keep_ratio": 0.6090909090909091,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.3181818181818182,
+        "process_time_ms": 0.7110129809007049
+      },
+      {
+        "timestamp": 6.640000000000001,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.021802959963679314
+      },
+      {
+        "timestamp": 6.72,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01955393236130476
+      },
+      {
+        "timestamp": 6.8,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.019085011444985867
+      },
+      {
+        "timestamp": 6.88,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01952995080500841
+      },
+      {
+        "timestamp": 6.96,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01926906406879425
+      },
+      {
+        "timestamp": 7.04,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.01940689980983734
+      },
+      {
+        "timestamp": 7.12,
+        "distance": Infinity,
+        "state": "SAFE",
+        "detected": false,
+        "keep_ratio": 0.0,
+        "over_ratio": 0.0,
+        "ghost_ratio": 0.0,
+        "process_time_ms": 0.019017024897038937
+      }
+    ]
+  }
+}
