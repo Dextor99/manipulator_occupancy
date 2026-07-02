@@ -121,6 +121,39 @@ def evaluate_critical_point_apf(
     }
 
 
+def evaluate_mesh_distance_fast(
+    surface: RobotSurfaceModel,
+    q: np.ndarray,
+    obstacle_points: np.ndarray,
+    *,
+    links: set[str] | None,
+    density: str,
+) -> tuple[float, str | None]:
+    """Evaluate mesh distance with one obstacle KDTree and one surface pass.
+
+    The older helper used in chapter-6 prototypes builds a KDTree for every
+    robot link and repeatedly queries all obstacle points.  For dense future
+    obstacle clouds this is unnecessarily expensive.  This version builds the
+    obstacle tree once and queries each link surface against it, matching the
+    direction used by ``MeshRiskEvaluator``.
+    """
+    obstacle = StaticObstacleField.from_points(obstacle_points)
+    if obstacle.tree is None:
+        return math.inf, None
+    best_distance = math.inf
+    nearest_link = None
+    surfaces = surface.surface_by_link(q, density=density, links=links)
+    for link, points in surfaces.items():
+        if len(points) == 0:
+            continue
+        distances, _ = obstacle.tree.query(points, k=1)
+        local_distance = float(np.min(distances))
+        if local_distance < best_distance:
+            best_distance = local_distance
+            nearest_link = link
+    return best_distance, nearest_link
+
+
 def make_trial(args: argparse.Namespace, surface: RobotSurfaceModel, scene: str, seed: int) -> dict[str, Any]:
     rng = np.random.default_rng(seed)
     q_base = np.asarray(args.q_base, dtype=float)
@@ -195,9 +228,13 @@ def make_trial(args: argparse.Namespace, surface: RobotSurfaceModel, scene: str,
     methods["critical_point_apf"] = cp_result
 
     mesh0 = time.perf_counter()
-    obstacle = StaticObstacleField.from_points(future_obs)
-    # Use the existing dense mesh distance style from exp_63 for consistency.
-    mesh_distance, mesh_link = distance_to_links(surface, q, obstacle.points, links=None, density="dense")
+    mesh_distance, mesh_link = evaluate_mesh_distance_fast(
+        surface,
+        q,
+        future_obs,
+        links=None,
+        density=args.mesh_density,
+    )
     methods["ours_ccro"] = {
         "distance": mesh_distance,
         "nearest_link": mesh_link,
@@ -406,6 +443,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dynamic-speed-max", type=float, default=0.20)
     parser.add_argument("--critical-point-density", default="coarse", choices=["coarse", "medium", "dense"])
     parser.add_argument("--points-per-link", type=int, default=3)
+    parser.add_argument("--mesh-density", default="dense", choices=["coarse", "medium", "dense"])
     parser.add_argument("--plot", action="store_true")
     return load_defaults(parser.parse_args())
 
