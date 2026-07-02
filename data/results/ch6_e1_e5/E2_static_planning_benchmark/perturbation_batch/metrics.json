@@ -1,0 +1,998 @@
+{
+  "source": "E2 perturbation-batch verifier statistics",
+  "trials_per_scenario": 10,
+  "seed": 20260702,
+  "jitter": {
+    "radius_jitter": 0.08,
+    "center_jitter_ratio": 0.4
+  },
+  "verification": {
+    "density": "coarse",
+    "time_step": 0.1,
+    "role": "supplemental perturbation statistics; final acceptance table remains dense"
+  },
+  "notes": {
+    "scope": "Fixed planned trajectories are re-verified under perturbed obstacle point clouds.",
+    "rrt": "RRT-Connect already has multi-seed statistics in external baseline results and is not reconstructed here."
+  },
+  "scenarios": {
+    "A": {
+      "methods": {
+        "official_tesseract_trajopt": {
+          "method_label": "Official TrajOpt/Tesseract",
+          "accepted_rate": 0.0,
+          "accepted_count": 0,
+          "trial_count": 10,
+          "d_min_mean": 0.0010003499344589486,
+          "d_min_std": 0.00030129023087131367,
+          "d_min_min": 0.0006261857246172856,
+          "d_min_max": 0.0015960874663350183,
+          "risk_mean": 0.0016749056458597322,
+          "risk_std": 0.000154121839436166,
+          "verify_ms_mean": 121.15646502934396,
+          "nearest_links": [
+            "right_link",
+            "right_link",
+            "right_link",
+            "gripper_base_link",
+            "gripper_base_link",
+            "right_link",
+            "right_link",
+            "right_link",
+            "right_link",
+            "right_link"
+          ]
+        },
+        "chomp_style": {
+          "method_label": "CHOMP-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.3512985708531984,
+          "d_min_std": 0.007219961668639893,
+          "d_min_min": 0.33573560671887814,
+          "d_min_max": 0.3659500867849124,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 118.68365549016744,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        },
+        "trajopt_style": {
+          "method_label": "TrajOpt-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.18985185364263052,
+          "d_min_std": 0.008970547437438204,
+          "d_min_min": 0.16970011114324415,
+          "d_min_max": 0.20700749461980086,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 117.97219340223819,
+          "nearest_links": [
+            "foreArm_Link",
+            "wrist2_Link",
+            "foreArm_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "foreArm_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link"
+          ]
+        },
+        "gpmp2_style": {
+          "method_label": "GPMP2-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.1663063290942753,
+          "d_min_std": 0.006245468246678452,
+          "d_min_min": 0.1538275270602947,
+          "d_min_max": 0.1789475233038585,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 120.04386488115415,
+          "nearest_links": [
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist3_Link",
+            "wrist3_Link",
+            "wrist3_Link",
+            "wrist3_Link",
+            "wrist3_Link",
+            "wrist2_Link",
+            "wrist3_Link",
+            "wrist3_Link"
+          ]
+        },
+        "minco_risk": {
+          "method_label": "MINCO-risk",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.12277428118477865,
+          "d_min_std": 0.00669594079562924,
+          "d_min_min": 0.10989442841767331,
+          "d_min_max": 0.1371638515299739,
+          "risk_mean": 7.309039310156384e-09,
+          "risk_std": 2.00221793781407e-08,
+          "verify_ms_mean": 132.10091328946874,
+          "nearest_links": [
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link"
+          ]
+        },
+        "full_body": {
+          "method_label": "Ours CCRO-NUBS",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.1157995692786334,
+          "d_min_std": 0.008403514240924285,
+          "d_min_min": 0.09596298438369501,
+          "d_min_max": 0.13046932674257455,
+          "risk_mean": 9.304906791472902e-08,
+          "risk_std": 2.3679036997971516e-07,
+          "verify_ms_mean": 121.79633508203551,
+          "nearest_links": [
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link"
+          ]
+        }
+      },
+      "perturbations": [
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7213031296977271,
+                0.033380714053631605,
+                0.8122350395268088
+              ],
+              "radius": 0.03419128397435413,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7208536670112331,
+                0.029075595413421324,
+                0.8154742941202553
+              ],
+              "radius": 0.033577985517004076,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7174060592617781,
+                0.028978015212807406,
+                0.8121890900079333
+              ],
+              "radius": 0.03748748425621815,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.72275302908977,
+                0.027824843967518675,
+                0.8142273339831255
+              ],
+              "radius": 0.036055775436285964,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7154333802961039,
+                0.010416544690964213,
+                0.8172524624494331
+              ],
+              "radius": 0.03882195400213323,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7189847973031521,
+                0.032260843083890316,
+                0.8061357402293087
+              ],
+              "radius": 0.03207424137628673,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7211972190345854,
+                0.029471690810548568,
+                0.8178647013086682
+              ],
+              "radius": 0.0372896033123133,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7268985261148546,
+                0.037435340893110236,
+                0.8211167209804697
+              ],
+              "radius": 0.03180079092914002,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7271342548837353,
+                0.027759519902389163,
+                0.8165179950879097
+              ],
+              "radius": 0.03782314128990037,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.7283636388447642,
+                0.018131929770884403,
+                0.8240933593051065
+              ],
+              "radius": 0.03977304091155355,
+              "source_link": "right_link"
+            }
+          ],
+          "point_count": 1800
+        }
+      ]
+    },
+    "B": {
+      "methods": {
+        "official_tesseract_trajopt": {
+          "method_label": "Official TrajOpt/Tesseract",
+          "accepted_rate": 0.0,
+          "accepted_count": 0,
+          "trial_count": 10,
+          "d_min_mean": 0.0013823496359871266,
+          "d_min_std": 0.0004916941676091877,
+          "d_min_min": 0.0005608442482926671,
+          "d_min_max": 0.002011706628394079,
+          "risk_mean": 0.00012906418445144738,
+          "risk_std": 3.30806252389222e-05,
+          "verify_ms_mean": 122.29648751672357,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        },
+        "chomp_style": {
+          "method_label": "CHOMP-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.32047815700299975,
+          "d_min_std": 0.006158921839113009,
+          "d_min_min": 0.3100884971686151,
+          "d_min_max": 0.33129809579648695,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 121.86483000405133,
+          "nearest_links": [
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link"
+          ]
+        },
+        "trajopt_style": {
+          "method_label": "TrajOpt-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.1467540791699382,
+          "d_min_std": 0.007657904536283486,
+          "d_min_min": 0.13361332427699754,
+          "d_min_max": 0.15671767683050852,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 122.23956800298765,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        },
+        "gpmp2_style": {
+          "method_label": "GPMP2-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.21543499235202784,
+          "d_min_std": 0.008755187166229583,
+          "d_min_min": 0.20083561070379966,
+          "d_min_max": 0.2317127590830902,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 121.99611380929127,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        },
+        "minco_risk": {
+          "method_label": "MINCO-risk",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.10824867257820878,
+          "d_min_std": 0.008167824889187618,
+          "d_min_min": 0.09358232075898001,
+          "d_min_max": 0.11858233142112401,
+          "risk_mean": 3.68530394681914e-08,
+          "risk_std": 5.357860216548613e-08,
+          "verify_ms_mean": 128.1221979064867,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        },
+        "full_body": {
+          "method_label": "Ours CCRO-NUBS",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.10186881879366938,
+          "d_min_std": 0.007954112162949388,
+          "d_min_min": 0.08789651582934781,
+          "d_min_max": 0.11085197207484362,
+          "risk_mean": 3.217292412373717e-07,
+          "risk_std": 4.058088857706246e-07,
+          "verify_ms_mean": 123.30936720827594,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        }
+      },
+      "perturbations": [
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.45461960396358264,
+                0.23769889653789483,
+                0.7518206488879546
+              ],
+              "radius": 0.03659863626819694,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.43579419716307694,
+                0.25485513745115046,
+                0.7717131429651924
+              ],
+              "radius": 0.03590989280938193,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.4541111497772689,
+                0.245542644602256,
+                0.7479642144910013
+              ],
+              "radius": 0.03259431037687191,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.44460950883383865,
+                0.25081884067976185,
+                0.7481061431158361
+              ],
+              "radius": 0.03697536116226978,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.4497732922411575,
+                0.24563641485623441,
+                0.7512024797242441
+              ],
+              "radius": 0.038100425215260164,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.45454444124439963,
+                0.2403774395362223,
+                0.752030974988945
+              ],
+              "radius": 0.03095760872246343,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.44374903464588056,
+                0.22940579657860918,
+                0.7485872833337988
+              ],
+              "radius": 0.038240761320713156,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.45477468113229425,
+                0.24022689914993703,
+                0.7529383539070958
+              ],
+              "radius": 0.03714739029330193,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.45967963457405187,
+                0.23523762282636831,
+                0.751521803688914
+              ],
+              "radius": 0.03597787646141528,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.453926778382768,
+                0.2295632658647475,
+                0.7478193913243004
+              ],
+              "radius": 0.04013652804300543,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 1800
+        }
+      ]
+    },
+    "C": {
+      "methods": {
+        "official_tesseract_trajopt": {
+          "method_label": "Official TrajOpt/Tesseract",
+          "accepted_rate": 0.0,
+          "accepted_count": 0,
+          "trial_count": 10,
+          "d_min_mean": 0.0008388389301617956,
+          "d_min_std": 0.0002862195245872552,
+          "d_min_min": 0.00035654515762970117,
+          "d_min_max": 0.001299555938814339,
+          "risk_mean": 0.0017475099665246873,
+          "risk_std": 0.0001889741117592106,
+          "verify_ms_mean": 236.94214791757986,
+          "nearest_links": [
+            "gripper_base_link",
+            "gripper_base_link",
+            "wrist3_Link",
+            "gripper_base_link",
+            "wrist2_Link",
+            "gripper_base_link",
+            "gripper_base_link",
+            "wrist2_Link",
+            "right_link",
+            "gripper_base_link"
+          ]
+        },
+        "chomp_style": {
+          "method_label": "CHOMP-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.14821451218067688,
+          "d_min_std": 0.007207876501570435,
+          "d_min_min": 0.13355167872275017,
+          "d_min_max": 0.15867514132199634,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 224.18742279987782,
+          "nearest_links": [
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link",
+            "wrist2_Link"
+          ]
+        },
+        "trajopt_style": {
+          "method_label": "TrajOpt-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.14327491497774716,
+          "d_min_std": 0.00664300492608486,
+          "d_min_min": 0.12746540530391273,
+          "d_min_max": 0.15306947497831278,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 229.59322860697284,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        },
+        "gpmp2_style": {
+          "method_label": "GPMP2-style",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.12367558006384179,
+          "d_min_std": 0.007049443689212728,
+          "d_min_min": 0.11017722246463432,
+          "d_min_max": 0.1340948916999245,
+          "risk_mean": 1.0899204482590605e-09,
+          "risk_std": 2.9904069260174905e-09,
+          "verify_ms_mean": 226.76432250300422,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        },
+        "minco_risk": {
+          "method_label": "MINCO-risk",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.19521948630462366,
+          "d_min_std": 0.00676731980159008,
+          "d_min_min": 0.1844898068162468,
+          "d_min_max": 0.20432562497523787,
+          "risk_mean": 0.0,
+          "risk_std": 0.0,
+          "verify_ms_mean": 243.00458548823372,
+          "nearest_links": [
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link",
+            "wrist1_Link"
+          ]
+        },
+        "full_body": {
+          "method_label": "Ours CCRO-NUBS",
+          "accepted_rate": 1.0,
+          "accepted_count": 10,
+          "trial_count": 10,
+          "d_min_mean": 0.10842898944625097,
+          "d_min_std": 0.005618406460984279,
+          "d_min_min": 0.09715846533045006,
+          "d_min_max": 0.11679722261879075,
+          "risk_mean": 9.270670828951444e-08,
+          "risk_std": 1.193782817697681e-07,
+          "verify_ms_mean": 235.48362251603976,
+          "nearest_links": [
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link",
+            "foreArm_Link"
+          ]
+        }
+      },
+      "perturbations": [
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6485093682356561,
+                0.09541874690762993,
+                0.8164341324544174
+              ],
+              "radius": 0.0400559086914512,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.2759950877432313,
+                0.2581426435133828,
+                0.8825075324119259
+              ],
+              "radius": 0.03810241180051742,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6615594409322901,
+                0.10618803697644398,
+                0.8266627685264308
+              ],
+              "radius": 0.03311654298078368,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.30123269945797526,
+                0.2437538372371624,
+                0.8949821400428869
+              ],
+              "radius": 0.028881741741971403,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6522030389990545,
+                0.10535245809285067,
+                0.8329399128374179
+              ],
+              "radius": 0.03561789918898934,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.27326967996399515,
+                0.24147227095560692,
+                0.899100113290389
+              ],
+              "radius": 0.034729981372420955,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6548577700101972,
+                0.09724224937889579,
+                0.8237216188555474
+              ],
+              "radius": 0.030029588076901703,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.288720906200317,
+                0.24841466773320756,
+                0.8813960630107278
+              ],
+              "radius": 0.03593030482762134,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6624608987012978,
+                0.10625330248273508,
+                0.8303465736889041
+              ],
+              "radius": 0.03411284541217012,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.27651558543549815,
+                0.234812563604269,
+                0.8925127218644826
+              ],
+              "radius": 0.03414974362965876,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6572021126913585,
+                0.09607757586593949,
+                0.8354918043065713
+              ],
+              "radius": 0.03578629008179686,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.2867108067355435,
+                0.24611568523703858,
+                0.9033031906562444
+              ],
+              "radius": 0.036466706734345725,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.653928075886307,
+                0.0960457896469394,
+                0.8237899583692468
+              ],
+              "radius": 0.03538967611100618,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.2847682154556654,
+                0.2428469887990743,
+                0.9064447091240068
+              ],
+              "radius": 0.033000176888020774,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6585143884831708,
+                0.09942654448734846,
+                0.8264039091837938
+              ],
+              "radius": 0.032370609069792965,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.29489306599110643,
+                0.2523905428915505,
+                0.8827236172664327
+              ],
+              "radius": 0.04078124324439316,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6611088404235087,
+                0.09177183866095134,
+                0.8276047682888923
+              ],
+              "radius": 0.036891209127177756,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.2853722626493317,
+                0.25009237096681874,
+                0.8911974326609359
+              ],
+              "radius": 0.036796147129166956,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        },
+        {
+          "obstacles": [
+            {
+              "center": [
+                0.6577502304710431,
+                0.0945408525525309,
+                0.8246564712177356
+              ],
+              "radius": 0.03379136851961372,
+              "source_link": "wrist2_Link"
+            },
+            {
+              "center": [
+                0.2919179106398423,
+                0.23431000952366995,
+                0.8969368416017225
+              ],
+              "radius": 0.03136956755684957,
+              "source_link": "foreArm_Link"
+            }
+          ],
+          "point_count": 3600
+        }
+      ]
+    }
+  }
+}

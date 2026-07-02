@@ -110,9 +110,9 @@ class FixedTimeMINCOOptimizer:
         q_high = np.maximum(samples.q - self.limits.q_max[None, :], 0.0)
         qd = np.maximum(np.abs(samples.qd) - self.limits.qd_max[None, :], 0.0)
         qdd = np.maximum(np.abs(samples.qdd) - self.limits.qdd_max[None, :], 0.0)
-        q_cost = float(np.trapezoid(np.sum(q_low * q_low + q_high * q_high, axis=1), self.sample_times))
-        qd_cost = float(np.trapezoid(np.sum(qd * qd, axis=1), self.sample_times))
-        qdd_cost = float(np.trapezoid(np.sum(qdd * qdd, axis=1), self.sample_times))
+        q_cost = float(np.trapz(np.sum(q_low * q_low + q_high * q_high, axis=1), self.sample_times))
+        qd_cost = float(np.trapz(np.sum(qd * qd, axis=1), self.sample_times))
+        qdd_cost = float(np.trapz(np.sum(qdd * qdd, axis=1), self.sample_times))
         weighted = (
             self.lambda_position * q_cost
             + self.lambda_velocity * qd_cost

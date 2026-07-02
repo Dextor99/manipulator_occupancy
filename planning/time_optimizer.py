@@ -149,9 +149,9 @@ class VariableTimeNUBSOptimizer:
         q_high = np.maximum(samples.q - self.limits.q_max, 0.0)
         qd = np.maximum(np.abs(samples.qd) - self.limits.qd_max, 0.0)
         qdd = np.maximum(np.abs(samples.qdd) - self.limits.qdd_max, 0.0)
-        q_cost = np.trapezoid(np.sum(q_low**2 + q_high**2, axis=1), sample_times)
-        qd_cost = np.trapezoid(np.sum(qd**2, axis=1), sample_times)
-        qdd_cost = np.trapezoid(np.sum(qdd**2, axis=1), sample_times)
+        q_cost = np.trapz(np.sum(q_low**2 + q_high**2, axis=1), sample_times)
+        qd_cost = np.trapz(np.sum(qd**2, axis=1), sample_times)
+        qdd_cost = np.trapz(np.sum(qdd**2, axis=1), sample_times)
         cost = self.lambda_position*q_cost + self.lambda_velocity*qd_cost + self.lambda_acceleration*qdd_cost
         return float(cost), float(np.max(np.maximum(q_low, q_high))), float(np.max(qd)), float(np.max(qdd))
 

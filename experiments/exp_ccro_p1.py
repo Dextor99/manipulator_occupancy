@@ -77,7 +77,7 @@ def _evaluate(points_by_time, forecast, times, d_stop):
     return {
         "min_distance": float(np.min(distances)),
         "accepted": bool(np.min(distances) >= d_stop),
-        "time_below_d_stop": float(np.trapezoid(below, times)),
+        "time_below_d_stop": float(np.trapz(below, times)),
     }
 
 

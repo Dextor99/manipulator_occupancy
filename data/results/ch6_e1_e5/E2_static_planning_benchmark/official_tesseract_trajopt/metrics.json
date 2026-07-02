@@ -1,0 +1,538 @@
+{
+  "source": "official Tesseract/TrajOpt baseline for E2",
+  "method_key": "official_tesseract_trajopt",
+  "method_label": "Official TrajOpt/Tesseract",
+  "official_package": "tesseract-robotics",
+  "notes": {
+    "model_adapter": "URDF visuals removed and mesh paths made absolute for Tesseract",
+    "planner_isolation": "TrajOptMotionPlanner is executed in subprocess to isolate native crashes",
+    "evaluation": "official output is evaluated with the shared dense TrajectoryVerifier",
+    "point_cloud_obstacles": "E2 point-cloud risk field is not injected into Tesseract; it is used by the common verifier"
+  },
+  "tesseract_files": {
+    "urdf": "/home/hzy/Code/manipulator_occupancy/data/results/ch6_e1_e5/E2_static_planning_benchmark/official_tesseract_trajopt/tesseract_model/aubo_i16_gripper_tesseract.urdf",
+    "srdf": "/home/hzy/Code/manipulator_occupancy/data/results/ch6_e1_e5/E2_static_planning_benchmark/official_tesseract_trajopt/tesseract_model/aubo_i16_gripper_tesseract.srdf",
+    "contact_plugins": "/home/hzy/Code/manipulator_occupancy/data/results/ch6_e1_e5/E2_static_planning_benchmark/official_tesseract_trajopt/tesseract_model/contact_manager_plugins.yaml"
+  },
+  "scenarios": {
+    "A": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.7221647193929861,
+              0.028285450924250152,
+              0.8150320019610477
+            ],
+            "surface_point": [
+              0.7101723490430398,
+              0.032383161219111306,
+              0.8243837036098987
+            ],
+            "time": 4.5,
+            "fraction": 0.5625,
+            "link": "right_link",
+            "endpoint_clearance": 0.3915596124677281,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 1800
+      },
+      "methods": {
+        "official_tesseract_trajopt": {
+          "method": "official_tesseract_trajopt",
+          "method_label": "Official TrajOpt/Tesseract",
+          "solver_success": true,
+          "official_output_used": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.001690773498146452,
+          "full_body_risk_cost": 0.001690773498146452,
+          "optimization_sample_min_distance": 0.0013001090990937749,
+          "nearest_link": "right_link",
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0003314543149099248,
+            "nearest_link": "right_link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 4035.236292053014,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "elapsed_ms": 797.2447340143844,
+            "solve_ms": 47.315881005488336,
+            "final_energy": 0.14393810531881465,
+            "result_waypoints": 9,
+            "worker_returncode": 0,
+            "message": "official TrajOptMotionPlanner.solve completed"
+          },
+          "diagnostics": {
+            "successful": true,
+            "message": "official TrajOptMotionPlanner.solve completed",
+            "official_package": "tesseract-robotics",
+            "planner": "TrajOptMotionPlanner",
+            "response_successful": true,
+            "response_message": "Found valid solution",
+            "solve_ms": 47.315881005488336,
+            "flattened_instruction_count": 9,
+            "succeeded_instruction_count": 0,
+            "failed_instruction_count": 0,
+            "formatted_program_error": "TypeError: formatProgram() takes 2 positional arguments but 3 were given",
+            "result_waypoints": 9,
+            "worker_returncode": 0,
+            "worker_elapsed_ms": 797.2447340143844,
+            "worker_stdout": "",
+            "worker_stderr": "",
+            "q_waypoint_count": 9
+          },
+          "q_waypoints": [
+            [
+              0.0,
+              -0.6,
+              1.4,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.016052245881063954,
+              -0.588763427883042,
+              1.3855529787058032,
+              0.012841796706144763,
+              0.9887634278844533,
+              -0.011236572117444816
+            ],
+            [
+              0.10351562409659562,
+              -0.5275390631319576,
+              1.306835938310591,
+              0.08281249927986421,
+              0.9275390631347816,
+              -0.07246093686900876
+            ],
+            [
+              0.2752075184555201,
+              -0.4073547370811426,
+              1.1523132333900707,
+              0.22016601476438866,
+              0.8073547370811139,
+              -0.1926452629188292
+            ],
+            [
+              0.5000000001330042,
+              -0.2499999999071845,
+              0.9499999998819656,
+              0.40000000010466574,
+              0.6499999999052889,
+              -0.3500000000921569
+            ],
+            [
+              0.7247924821482413,
+              -0.09264526249627789,
+              0.7476867660668507,
+              0.5798339857183018,
+              0.4926452624959585,
+              -0.5073547375036356
+            ],
+            [
+              0.896484376679171,
+              0.027539063675576025,
+              0.5931640609878331,
+              0.7171875013442752,
+              0.37246093632544613,
+              -0.6275390636759566
+            ],
+            [
+              0.9839477543640625,
+              0.0887634280549067,
+              0.5144470210719762,
+              0.7871582034916299,
+              0.31123657194550736,
+              -0.6887634280550576
+            ],
+            [
+              0.9999999999999999,
+              0.09999999999999999,
+              0.49999999999999994,
+              0.7999999999999999,
+              0.29999999999999993,
+              -0.6999999999999998
+            ]
+          ]
+        }
+      }
+    },
+    "B": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.4555120616322512,
+              0.2410066914006925,
+              0.75299783109259
+            ],
+            "surface_point": [
+              0.44544684036188287,
+              0.22940158890263146,
+              0.7495228610512772
+            ],
+            "time": 4.0,
+            "fraction": 0.5,
+            "link": "foreArm_Link",
+            "endpoint_clearance": 0.34169593754114663,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 1800
+      },
+      "methods": {
+        "official_tesseract_trajopt": {
+          "method": "official_tesseract_trajopt",
+          "method_label": "Official TrajOpt/Tesseract",
+          "solver_success": true,
+          "official_output_used": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 8.20159619071668e-05,
+          "full_body_risk_cost": 8.20159619071668e-05,
+          "optimization_sample_min_distance": 0.0016665795752524187,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.0003196981521636412,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 4557.916762074456,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "elapsed_ms": 1242.1953990124166,
+            "solve_ms": 45.5248539801687,
+            "final_energy": 0.14393810531881465,
+            "result_waypoints": 9,
+            "worker_returncode": 0,
+            "message": "official TrajOptMotionPlanner.solve completed"
+          },
+          "diagnostics": {
+            "successful": true,
+            "message": "official TrajOptMotionPlanner.solve completed",
+            "official_package": "tesseract-robotics",
+            "planner": "TrajOptMotionPlanner",
+            "response_successful": true,
+            "response_message": "Found valid solution",
+            "solve_ms": 45.5248539801687,
+            "flattened_instruction_count": 9,
+            "succeeded_instruction_count": 0,
+            "failed_instruction_count": 0,
+            "formatted_program_error": "TypeError: formatProgram() takes 2 positional arguments but 3 were given",
+            "result_waypoints": 9,
+            "worker_returncode": 0,
+            "worker_elapsed_ms": 1242.1953990124166,
+            "worker_stdout": "",
+            "worker_stderr": "",
+            "q_waypoint_count": 9
+          },
+          "q_waypoints": [
+            [
+              0.0,
+              -0.6,
+              1.4,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.016052245881063954,
+              -0.588763427883042,
+              1.3855529787058032,
+              0.012841796706144763,
+              0.9887634278844533,
+              -0.011236572117444816
+            ],
+            [
+              0.10351562409659562,
+              -0.5275390631319576,
+              1.306835938310591,
+              0.08281249927986421,
+              0.9275390631347816,
+              -0.07246093686900876
+            ],
+            [
+              0.2752075184555201,
+              -0.4073547370811426,
+              1.1523132333900707,
+              0.22016601476438866,
+              0.8073547370811139,
+              -0.1926452629188292
+            ],
+            [
+              0.5000000001330042,
+              -0.2499999999071845,
+              0.9499999998819656,
+              0.40000000010466574,
+              0.6499999999052889,
+              -0.3500000000921569
+            ],
+            [
+              0.7247924821482413,
+              -0.09264526249627789,
+              0.7476867660668507,
+              0.5798339857183018,
+              0.4926452624959585,
+              -0.5073547375036356
+            ],
+            [
+              0.896484376679171,
+              0.027539063675576025,
+              0.5931640609878331,
+              0.7171875013442752,
+              0.37246093632544613,
+              -0.6275390636759566
+            ],
+            [
+              0.9839477543640625,
+              0.0887634280549067,
+              0.5144470210719762,
+              0.7871582034916299,
+              0.31123657194550736,
+              -0.6887634280550576
+            ],
+            [
+              0.9999999999999999,
+              0.09999999999999999,
+              0.49999999999999994,
+              0.7999999999999999,
+              0.29999999999999993,
+              -0.6999999999999998
+            ]
+          ]
+        }
+      }
+    },
+    "C": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.6602383073401354,
+              0.09917136131666977,
+              0.8256826488707895
+            ],
+            "surface_point": [
+              0.648873285821282,
+              0.09343313629946597,
+              0.8164105639095773
+            ],
+            "time": 3.75,
+            "fraction": 0.46875,
+            "link": "wrist2_Link",
+            "endpoint_clearance": 0.3825051337407695,
+            "radius": 0.035
+          },
+          {
+            "center": [
+              0.2827721666850315,
+              0.24122681355181957,
+              0.8974351849908268
+            ],
+            "surface_point": [
+              0.27715228537284997,
+              0.22909171333118272,
+              0.8891154027417476
+            ],
+            "time": 5.0,
+            "fraction": 0.625,
+            "link": "foreArm_Link",
+            "endpoint_clearance": 0.20740776668748093,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 3600
+      },
+      "methods": {
+        "official_tesseract_trajopt": {
+          "method": "official_tesseract_trajopt",
+          "method_label": "Official TrajOpt/Tesseract",
+          "solver_success": true,
+          "official_output_used": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0016151812245808798,
+          "full_body_risk_cost": 0.0016151812245808798,
+          "optimization_sample_min_distance": 0.0006102652613741438,
+          "nearest_link": "gripper_base_link",
+          "verification": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.00023153082497665852,
+            "nearest_link": "gripper_base_link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 11497.946733026765,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "elapsed_ms": 1785.1476940559223,
+            "solve_ms": 41.989494930021465,
+            "final_energy": 0.14393810531881465,
+            "result_waypoints": 9,
+            "worker_returncode": 0,
+            "message": "official TrajOptMotionPlanner.solve completed"
+          },
+          "diagnostics": {
+            "successful": true,
+            "message": "official TrajOptMotionPlanner.solve completed",
+            "official_package": "tesseract-robotics",
+            "planner": "TrajOptMotionPlanner",
+            "response_successful": true,
+            "response_message": "Found valid solution",
+            "solve_ms": 41.989494930021465,
+            "flattened_instruction_count": 9,
+            "succeeded_instruction_count": 0,
+            "failed_instruction_count": 0,
+            "formatted_program_error": "TypeError: formatProgram() takes 2 positional arguments but 3 were given",
+            "result_waypoints": 9,
+            "worker_returncode": 0,
+            "worker_elapsed_ms": 1785.1476940559223,
+            "worker_stdout": "",
+            "worker_stderr": "",
+            "q_waypoint_count": 9
+          },
+          "q_waypoints": [
+            [
+              0.0,
+              -0.6,
+              1.4,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.016052245881063954,
+              -0.588763427883042,
+              1.3855529787058032,
+              0.012841796706144763,
+              0.9887634278844533,
+              -0.011236572117444816
+            ],
+            [
+              0.10351562409659562,
+              -0.5275390631319576,
+              1.306835938310591,
+              0.08281249927986421,
+              0.9275390631347816,
+              -0.07246093686900876
+            ],
+            [
+              0.2752075184555201,
+              -0.4073547370811426,
+              1.1523132333900707,
+              0.22016601476438866,
+              0.8073547370811139,
+              -0.1926452629188292
+            ],
+            [
+              0.5000000001330042,
+              -0.2499999999071845,
+              0.9499999998819656,
+              0.40000000010466574,
+              0.6499999999052889,
+              -0.3500000000921569
+            ],
+            [
+              0.7247924821482413,
+              -0.09264526249627789,
+              0.7476867660668507,
+              0.5798339857183018,
+              0.4926452624959585,
+              -0.5073547375036356
+            ],
+            [
+              0.896484376679171,
+              0.027539063675576025,
+              0.5931640609878331,
+              0.7171875013442752,
+              0.37246093632544613,
+              -0.6275390636759566
+            ],
+            [
+              0.9839477543640625,
+              0.0887634280549067,
+              0.5144470210719762,
+              0.7871582034916299,
+              0.31123657194550736,
+              -0.6887634280550576
+            ],
+            [
+              0.9999999999999999,
+              0.09999999999999999,
+              0.49999999999999994,
+              0.7999999999999999,
+              0.29999999999999993,
+              -0.6999999999999998
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "accepted": true
+}

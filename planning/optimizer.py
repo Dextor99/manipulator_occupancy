@@ -127,9 +127,9 @@ class FixedTimeNUBSOptimizer:
         q_integrand = np.sum(q_low * q_low + q_high * q_high, axis=1)
         qd_integrand = np.sum(qd * qd, axis=1)
         qdd_integrand = np.sum(qdd * qdd, axis=1)
-        q_cost = float(np.trapezoid(q_integrand, self._sample_times))
-        qd_cost = float(np.trapezoid(qd_integrand, self._sample_times))
-        qdd_cost = float(np.trapezoid(qdd_integrand, self._sample_times))
+        q_cost = float(np.trapz(q_integrand, self._sample_times))
+        qd_cost = float(np.trapz(qd_integrand, self._sample_times))
+        qdd_cost = float(np.trapz(qdd_integrand, self._sample_times))
         weighted = (
             self.lambda_position * q_cost
             + self.lambda_velocity * qd_cost

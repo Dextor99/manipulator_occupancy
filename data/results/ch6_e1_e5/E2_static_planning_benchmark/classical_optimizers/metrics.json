@@ -1,0 +1,818 @@
+{
+  "source": "CHOMP/TrajOpt/GPMP2-style baselines for E2",
+  "notes": {
+    "chomp_style": "smoothness functional plus obstacle potential",
+    "trajopt_style": "hinge collision cost with waypoint smoothness",
+    "gpmp2_style": "GP-like second-difference prior plus obstacle likelihood",
+    "evaluation": "all methods use the shared dense TrajectoryVerifier"
+  },
+  "scenarios": {
+    "A": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.7221647193929861,
+              0.028285450924250152,
+              0.8150320019610477
+            ],
+            "surface_point": [
+              0.7101723490430398,
+              0.032383161219111306,
+              0.8243837036098987
+            ],
+            "time": 4.5,
+            "fraction": 0.5625,
+            "link": "right_link",
+            "endpoint_clearance": 0.3915596124677281,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 1800
+      },
+      "methods": {
+        "chomp_style": {
+          "method": "chomp_style",
+          "method_label": "CHOMP-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.3550922204012332,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.351500013538191,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 3700.54374600295,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 49.980004085338116,
+            "final_cost": 7.25576433070575,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 4.869296533662591,
+            "initial_risk": 0.2741804986297697,
+            "final_risk": 0.029346355991447002,
+            "initial_min_distance": 0.0008015242203815603,
+            "final_min_distance": 0.3526884850198218,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 4295.182700036094
+          },
+          "p_inner": [
+            [
+              -0.40790092442440123,
+              -0.47662445141909543,
+              1.6183290235160066,
+              0.1728850568532557,
+              1.0559938849342299,
+              0.11191557774324606
+            ],
+            [
+              -0.198526927444933,
+              0.09748248941846197,
+              1.1350687816827023,
+              0.40812878546009834,
+              0.9616117098807336,
+              0.19019796887497104
+            ],
+            [
+              0.3892775959871692,
+              0.280233173961599,
+              0.7082289072856494,
+              0.6866696749770511,
+              0.680792472103747,
+              -0.21782090357079129
+            ]
+          ]
+        },
+        "trajopt_style": {
+          "method": "trajopt_style",
+          "method_label": "TrajOpt-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.17215609814247532,
+          "nearest_link": "wrist2_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.1716740367493019,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 3767.786624026485,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 21.77610538231599,
+            "final_cost": 0.3299368958746571,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 0.8251373622749282,
+            "initial_risk": 0.08244052159060007,
+            "final_risk": 0.0,
+            "initial_min_distance": 0.0008015242203815603,
+            "final_min_distance": 0.19191332554496907,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 4288.870082003996
+          },
+          "p_inner": [
+            [
+              -0.012080000613532371,
+              -0.4294560004290535,
+              1.287872000549742,
+              0.17633599951172116,
+              0.8994560004318328,
+              -0.11054399957190225
+            ],
+            [
+              0.011470135967716955,
+              -0.21697090482278641,
+              1.0446768776301487,
+              0.4191761087730429,
+              0.7469709048215537,
+              -0.32302909517677175
+            ],
+            [
+              0.48692000191957574,
+              -0.014155998656181274,
+              0.7767719982717041,
+              0.6695360015363525,
+              0.41415599865693437,
+              -0.5858440013441092
+            ]
+          ]
+        },
+        "gpmp2_style": {
+          "method": "gpmp2_style",
+          "method_label": "GPMP2-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.1665002407503066,
+          "nearest_link": "wrist2_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.16256504951933606,
+            "nearest_link": "wrist3_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 3780.192837002687,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 44.897531956602,
+            "final_cost": 2.3731054351085996,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 3.560511855670934,
+            "initial_risk": 0.2069054800271891,
+            "final_risk": 0.001877691175674525,
+            "initial_min_distance": 0.0008015242203815603,
+            "final_min_distance": 0.17004319234045132,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 4444.8492439696565
+          },
+          "p_inner": [
+            [
+              0.3379199993864676,
+              -0.3594560004290535,
+              1.6978720005497419,
+              0.06633599951172114,
+              0.8294560004318328,
+              -0.11054399957190225
+            ],
+            [
+              0.36147013596771693,
+              0.07302909517721357,
+              1.4246768776301488,
+              0.2291761087730429,
+              0.7469709048215537,
+              -0.25302909517677175
+            ],
+            [
+              0.5569200019195757,
+              0.2058440013438187,
+              0.7767719982717041,
+              0.44953600153635254,
+              0.5441559986569344,
+              -0.4558440013441092
+            ]
+          ]
+        }
+      }
+    },
+    "B": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.4555120616322512,
+              0.2410066914006925,
+              0.75299783109259
+            ],
+            "surface_point": [
+              0.44544684036188287,
+              0.22940158890263146,
+              0.7495228610512772
+            ],
+            "time": 4.0,
+            "fraction": 0.5,
+            "link": "foreArm_Link",
+            "endpoint_clearance": 0.34169593754114663,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 1800
+      },
+      "methods": {
+        "chomp_style": {
+          "method": "chomp_style",
+          "method_label": "CHOMP-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.31909915628589175,
+          "nearest_link": "wrist1_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.31852982501417126,
+            "nearest_link": "wrist1_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 4107.658726978116,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 43.6986033727545,
+            "final_cost": 7.193339917884013,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 6.289973422184551,
+            "initial_risk": 0.23928382800430512,
+            "final_risk": 0.029162816958531856,
+            "initial_min_distance": 0.0026211120322825045,
+            "final_min_distance": 0.3236868444087558,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 4538.678292999975
+          },
+          "p_inner": [
+            [
+              -0.44923016501889923,
+              -0.4957576063090361,
+              0.9528873714415393,
+              0.21436259036899635,
+              0.9591086128565516,
+              -0.33364365960262166
+            ],
+            [
+              -0.35735243659768423,
+              0.11650735234681353,
+              0.49427668057239543,
+              0.41606335643656833,
+              0.6903059618328167,
+              -0.34904757786246715
+            ],
+            [
+              0.23104505560362326,
+              0.43363318413102925,
+              0.3710465165418516,
+              0.6378314860476181,
+              0.4879165858658741,
+              -0.42767097768266604
+            ]
+          ]
+        },
+        "trajopt_style": {
+          "method": "trajopt_style",
+          "method_label": "TrajOpt-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.15174974271437322,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.1487882032740314,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 4203.087796922773,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 15.012754210190845,
+            "final_cost": 0.37476337064377635,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 1.108015984683749,
+            "initial_risk": 0.05642763246704182,
+            "final_risk": 0.0,
+            "initial_min_distance": 0.0026211120322825045,
+            "final_min_distance": 0.1506700738618102,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 4568.418698036112
+          },
+          "p_inner": [
+            [
+              -0.03208000061353239,
+              -0.5594560004290535,
+              1.497872000549742,
+              0.17633599951172116,
+              0.8994560004318328,
+              -0.040543999571902245
+            ],
+            [
+              0.011470135967716955,
+              -0.3469709048227864,
+              1.144676877630149,
+              0.3591761087730429,
+              0.7469709048215537,
+              -0.25302909517677175
+            ],
+            [
+              0.48692000191957574,
+              -0.014155998656181274,
+              0.736771998271704,
+              0.6695360015363525,
+              0.5441559986569344,
+              -0.4558440013441092
+            ]
+          ]
+        },
+        "gpmp2_style": {
+          "method": "gpmp2_style",
+          "method_label": "GPMP2-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.21658372742610812,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.20809075508575023,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 4082.0233919657767,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 32.82740633375523,
+            "final_cost": 1.1308053317199702,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 5.952484018223446,
+            "initial_risk": 0.14942869134696637,
+            "final_risk": 0.00010637567341639838,
+            "initial_min_distance": 0.0026211120322825045,
+            "final_min_distance": 0.21903370452147142,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 4576.431846013293
+          },
+          "p_inner": [
+            [
+              0.1479199993864676,
+              0.05054399957094646,
+              1.6978720005497419,
+              0.046335999511721154,
+              0.8894560004318328,
+              -0.11054399957190225
+            ],
+            [
+              0.36147013596771693,
+              0.35302909517721354,
+              1.4246768776301488,
+              0.2891761087730429,
+              0.7469709048215537,
+              -0.25302909517677175
+            ],
+            [
+              0.6169200019195757,
+              0.33584400134381875,
+              0.936771998271704,
+              0.5795360015363525,
+              0.5441559986569344,
+              -0.4558440013441092
+            ]
+          ]
+        }
+      }
+    },
+    "C": {
+      "obstacle": {
+        "obstacles": [
+          {
+            "center": [
+              0.6602383073401354,
+              0.09917136131666977,
+              0.8256826488707895
+            ],
+            "surface_point": [
+              0.648873285821282,
+              0.09343313629946597,
+              0.8164105639095773
+            ],
+            "time": 3.75,
+            "fraction": 0.46875,
+            "link": "wrist2_Link",
+            "endpoint_clearance": 0.3825051337407695,
+            "radius": 0.035
+          },
+          {
+            "center": [
+              0.2827721666850315,
+              0.24122681355181957,
+              0.8974351849908268
+            ],
+            "surface_point": [
+              0.27715228537284997,
+              0.22909171333118272,
+              0.8891154027417476
+            ],
+            "time": 5.0,
+            "fraction": 0.625,
+            "link": "foreArm_Link",
+            "endpoint_clearance": 0.20740776668748093,
+            "radius": 0.035
+          }
+        ],
+        "point_count": 3600
+      },
+      "methods": {
+        "chomp_style": {
+          "method": "chomp_style",
+          "method_label": "CHOMP-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.14169224590073726,
+          "nearest_link": "wrist2_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.13234800713382494,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 9929.524820996448,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 69.87300015586743,
+            "final_cost": 16.117374438686312,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 5.689102502404113,
+            "initial_risk": 0.3846971434660436,
+            "final_risk": 0.06432748930597645,
+            "initial_min_distance": 0.002547338996509527,
+            "final_min_distance": 0.18931102264242244,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 8259.14744194597
+          },
+          "p_inner": [
+            [
+              -0.07208000061353238,
+              -0.9994560004290535,
+              1.607872000549742,
+              0.11633599951172116,
+              0.7394560004318328,
+              -0.11054399957190225
+            ],
+            [
+              0.14147013596771693,
+              -0.3469709048227864,
+              1.4246768776301488,
+              0.2891761087730429,
+              0.3969709048215537,
+              -0.25302909517677175
+            ],
+            [
+              0.48692000191957574,
+              0.6858440013438187,
+              0.6467719982717041,
+              0.5395360015363525,
+              0.28415599865693436,
+              -0.4558440013441092
+            ]
+          ]
+        },
+        "trajopt_style": {
+          "method": "trajopt_style",
+          "method_label": "TrajOpt-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.15005278622838106,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.14367922495612817,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 10035.138919018209,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 32.47914834256321,
+            "final_cost": 0.40055994780647164,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 1.4920331958581503,
+            "initial_risk": 0.12360607143770473,
+            "final_risk": 9.328684027509186e-07,
+            "initial_min_distance": 0.002547338996509527,
+            "final_min_distance": 0.14911478281856327,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 8418.409190955572
+          },
+          "p_inner": [
+            [
+              0.1179199993864676,
+              -0.5594560004290535,
+              1.287872000549742,
+              0.046335999511721154,
+              0.8294560004318328,
+              -0.040543999571902245
+            ],
+            [
+              0.08147013596771696,
+              -0.3469709048227864,
+              1.074676877630149,
+              0.2891761087730429,
+              0.7469709048215537,
+              -0.033029095176771744
+            ],
+            [
+              0.26692000191957577,
+              -0.014155998656181274,
+              0.6467719982717041,
+              0.5395360015363525,
+              0.5441559986569344,
+              -0.3958440013441092
+            ]
+          ]
+        },
+        "gpmp2_style": {
+          "method": "gpmp2_style",
+          "method_label": "GPMP2-style",
+          "solver_success": true,
+          "optimized_links": null,
+          "risk_cost_for_method": 0.0,
+          "full_body_risk_cost": 0.0,
+          "optimization_sample_min_distance": 0.13276425660410623,
+          "nearest_link": "foreArm_Link",
+          "verification": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true
+            },
+            "goal_error": 2.0816681711721685e-16,
+            "min_distance": 0.12235750325255801,
+            "nearest_link": "foreArm_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0,
+            "continuity_qd": 0.0,
+            "continuity_qdd": 3.66205343881779e-15,
+            "validation_ms": 9762.095946003683,
+            "self_collision_checked": false
+          },
+          "optimization": {
+            "success": true,
+            "status": 0,
+            "message": "fixed-budget stochastic coordinate refinement",
+            "initial_cost": 64.92181439440606,
+            "final_cost": 7.676927606731156,
+            "initial_energy": 0.08613281250000075,
+            "final_energy": 4.821422446255337,
+            "initial_risk": 0.30225920592149413,
+            "final_risk": 0.005841532338089984,
+            "initial_min_distance": 0.002547338996509527,
+            "final_min_distance": 0.15130569937953572,
+            "iterations": 16,
+            "function_evaluations": 143,
+            "elapsed_ms": 8167.264882940799
+          },
+          "p_inner": [
+            [
+              0.12893840384801436,
+              -0.9709175687683846,
+              0.9997248096358724,
+              0.18826422734562576,
+              1.0356393670823545,
+              -0.17094701729413803
+            ],
+            [
+              -0.044723493105342405,
+              -0.6280413280712487,
+              0.5639807217631274,
+              0.6087570371509134,
+              0.5516536668419534,
+              -0.37317304182206606
+            ],
+            [
+              0.6077850146756233,
+              0.04112407724962963,
+              0.28458237622683713,
+              0.9021419638890151,
+              0.10675664019695852,
+              -0.6247156803911316
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "accepted": true
+}

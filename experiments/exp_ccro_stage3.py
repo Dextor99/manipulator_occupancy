@@ -215,10 +215,10 @@ def _method_metrics(name, trajectory, solver_success, result, evaluator, truth, 
         q_goal=tail[:, 0],
         solver_success=solver_success,
     )
-    below_safe = float(np.trapezoid((risk.sample_distances < evaluator.d_safe).astype(float), times))
-    below_stop = float(np.trapezoid((risk.sample_distances < verifier.d_stop).astype(float), times))
+    below_safe = float(np.trapz((risk.sample_distances < evaluator.d_safe).astype(float), times))
+    below_stop = float(np.trapz((risk.sample_distances < verifier.d_stop).astype(float), times))
     path_length = float(np.sum(np.linalg.norm(np.diff(samples.q, axis=0), axis=1)))
-    jerk = float(np.trapezoid(np.sum(samples.jerk**2, axis=1), times))
+    jerk = float(np.trapz(np.sum(samples.jerk**2, axis=1), times))
     payload = {
         "method": name,
         "solver_success": bool(solver_success),

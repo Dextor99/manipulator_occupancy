@@ -255,7 +255,7 @@ def run(config_path: str | Path, output_override: str | Path | None = None) -> d
     waypoint_error = final_trajectory.waypoint_error()
     limit_metrics = _limit_metrics(final_samples, limits)
     numerical_jerk_energy = float(
-        np.trapezoid(np.sum(final_samples.jerk**2, axis=1), final_samples.times)
+        np.trapz(np.sum(final_samples.jerk**2, axis=1), final_samples.times)
     )
     benchmark = _benchmark(
         optimization.p_inner,

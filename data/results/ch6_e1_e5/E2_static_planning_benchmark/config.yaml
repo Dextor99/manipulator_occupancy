@@ -1,0 +1,160 @@
+schema_version: 1
+name: ch6-e1-e5-unified-settings
+description: Frozen shared settings for Chapter 6 E1-E5 experiments.
+
+sources:
+  planning_static: config/ccro_stage2.yaml
+  planning_dynamic: config/ccro_stage4.yaml
+  real_robot_gate: config/ccro_p7.yaml
+  camera_intrinsic: config/camera_intrinsic.json
+  camera_extrinsic: config/camera_extrinsic.json
+  workspace: config/workspace.yaml
+  perception_safety: config/safety.yaml
+
+experiment:
+  random_seed: 20260623
+  result_root: data/results/ch6_e1_e5
+  default_trials: 20
+  timezone: Asia/Shanghai
+  required_files:
+    - config.yaml
+    - scene_config.yaml
+    - trajectory.csv
+    - obstacle_log.csv
+    - risk_log.csv
+    - planner_log.csv
+    - runtime_log.csv
+    - manifest.json
+  directories:
+    - figures
+    - videos
+
+platform:
+  robot:
+    model: AUBO i16 with gripper
+    urdf_path: urdf/aubo_i16_gripper.urdf
+    joint_names: [shoulder_joint, upperArm_joint, foreArm_joint, wrist1_joint, wrist2_joint, wrist3_joint]
+    q_min: [-6.0, -6.0, -6.0, -6.0, -6.0, -6.0]
+    q_max: [6.0, 6.0, 6.0, 6.0, 6.0, 6.0]
+    qd_max: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    qdd_max: [2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+  sensor:
+    model: RealSense D435i or current RGB-D camera
+    width: 1280
+    height: 720
+    fx: 918.27160645
+    fy: 918.02313232
+    cx: 643.14483643
+    cy: 357.28491211
+    depth_scale: 0.001
+    nominal_frequency_hz: 30.0
+  frames:
+    camera_frame: camera_color_optical_frame
+    robot_base_frame: base_link
+    world_frame: base_link
+    extrinsic_path: config/camera_extrinsic.json
+
+perception:
+  workspace:
+    x: [-1.5, 1.5]
+    y: [-1.5, 1.5]
+    z: [-0.5, 1.8]
+    voxel_size: 0.02
+    sphere:
+      center: [0.0, 0.0, 0.0]
+      radius: 1.0
+  self_filter:
+    margin: 0.03
+  clustering:
+    method: DBSCAN
+    eps: 0.05
+    min_points: 25
+    split_enabled: true
+    split_threshold: 300
+    sub_eps: 0.12
+    sub_min_points: 10
+  object_tracking:
+    association_distance: 0.20
+    velocity_alpha: 0.3
+    pos_alpha: 0.3
+    motion_gate: 0.005
+    velocity_dead_zone: 0.01
+    shape_alpha: 0.4
+    min_track_age: 3
+
+risk:
+  d_activate: 0.17
+  d_safe: 0.11
+  d_stop: 0.035
+  guided_safe: 0.22
+  guided_slow: 0.12
+  guided_stop: 0.06
+  prediction_horizon: 0.65
+  prediction_step: 0.10
+  risk_margin: 0.04
+  prediction_uncertainty: 0.015
+  prediction_static_speed_threshold: 0.03
+  prediction_static_margin: 0.01
+  prediction_velocity_radius_scale: 0.80
+  fd_epsilon_q: 2.0e-4
+  optimizer_density: coarse
+  validation_density: dense
+  risk_samples_per_segment: 4
+
+nubs:
+  system_order: 3
+  segment_count: 4
+  total_duration: 8.0
+  segment_durations: [1.6, 1.8, 2.2, 2.4]
+  q_start: [0.0, -0.60, 1.40, 0.0, 1.00, 0.0]
+  q_goal: [1.0, 0.10, 0.50, 0.8, 0.30, -0.70]
+  qd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_start: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  qdd_goal: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  optimizer:
+    lambda_smooth: 0.05
+    lambda_risk: 7000.0
+    lambda_position: 20.0
+    lambda_velocity: 20.0
+    lambda_acceleration: 20.0
+    samples_per_segment: 10
+    finite_difference_epsilon: 1.0e-6
+    sensitivity_epsilon: 1.0e-6
+    max_iterations: 60
+    gradient_tolerance: 1.0e-6
+
+acceptance:
+  dense_time_step: 0.04
+  dense_safety_points: 5000
+  min_distance_threshold: 0.060
+  goal_error_threshold: 1.0e-5
+  epsilon_continuity_q: 1.0e-6
+  epsilon_continuity_qd: 1.0e-5
+  epsilon_continuity_qdd: 1.0e-4
+  limit_tolerance: 1.0e-8
+  max_planning_time_s: 3.0
+
+real_robot_low_speed:
+  mode: dry_run
+  allow_real_robot_commands: false
+  required_operator_phrase: CCRO_P7_LOW_SPEED_APPROVED
+  speed_scale: 0.10
+  max_joint_speed: 0.10
+  max_joint_acceleration: 0.20
+  watchdog_timeout: 0.10
+  switch_q_error: 0.02
+  switch_qd_error: 0.05
+  emergency_stop_required: true
+
+logging:
+  trajectory_csv:
+    columns: [t, q1, q2, q3, q4, q5, q6, dq1, dq2, dq3, dq4, dq5, dq6, ddq1, ddq2, ddq3, ddq4, ddq5, ddq6]
+  obstacle_log_csv:
+    columns: [t, object_id, cx, cy, cz, radius, vx, vy, vz, class, confidence, state]
+  risk_log_csv:
+    columns: [t, D_min, R_body, active_link, active_points, trigger_state, nearest_object_id]
+  planner_log_csv:
+    columns: [trial_id, method, success, accepted, J_risk, J_smooth, goal_error, plan_time_ms, replan_count, notes]
+  runtime_log_csv:
+    columns: [trial_id, frame, module, elapsed_ms]

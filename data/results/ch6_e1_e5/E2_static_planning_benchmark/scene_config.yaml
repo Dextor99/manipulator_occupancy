@@ -1,0 +1,72 @@
+experiment_id: E2_static_planning_benchmark
+title: E2 static obstacle trajectory planning benchmark
+purpose:
+  - Evaluate whether risk-constrained NUBS generates safe and smooth static-obstacle trajectories.
+  - Compare against sampling and continuous-trajectory baselines under one dense safety checker.
+  - Keep internal NUBS variants as ablation evidence rather than main external baselines.
+
+output_layout:
+  reuse_stage2: data/results/ch6_e1_e5/E2_static_planning_benchmark/reuse/ccro_stage2
+  reuse_external: data/results/ch6_e1_e5/E2_static_planning_benchmark/reuse/ch6_4_external
+  reuse_summary: data/results/ch6_e1_e5/E2_static_planning_benchmark/reuse/ch6_4
+  final: data/results/ch6_e1_e5/E2_static_planning_benchmark/final
+  pending_classical_optimizers: data/results/ch6_e1_e5/E2_static_planning_benchmark/classical_optimizers
+  official_tesseract_trajopt: data/results/ch6_e1_e5/E2_static_planning_benchmark/official_tesseract_trajopt
+  perturbation_batch: data/results/ch6_e1_e5/E2_static_planning_benchmark/perturbation_batch
+
+scenarios:
+  - id: P1
+    current_name: A
+    description: End-effector path near obstacle.
+    role: Basic static obstacle avoidance.
+  - id: P2
+    current_name: B
+    description: Middle-link/body-near obstacle.
+    role: Whole-body risk necessity.
+  - id: P3
+    current_name: C
+    description: Multi-obstacle/complex near-field case.
+    role: Safety margin and runtime under harder static scene.
+
+implemented_methods:
+  ours_and_internal:
+    - NUBS-base
+    - NUBS-EEF-risk
+    - CCRO-NUBS full-body
+  external_reusable:
+    - MINCO-base
+    - MINCO-risk
+    - RRT-Connect + smoothing
+  official_package:
+    - Official TrajOpt/Tesseract
+  lightweight_reproduction:
+    - CHOMP-style
+    - TrajOpt-style
+    - GPMP2-style
+
+missing_methods:
+  required_or_recommended:
+    - none for the reduced E2 benchmark
+  optional:
+    - Official MoveIt CHOMP
+    - Official GPMP2
+    - STOMP
+
+decision:
+  usable_directly:
+    - CCRO-NUBS full-body from ccro_stage2 as our method result.
+    - MINCO-risk as continuous polynomial optimization baseline.
+    - RRT-Connect + smoothing with 30 seeds per scenario as sampling baseline.
+  auxiliary_or_ablation:
+    - NUBS-base
+    - NUBS-EEF-risk
+    - MINCO-base
+  needs_supplement:
+    - Add official CHOMP/GPMP2 only if final paper requires more external-package bindings.
+    - Add full re-optimization on perturbation instances only if a larger statistical benchmark is required.
+
+supplemental_robustness:
+  perturbation_trials_per_scenario: 10
+  verification_density: coarse
+  verification_time_step: 0.1
+  note: Fixed planned trajectories are re-verified under perturbed obstacle point clouds; dense final acceptance remains in the main table.
