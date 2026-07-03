@@ -15,6 +15,8 @@
 | Ours fast candidate mode | `ours_fast_mode` | Completed with coarse optimizer mesh and dense validation; P1/P2/P3 all accepted. | Use as runtime-improvement evidence, not as a replacement for the full high-fidelity main result. |
 | Weakness/runtime audit | `analysis` | Completed. | Use to discuss disadvantages honestly and frame real-time feasibility by layers. |
 | P2 D_min(t) curve | `final/figures/fig_E2_P2_Dmin_curve.png` | Completed. | Use as representative time-series figure for the middle-link near-obstacle case. |
+| P2 joint kinematics curve | `final/figures/fig_E2_P2_joint_kinematics.png` | Completed. | Use to support trajectory smoothness with velocity and acceleration norms. |
+| P2 J_smooth bar chart | `final/figures/fig_E2_P2_Jsmooth_bar.png` | Completed. | Use to quantify smoothness; unsafe official baseline is hatched and marked. |
 | Final E2 table and figure | `final` | Completed. | Use for E2 thesis section; keep official TrajOpt and `*-style` baselines clearly separated. |
 
 ## What Can Be Used Directly
@@ -54,7 +56,7 @@
 1. Review `final/table_E2_static_planning_final.md` and `final/figures/fig_E2_Dmin_methods.png`.
 2. Use `perturbation_batch/table_E2_perturbation_batch.md` as supplemental robustness evidence rather than replacing the dense final table.
 3. Use `analysis/table_E2_ours_runtime_modes.md` to show that `Ours-fast` reduces planning time while preserving dense acceptance.
-4. Use `final/figures/fig_E2_P2_Dmin_curve.png` as the representative P2 time-series figure.
+4. Use `final/figures/fig_E2_P2_Dmin_curve.png` for safety-distance evolution, and use `fig_E2_P2_joint_kinematics.png` plus `fig_E2_P2_Jsmooth_bar.png` for motion smoothness.
 5. In the thesis wording, call `Official TrajOpt/Tesseract` an official-package baseline, and keep `CHOMP-style`, `TrajOpt-style`, and `GPMP2-style` labels for lightweight reproductions.
 
 ## Existing Commands To Reproduce Current Reusable Results
@@ -111,4 +113,6 @@ data/results/ch6_e1_e5/E2_static_planning_benchmark/analysis/CH6_method_weakness
 data/results/ch6_e1_e5/E2_static_planning_benchmark/final/E2_final_summary.md
 data/results/ch6_e1_e5/E2_static_planning_benchmark/final/figures/fig_E2_Dmin_methods.png
 data/results/ch6_e1_e5/E2_static_planning_benchmark/final/figures/fig_E2_P2_Dmin_curve.png
+data/results/ch6_e1_e5/E2_static_planning_benchmark/final/figures/fig_E2_P2_joint_kinematics.png
+data/results/ch6_e1_e5/E2_static_planning_benchmark/final/figures/fig_E2_P2_Jsmooth_bar.png
 ```

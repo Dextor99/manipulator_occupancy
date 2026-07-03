@@ -166,6 +166,7 @@ def summary_note(
             "- All methods are evaluated with the same dense `TrajectoryVerifier`.",
             "- Supplemental perturbation statistics use 10 perturbed obstacle point clouds for each P1/P2/P3 scene and coarse risk evaluation at 0.1 s; they support robustness analysis but do not replace the dense final acceptance table.",
             "- Representative P2 time-series visualization is saved as `final/figures/fig_E2_P2_Dmin_curve.png`.",
+            "- P2 motion smoothness is additionally visualized by `final/figures/fig_E2_P2_joint_kinematics.png` and `final/figures/fig_E2_P2_Jsmooth_bar.png`.",
             fast_note,
             f"- In P2, Ours CCRO-NUBS reaches `D_min={fmt(p2_ours)}`, RRT reaches `D_min={fmt(p2_rrt)}`, and CHOMP-style reaches `D_min={fmt(p2_chomp)}`.",
             "- Internal `NUBS-base` and `NUBS-EEF-risk` should remain in ablation rather than the main external table.",

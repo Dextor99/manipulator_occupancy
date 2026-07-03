@@ -1,4 +1,4 @@
-"""Build E2 perturbation-batch statistics and a P2 D_min(t) figure."""
+"""Build E2 perturbation statistics and representative P2 figures."""
 
 from __future__ import annotations
 
@@ -342,10 +342,7 @@ def plot_p2_dmin_curve(root: Path, config_path: Path, output: Path) -> None:
     import matplotlib.pyplot as plt
 
     config, head, tail, durations, evaluator, _, _ = build_context(config_path)
-    stage2 = load_json(root / "reuse" / "ccro_stage2" / "metrics.json")
-    external = load_json(root / "reuse" / "ch6_4_external" / "metrics.json")
-    classical = load_json(root / "classical_optimizers" / "metrics.json")
-    official = load_json(root / "official_tesseract_trajopt" / "metrics.json")
+    stage2, external, classical, official = load_e2_sources(root)
     obstacle_npz = np.load(root / "reuse" / "ccro_stage2" / "scenario_B_obstacle.npz")
     obstacle = StaticObstacleField.from_points(obstacle_npz["points"])
     times = np.linspace(0.0, float(np.sum(durations)), 161)
@@ -362,6 +359,76 @@ def plot_p2_dmin_curve(root: Path, config_path: Path, output: Path) -> None:
     ax.set_ylabel("D_min(t) (m)")
     ax.grid(alpha=0.25)
     ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=240)
+    plt.close(fig)
+
+
+def load_e2_sources(root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    stage2 = load_json(root / "reuse" / "ccro_stage2" / "metrics.json")
+    external = load_json(root / "reuse" / "ch6_4_external" / "metrics.json")
+    classical = load_json(root / "classical_optimizers" / "metrics.json")
+    official = load_json(root / "official_tesseract_trajopt" / "metrics.json")
+    return stage2, external, classical, official
+
+
+def plot_p2_kinematic_smoothness(root: Path, config_path: Path, output: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    _config, head, tail, durations, _evaluator, _, _ = build_context(config_path)
+    stage2, external, classical, official = load_e2_sources(root)
+    times = np.linspace(0.0, float(np.sum(durations)), 161)
+    fig, axes = plt.subplots(2, 1, figsize=(8.6, 5.4), sharex=True)
+    for method_key, label, source, kind in METHODS:
+        row = method_row("B", method_key, source, stage2, external, classical, official)
+        trajectory = reconstruct_trajectory(row, kind, head, tail, durations)
+        samples = trajectory.sample(times, max_derivative=2)
+        speed_norm = np.linalg.norm(samples.qd, axis=1)
+        accel_norm = np.linalg.norm(samples.qdd, axis=1)
+        axes[0].plot(times, speed_norm, linewidth=1.8, label=label)
+        axes[1].plot(times, accel_norm, linewidth=1.8, label=label)
+    axes[0].set_title("P2 / B joint-space kinematic smoothness")
+    axes[0].set_ylabel("||qd(t)||")
+    axes[1].set_ylabel("||qdd(t)||")
+    axes[1].set_xlabel("time (s)")
+    for ax in axes:
+        ax.grid(alpha=0.25)
+    axes[0].legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=240)
+    plt.close(fig)
+
+
+def plot_p2_jsmooth_bar(root: Path, output: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    stage2, external, classical, official = load_e2_sources(root)
+    labels = []
+    values = []
+    colors = []
+    for method_key, label, source, _kind in METHODS:
+        row = method_row("B", method_key, source, stage2, external, classical, official)
+        labels.append(label)
+        values.append(float(row.get("optimization", {}).get("final_energy", 0.0)))
+        if not row["verification"]["accepted"]:
+            colors.append("0.65")
+        elif method_key == "full_body":
+            colors.append("tab:brown")
+        else:
+            colors.append("tab:blue")
+    fig, ax = plt.subplots(figsize=(8.8, 3.8))
+    bars = ax.bar(np.arange(len(labels)), values, color=colors, alpha=0.86)
+    ax.set_title("P2 / B trajectory smoothness cost")
+    ax.set_ylabel("J_smooth (lower is better)")
+    ax.set_xticks(np.arange(len(labels)), labels, rotation=28, ha="right")
+    ax.grid(axis="y", alpha=0.25)
+    for index, (value, bar) in enumerate(zip(values, bars)):
+        ax.text(index, value, f"{value:.3g}", ha="center", va="bottom", fontsize=8)
+        if colors[index] == "0.65":
+            bar.set_hatch("//")
+            ax.text(index, value * 0.5, "unsafe", ha="center", va="center", fontsize=8)
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=240)
@@ -403,8 +470,14 @@ def main() -> None:
     )
     write_perturbation_table(metrics, output / "table_E2_perturbation_batch.md")
     plot_p2_dmin_curve(root, Path(args.config), figures / "fig_E2_P2_Dmin_curve.png")
+    plot_p2_kinematic_smoothness(
+        root, Path(args.config), figures / "fig_E2_P2_joint_kinematics.png"
+    )
+    plot_p2_jsmooth_bar(root, figures / "fig_E2_P2_Jsmooth_bar.png")
     print(f"[E2] perturbation batch saved to {output}")
     print(f"[E2] P2 D_min(t) figure saved to {figures / 'fig_E2_P2_Dmin_curve.png'}")
+    print(f"[E2] P2 joint kinematics figure saved to {figures / 'fig_E2_P2_joint_kinematics.png'}")
+    print(f"[E2] P2 J_smooth bar figure saved to {figures / 'fig_E2_P2_Jsmooth_bar.png'}")
 
 
 if __name__ == "__main__":
