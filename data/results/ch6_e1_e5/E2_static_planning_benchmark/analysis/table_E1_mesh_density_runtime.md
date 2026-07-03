@@ -1,0 +1,11 @@
+| scene | mesh_mode | R_detect | R_future | T_ours_ms | T_apf_ms | speed_gap |
+| --- | --- | --- | --- | --- | --- | --- |
+| ee_near | coarse | 1.0000 | - | 7.7683 | 4.4375 | 1.75x |
+| body_near | coarse | 1.0000 | - | 7.6716 | 4.2531 | 1.80x |
+| dynamic_future | coarse | 1.0000 | 1.0000 | 5.1015 | 4.1131 | 1.24x |
+| ee_near | medium | 1.0000 | - | 15.8312 | 4.3552 | 3.64x |
+| body_near | medium | 1.0000 | - | 15.3876 | 4.4631 | 3.45x |
+| dynamic_future | medium | 1.0000 | 1.0000 | 8.2584 | 4.2330 | 1.95x |
+| ee_near | dense | 1.0000 | - | 62.9940 | 4.2511 | 14.82x |
+| body_near | dense | 1.0000 | - | 60.1595 | 4.2198 | 14.26x |
+| dynamic_future | dense | 1.0000 | 1.0000 | 26.0806 | 4.0831 | 6.39x |

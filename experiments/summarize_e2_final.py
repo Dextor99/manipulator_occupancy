@@ -129,10 +129,21 @@ def summary_note(
     external: dict[str, Any],
     classical: dict[str, Any],
     official: dict[str, Any] | None = None,
+    fast: dict[str, Any] | None = None,
 ) -> str:
     p2_ours = stage2["scenarios"]["B"]["methods"]["full_body"]["verification"]["min_distance"]
     p2_rrt = external["scenarios"]["B"]["methods"]["rrt_connect_smooth"]["verification"]["min_distance"]
     p2_chomp = classical["scenarios"]["B"]["methods"]["chomp_style"]["verification"]["min_distance"]
+    fast_note = ""
+    if fast is not None:
+        full_c = stage2["scenarios"]["C"]["methods"]["full_body"]["optimization"]["elapsed_ms"]
+        fast_c = fast["scenarios"]["C"]["methods"]["full_body"]["optimization"]["elapsed_ms"]
+        fast_d = fast["scenarios"]["C"]["methods"]["full_body"]["verification"]["min_distance"]
+        fast_note = (
+            f"- Supplemental `Ours-fast` keeps dense validation unchanged and passes P1/P2/P3; "
+            f"in P3 it reduces planning time from `{fmt(full_c)} ms` to `{fmt(fast_c)} ms` "
+            f"with `D_min={fmt(fast_d)}`."
+        )
     return "\n".join(
         [
             "# E2 Final Summary",
@@ -155,6 +166,7 @@ def summary_note(
             "- All methods are evaluated with the same dense `TrajectoryVerifier`.",
             "- Supplemental perturbation statistics use 10 perturbed obstacle point clouds for each P1/P2/P3 scene and coarse risk evaluation at 0.1 s; they support robustness analysis but do not replace the dense final acceptance table.",
             "- Representative P2 time-series visualization is saved as `final/figures/fig_E2_P2_Dmin_curve.png`.",
+            fast_note,
             f"- In P2, Ours CCRO-NUBS reaches `D_min={fmt(p2_ours)}`, RRT reaches `D_min={fmt(p2_rrt)}`, and CHOMP-style reaches `D_min={fmt(p2_chomp)}`.",
             "- Internal `NUBS-base` and `NUBS-EEF-risk` should remain in ablation rather than the main external table.",
             "",
@@ -215,11 +227,13 @@ def main() -> None:
     classical = load_json(root / "classical_optimizers" / "metrics.json")
     official_path = root / "official_tesseract_trajopt" / "metrics.json"
     official = load_json(official_path) if official_path.exists() else None
+    fast_path = root / "ours_fast_mode" / "metrics.json"
+    fast = load_json(fast_path) if fast_path.exists() else None
     (final / "table_E2_static_planning_final.md").write_text(
         build_table(stage2, external, classical, official) + "\n", encoding="utf-8"
     )
     (final / "E2_final_summary.md").write_text(
-        summary_note(stage2, external, classical, official), encoding="utf-8"
+        summary_note(stage2, external, classical, official, fast), encoding="utf-8"
     )
     plot_bar(stage2, external, classical, official, figures / "fig_E2_Dmin_methods.png")
     print(f"[E2] final tables and figures saved to {final}")
