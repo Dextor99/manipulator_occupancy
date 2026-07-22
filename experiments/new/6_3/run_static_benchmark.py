@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass, fields
+import importlib
 import json
 import math
 from pathlib import Path
@@ -165,7 +166,13 @@ def critical_point_distance(
 
 
 class CriticalPointRiskEvaluator:
-    """Sparse critical-point geometry risk evaluator with equivalent radii."""
+    """6.2-compatible sparse critical-point geometry risk evaluator.
+
+    Chapter 6.2 defines critical points by body region and assigns a region
+    dependent equivalent radius.  This evaluator reuses that exact definition
+    for the Chapter 6.3 Critical-point-NUBS baseline, while still accepting the
+    same static observed point cloud interface as the full CCRO evaluator.
+    """
 
     def __init__(
         self,
@@ -175,28 +182,22 @@ class CriticalPointRiskEvaluator:
         d_activate: float,
         fd_epsilon_q: float,
         density: str = "coarse",
-        max_points_per_link: int = 3,
-        equivalent_radius: float = 0.035,
     ) -> None:
         self.surface_model = surface_model
         self.d_safe = float(d_safe)
         self.d_activate = float(d_activate)
         self.fd_epsilon_q = float(fd_epsilon_q)
         self.density = density
-        self.max_points_per_link = int(max_points_per_link)
-        self.equivalent_radius = float(equivalent_radius)
+        body_coverage = importlib.import_module("experiments.new.6_2.body_coverage_62")
+        self._build_critical_points = body_coverage.build_critical_points
 
-    def _critical_points_by_link(
-        self, q: np.ndarray, links: set[str] | None = None
-    ) -> dict[str, np.ndarray]:
-        surfaces = self.surface_model.surface_by_link(q, density=self.density, links=links)
-        selected: dict[str, np.ndarray] = {}
-        for link, points in surfaces.items():
-            if len(points) <= self.max_points_per_link:
-                selected[link] = points
+    def _critical_points_by_link(self, q: np.ndarray, links: set[str] | None = None) -> dict[str, list[Any]]:
+        selected: dict[str, list[Any]] = {}
+        allowed = None if links is None else set(links)
+        for point in self._build_critical_points(self.surface_model, q):
+            if allowed is not None and point.link not in allowed:
                 continue
-            indices = np.linspace(0, len(points) - 1, self.max_points_per_link).round().astype(int)
-            selected[link] = points[indices]
+            selected.setdefault(point.link, []).append(point)
         return selected
 
     def _evaluate_no_gradient(
@@ -218,11 +219,13 @@ class CriticalPointRiskEvaluator:
         nearest_robot = None
         nearest_obstacle = None
         link_count = 0
-        for link, points in selected.items():
-            if len(points) == 0:
+        for link, critical_points in selected.items():
+            if len(critical_points) == 0:
                 continue
+            points = np.vstack([item.position for item in critical_points])
+            radii = np.asarray([item.radius for item in critical_points], dtype=np.float64)
             distances, indices = obstacle.tree.query(points, k=1)
-            signed = distances - self.equivalent_radius
+            signed = distances - radii
             hinge = np.maximum(self.d_safe - signed, 0.0)
             cost = float(np.mean(hinge * hinge))
             per_link[link] = cost
@@ -341,14 +344,17 @@ def mean_std(values: list[float]) -> dict[str, float | None]:
 
 
 def aggregate_method_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    accepted = [row for row in rows if row["verification"].get("accepted")]
+    feasible = [row for row in rows if row.get("dense_feasible", row["verification"].get("accepted"))]
+    budgeted = [row for row in rows if row.get("budgeted_accepted", row["verification"].get("accepted"))]
     return {
-        "accepted_count": len(accepted),
+        "dense_feasible_count": len(feasible),
+        "budgeted_accepted_count": len(budgeted),
         "total_count": len(rows),
-        "accepted_rate": len(accepted) / len(rows) if rows else 0.0,
-        "D_min": mean_std([row["verification"].get("min_distance") for row in accepted]),
-        "J_smooth": mean_std([row.get("post", {}).get("J_smooth") for row in accepted]),
-        "T_plan_ms": mean_std([row.get("optimization", {}).get("elapsed_ms") for row in rows]),
+        "dense_feasible_rate": len(feasible) / len(rows) if rows else 0.0,
+        "budgeted_accepted_rate": len(budgeted) / len(rows) if rows else 0.0,
+        "D_min": mean_std([row["verification"].get("min_distance") for row in feasible]),
+        "J_smooth": mean_std([row.get("post", {}).get("J_smooth") for row in feasible]),
+        "T_plan_ms": mean_std([row.get("optimization", {}).get("elapsed_ms_raw", row.get("optimization", {}).get("elapsed_ms")) for row in rows]),
         "timeout_count": sum(bool(row.get("timeout", False)) for row in rows),
     }
 
@@ -379,7 +385,7 @@ def aggregate_rrt_retry_trials(trials: list[dict[str, Any]], *, max_attempts: in
 
 
 def _failed_rrt_row(elapsed_ms: float, attempt_count: int) -> dict[str, Any]:
-    return {
+    return _annotate_budget({
         "method": "rrt_connect_smooth",
         "solver_success": False,
         "optimized_links": None,
@@ -398,8 +404,7 @@ def _failed_rrt_row(elapsed_ms: float, attempt_count: int) -> dict[str, Any]:
             "attempt_count": int(attempt_count),
         },
         "post": {"J_smooth": math.inf, "total_duration": None},
-        "timeout": bool(elapsed_ms > TIME_LIMIT_MS),
-    }
+    })
 
 
 def _verification_dict(result: Any) -> dict[str, Any]:
@@ -416,6 +421,19 @@ def _optimization_dict(result: Any) -> dict[str, Any]:
         for field in fields(result)
         if field.name not in {"trajectory", "p_inner", "durations"}
     }
+
+
+def _annotate_budget(row: dict[str, Any], *, timeout_ms: float = TIME_LIMIT_MS) -> dict[str, Any]:
+    optimization = dict(row.get("optimization", {}))
+    elapsed = float(optimization.get("elapsed_ms_raw", optimization.get("elapsed_ms", 0.0)))
+    optimization["elapsed_ms_raw"] = elapsed
+    optimization["within_time_budget"] = bool(elapsed <= timeout_ms)
+    row["optimization"] = optimization
+    row["dense_feasible"] = bool(row.get("verification", {}).get("accepted"))
+    row["within_time_budget"] = bool(optimization["within_time_budget"])
+    row["budgeted_accepted"] = bool(row["dense_feasible"] and row["within_time_budget"])
+    row["timeout"] = bool(not row["within_time_budget"])
+    return row
 
 
 def _row_for_trajectory(
@@ -448,12 +466,7 @@ def _row_for_trajectory(
     )
     optimization = _optimization_dict(optimizer_result)
     elapsed = float(optimization.get("elapsed_ms", 0.0))
-    timeout = elapsed > timeout_ms
     verification_payload = _verification_dict(verification)
-    if timeout:
-        verification_payload["accepted"] = False
-        verification_payload.setdefault("reasons", []).append("timeout")
-        optimization["elapsed_ms"] = timeout_ms
     row = {
         "method": method,
         "solver_success": bool(solver_success),
@@ -468,12 +481,11 @@ def _row_for_trajectory(
             "total_duration": float(trajectory.total_duration),
         },
         "plot_samples": trajectory_plot_payload(trajectory),
-        "timeout": bool(timeout),
     }
     p_inner = getattr(optimizer_result, "p_inner", None)
     if p_inner is not None:
         row["p_inner"] = np.asarray(p_inner, dtype=np.float64).tolist()
-    return row
+    return _annotate_budget(row, timeout_ms=timeout_ms)
 
 
 def save_instance(path: Path, payload: dict[str, Any]) -> None:
@@ -533,7 +545,7 @@ def build_context(config: dict[str, Any]) -> dict[str, Any]:
     verifier = TrajectoryVerifier(
         validation_evaluator,
         limits,
-        d_stop=risk_cfg["d_stop"],
+        d_stop=config.get("validation", {}).get("d_accept", 0.08),
         time_step=config["validation"]["dense_time_step"],
         density=risk_cfg["validation_density"],
         epsilon_goal=config["validation"]["epsilon_goal"],
@@ -659,7 +671,7 @@ def run_methods_for_instance(context: dict[str, Any], instance: dict[str, Any]) 
         "total_duration": float(minco_result["trajectory"].total_duration),
     }
     rows["minco_risk"]["plot_samples"] = trajectory_plot_payload(minco_result["trajectory"])
-    rows["minco_risk"]["timeout"] = bool(rows["minco_risk"]["optimization"]["elapsed_ms"] > TIME_LIMIT_MS)
+    rows["minco_risk"] = _annotate_budget(rows["minco_risk"])
 
     rrt_elapsed = 0.0
     rrt_attempts = 0
@@ -768,8 +780,8 @@ def fmt_mean_std(stats: dict[str, float | None]) -> str:
 
 def render_table(metrics: dict[str, Any]) -> str:
     lines = [
-        "| 场景 | 方法 | Accepted rate | $D_{\\min}$ / m | $J_{\\mathrm{smooth}}$ | $T_{\\mathrm{plan}}$ / ms | timeout |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+        "| 场景 | 方法 | Dense feasible | Budget accepted | $D_{\\min}$ / m | $J_{\\mathrm{smooth}}$ | $T_{\\mathrm{plan}}$ / ms | timeout |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for scenario in ["A", "B", "C"]:
         for method in MAIN_METHODS:
@@ -780,7 +792,8 @@ def render_table(metrics: dict[str, Any]) -> str:
                     [
                         SCENARIO_LABELS[scenario],
                         METHOD_DISPLAY[method],
-                        f"{row['accepted_rate']:.3f}",
+                        f"{row['dense_feasible_rate']:.3f}",
+                        f"{row['budgeted_accepted_rate']:.3f}",
                         fmt_mean_std(row["D_min"]),
                         fmt_mean_std(row["J_smooth"]),
                         fmt_mean_std(row["T_plan_ms"]),

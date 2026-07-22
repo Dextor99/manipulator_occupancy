@@ -10,7 +10,8 @@ from typing import Any
 RESULTS = {
     "6.2 sim": Path("data/results/ch6_2_sim/metrics.json"),
     "6.2 real": Path("data/results/ch6_2_real/metrics.json"),
-    "6.3 sim": Path("data/results/ch6_3_sim/metrics.json"),
+    "6.3 static": Path("data/results/6_3/metrics.json"),
+    "6.3 body-risk sim": Path("data/results/ch6_3_sim/metrics.json"),
     "6.3 real": Path("data/results/ch6_3_real/metrics.json"),
     "6.4": Path("data/results/ch6_4/metrics.json"),
     "6.5": Path("data/results/ch6_5/metrics.json"),
@@ -41,8 +42,16 @@ def build_summary() -> dict[str, Any]:
             "boundary": "真实结果为回放/统计预警，不是实机轨迹切换。",
         },
         {
-            "claim": "全身风险距离能发现末端方法遗漏的中间连杆风险",
+            "claim": "CCRO-NUBS 可在静态近场场景中生成通过 dense 复核的连续轨迹",
             "section": "6.3",
+            "evidence": "static near-field benchmark with frozen instances and independent dense verification",
+            "table": "data/results/6_3/paper/table_6_3_static_benchmark.md; data/results/6_3/paper/figure_5_static_trajectory_and_jerk.png",
+            "paper_ready": True,
+            "boundary": "dense feasible rate and 10s budgeted accepted rate are reported separately.",
+        },
+        {
+            "claim": "全身风险距离能发现末端方法遗漏的中间连杆风险",
+            "section": "6.3 auxiliary",
             "evidence": "body-link sim and real replay counterexamples",
             "table": "data/results/ch6_3_sim/table_6_3_sim.md; data/results/ch6_3_real/table_6_3_real_methods.md",
             "paper_ready": True,

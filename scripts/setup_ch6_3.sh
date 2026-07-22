@@ -2,10 +2,18 @@
 set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-OUTPUT_DIR="${OUTPUT_DIR:-data/results/ch6_3_sim}"
+CONFIG_PATH="${CONFIG_PATH:-config/ccro_stage2.yaml}"
+OUTPUT_DIR="${OUTPUT_DIR:-data/results/6_3}"
+INSTANCES_PER_SCENARIO="${INSTANCES_PER_SCENARIO:-10}"
 
-"${PYTHON_BIN}" -m experiments.exp_63_sim_risk_distance \
+"${PYTHON_BIN}" -m experiments.new.6_3.run_static_benchmark \
+  --config "${CONFIG_PATH}" \
   --output "${OUTPUT_DIR}" \
-  --trials 30
+  --instances-per-scenario "${INSTANCES_PER_SCENARIO}" \
+  --force-regenerate
+
+"${PYTHON_BIN}" experiments/new/6_3/plot_static_benchmark.py \
+  --input "${OUTPUT_DIR}" \
+  --output "${OUTPUT_DIR}/paper"
 
 echo "[setup_ch6_3] results saved to ${OUTPUT_DIR}"
