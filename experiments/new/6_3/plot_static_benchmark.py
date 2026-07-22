@@ -134,7 +134,7 @@ def plot(input_dir: str | Path, output_dir: str | Path) -> Path:
         if not samples:
             continue
         q_values = np.asarray(samples["q"], dtype=float)
-        marker_idx = np.linspace(0, len(q_values) - 1, min(4, len(q_values))).round().astype(int)
+        marker_idx = np.linspace(0, len(q_values) - 1, min(3, len(q_values))).round().astype(int)
         ee_path = []
         for draw_index, index in enumerate(marker_idx):
             robot_points, centers = robot_workspace_snapshot(surface_model, q_values[index])
