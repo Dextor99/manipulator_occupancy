@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 
 METHOD_DISPLAY = {
     "rrt_connect_smooth": "RRT-Connect + smoothing",
-    "minco_risk": "MINCO-risk",
+    "minco_risk": "MINCO-risk (adapted)",
     "critical_point_nubs": "Critical-point-NUBS",
     "ccro_nubs": "CCRO-NUBS",
 }

@@ -15,6 +15,12 @@
         0.33097120350684045
       ],
       "final_cost_unique_count": 1,
+      "initial_cost_range": [
+        2.7496332856373162,
+        8.869689891740673
+      ],
+      "initial_cost_unique_count": 10,
+      "initial_equals_final_count": 0,
       "final_risk_max": 0.0,
       "iterations_unique": [
         32
@@ -125,6 +131,12 @@
         0.31560873876931356
       ],
       "final_cost_unique_count": 7,
+      "initial_cost_range": [
+        0.09792709909606039,
+        1.2332122566069135
+      ],
+      "initial_cost_unique_count": 10,
+      "initial_equals_final_count": 0,
       "final_risk_max": 4.7063175425704695e-07,
       "iterations_unique": [
         32
@@ -235,6 +247,12 @@
         0.21444272846713816
       ],
       "final_cost_unique_count": 1,
+      "initial_cost_range": [
+        5.8565243927213615,
+        15.480919057047245
+      ],
+      "initial_cost_unique_count": 10,
+      "initial_equals_final_count": 0,
       "final_risk_max": 0.0,
       "iterations_unique": [
         32
@@ -333,5 +351,5 @@
       ]
     }
   },
-  "conclusion": "P1 and P3 MINCO-risk trajectories have identical q(t) and p_inner across the 10 frozen instances. Their final_risk is zero and final_cost is identical, while dense D_min varies with the independent GT obstacles. This supports the interpretation that these instances converge to the same risk-free low-cost local solution, not that J_smooth or plot_samples were reused incorrectly."
+  "conclusion": "P1 and P3 MINCO-risk trajectories have identical q(t) and p_inner across the 10 frozen instances. Their initial_cost values vary by instance and are not equal to final_cost; the fixed-budget adapted MINCO-risk search nevertheless converges to the same final zero-risk trajectory in P1 and P3. Dense D_min varies with the independent GT obstacles, supporting the interpretation that J_smooth or plot_samples were not reused incorrectly."
 }

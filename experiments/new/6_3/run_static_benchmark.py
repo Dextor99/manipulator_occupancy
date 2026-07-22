@@ -9,6 +9,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 from typing import Any
@@ -32,7 +33,7 @@ MAIN_METHODS = [
 
 METHOD_DISPLAY = {
     "rrt_connect_smooth": "RRT-Connect + smoothing",
-    "minco_risk": "MINCO-risk",
+    "minco_risk": "MINCO-risk (adapted)",
     "nubs_without_risk": "NUBS w/o risk (ablation)",
     "critical_point_nubs": "Critical-point-NUBS",
     "ccro_nubs": "CCRO-NUBS",
@@ -74,6 +75,18 @@ def json_default(value: Any) -> Any:
         return _json_default(value)
     except TypeError:
         return str(value)
+
+
+def git_commit_hash() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
 
 def _sphere_points(
@@ -873,10 +886,22 @@ def run(
     frozen = output / "frozen_instances"
     trials = output / "trials"
     paper = output / "paper"
+    previous_manifest_path = output / "manifest.json"
+    previous_manifest: dict[str, Any] = {}
+    if previous_manifest_path.exists():
+        try:
+            previous_manifest = json.loads(previous_manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            previous_manifest = {}
     for path in (output, frozen, trials, paper):
         path.mkdir(parents=True, exist_ok=True)
     shutil.copy2(config_path, output / "source_ccro_stage2.yaml")
     context = build_context(config)
+    rerun_history = sorted(
+        set(previous_manifest.get("rerun_history", []))
+        | set(previous_manifest.get("rerun_methods", []))
+        | set(rerun_methods or [])
+    )
     metrics: dict[str, Any] = {
         "source": "revised Chapter 6.3 static benchmark",
         "config": str(config_path),
@@ -884,6 +909,7 @@ def run(
         "time_limit_ms": TIME_LIMIT_MS,
         "validation_d_accept_m": validation_accept_distance(config),
         "rerun_methods": sorted(rerun_methods or []),
+        "rerun_history": rerun_history,
         "scenarios": {},
     }
     started_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -940,10 +966,47 @@ def run(
         "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "output": str(output),
         "config": str(config_path),
+        "git_commit": git_commit_hash(),
+        "benchmark_script": "experiments/new/6_3/run_static_benchmark.py",
+        "plot_script": "experiments/new/6_3/plot_static_benchmark.py",
         "instances_per_scenario": int(instances_per_scenario),
         "frozen_instance_count": len(list(frozen.glob("*.json"))),
         "trial_count": len(list(trials.glob("*.json"))),
         "paper_files": sorted(path.name for path in paper.glob("*")),
+        "validation_d_accept_m": validation_accept_distance(config),
+        "rrt_planning_clearance_m": validation_accept_distance(config),
+        "rerun_methods": sorted(rerun_methods or []),
+        "rerun_history": rerun_history,
+        "render_reused_existing_trials": bool(resume and not force_regenerate and not rerun_methods),
+        "result_sources": {
+            "frozen_instances": "reused unless --force-regenerate is supplied",
+            "rrt_connect_smooth": (
+                "official rows were refreshed on the unchanged frozen instances after unifying "
+                "RRT planning clearance to 0.08 m; paper rerenders load the refreshed rows "
+                "from existing trials"
+            ),
+            "minco_risk": "loaded from existing trials unless a full rerun is requested; adapted MINCO-risk baseline",
+            "nubs_without_risk": "loaded from existing trials unless a full rerun is requested",
+            "critical_point_nubs": "loaded from existing trials unless a full rerun is requested; critical points reuse Chapter 6.2 definition",
+            "ccro_nubs": "loaded from existing trials unless a full rerun is requested",
+        },
+        "timeout_policy": (
+            "dense_feasible and within_time_budget are reported separately; "
+            "elapsed_ms_raw is preserved"
+        ),
+        "critical_point_definition": (
+            "reuses experiments.new.6_2.body_coverage_62 build_critical_points, "
+            "BODY_REGIONS, CRITICAL_POINT_RADII"
+        ),
+        "figure_note": (
+            "Nearest CCRO pair is the representative trajectory minimum 3D "
+            "robot-surface/obstacle-point distance segment."
+        ),
+        "result_audit_files": [
+            path.name
+            for path in [output / "minco_audit.json", output / "minco_audit.md"]
+            if path.exists()
+        ],
     }
     (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
