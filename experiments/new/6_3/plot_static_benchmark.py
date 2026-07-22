@@ -87,8 +87,8 @@ def plot(input_dir: str | Path, output_dir: str | Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", default="result/new/6_3")
-    parser.add_argument("--output", default="result/new/6_3/paper")
+    parser.add_argument("--input", default="data/results/6_3")
+    parser.add_argument("--output", default="data/results/6_3/paper")
     args = parser.parse_args()
     target = plot(args.input, args.output)
     print(f"[6_3_plot] saved {target}")

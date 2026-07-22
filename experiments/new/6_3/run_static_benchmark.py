@@ -491,6 +491,10 @@ def load_instance(path: Path) -> dict[str, Any]:
     return payload
 
 
+def load_trial(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def build_context(config: dict[str, Any]) -> dict[str, Any]:
     from experiments.exp_ccro_stage2 import _baseline, _limits, _states
     from planning.mesh_risk import MeshRiskEvaluator
@@ -790,9 +794,10 @@ def render_table(metrics: dict[str, Any]) -> str:
 
 def run(
     config_path: str | Path,
-    output: str | Path = "result/new/6_3",
+    output: str | Path = "data/results/6_3",
     instances_per_scenario: int = 10,
     force_regenerate: bool = False,
+    resume: bool = True,
 ) -> dict[str, Any]:
     config_path = Path(config_path).resolve()
     from experiments.exp_ccro_stage2 import _load
@@ -810,9 +815,12 @@ def run(
     context = build_context(config)
     metrics: dict[str, Any] = {
         "source": "revised Chapter 6.3 static benchmark",
+        "config": str(config_path),
+        "instances_per_scenario": int(instances_per_scenario),
         "time_limit_ms": TIME_LIMIT_MS,
         "scenarios": {},
     }
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     for scenario in ["A", "B", "C"]:
         metrics["scenarios"][scenario] = {
             "label": SCENARIO_LABELS[scenario],
@@ -824,12 +832,18 @@ def run(
             if force_regenerate or not instance_path.exists():
                 save_instance(instance_path, make_frozen_instance(context, scenario, index))
             instance = load_instance(instance_path)
-            rows = run_methods_for_instance(context, instance)
             trial_rel = f"trials/{scenario}_{index:02d}.json"
-            (output / trial_rel).write_text(
-                json.dumps(rows, indent=2, ensure_ascii=False, default=json_default) + "\n",
-                encoding="utf-8",
-            )
+            trial_path = output / trial_rel
+            if resume and not force_regenerate and trial_path.exists():
+                rows = load_trial(trial_path)
+                print(f"[6_3] reuse {instance['id']} -> {trial_rel}", flush=True)
+            else:
+                print(f"[6_3] run {instance['id']} ({scenario} {index + 1}/{instances_per_scenario})", flush=True)
+                rows = run_methods_for_instance(context, instance)
+                trial_path.write_text(
+                    json.dumps(rows, indent=2, ensure_ascii=False, default=json_default) + "\n",
+                    encoding="utf-8",
+                )
             all_accepted = all(rows[method]["verification"].get("accepted") for method in MAIN_METHODS)
             metrics["scenarios"][scenario]["instances"].append(
                 {"id": instance["id"], "all_main_accepted": bool(all_accepted), "trial_path": trial_rel}
@@ -845,17 +859,38 @@ def run(
         encoding="utf-8",
     )
     (paper / "table_6_3_static_benchmark.md").write_text(render_table(metrics), encoding="utf-8")
+    manifest = {
+        "started_at": started_at,
+        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "output": str(output),
+        "config": str(config_path),
+        "instances_per_scenario": int(instances_per_scenario),
+        "frozen_instance_count": len(list(frozen.glob("*.json"))),
+        "trial_count": len(list(trials.glob("*.json"))),
+        "paper_files": sorted(path.name for path in paper.glob("*")),
+    }
+    (output / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     return metrics
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=str(ROOT / "config" / "ccro_stage2.yaml"))
-    parser.add_argument("--output", default="result/new/6_3")
+    parser.add_argument("--output", default="data/results/6_3")
     parser.add_argument("--instances-per-scenario", type=int, default=10)
     parser.add_argument("--force-regenerate", action="store_true")
+    parser.add_argument("--no-resume", action="store_true")
     args = parser.parse_args()
-    metrics = run(args.config, args.output, args.instances_per_scenario, args.force_regenerate)
+    metrics = run(
+        args.config,
+        args.output,
+        args.instances_per_scenario,
+        args.force_regenerate,
+        resume=not args.no_resume,
+    )
     print(render_table(metrics))
     print(f"[6_3] saved results to {args.output}")
 
