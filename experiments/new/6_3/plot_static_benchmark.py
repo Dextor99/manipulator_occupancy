@@ -15,6 +15,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+METHOD_DISPLAY = {
+    "rrt_connect_smooth": "RRT-Connect + smoothing",
+    "minco_risk": "MINCO-risk",
+    "critical_point_nubs": "Critical-point-NUBS",
+    "ccro_nubs": "CCRO-NUBS",
+}
+
+
 def row_feasible(row: dict[str, Any] | None) -> bool:
     if not row:
         return False
@@ -22,6 +30,13 @@ def row_feasible(row: dict[str, Any] | None) -> bool:
 
 
 def select_representative_instance(input_path: Path, metrics: dict[str, Any]) -> str:
+    full_methods = ["rrt_connect_smooth", "minco_risk", "critical_point_nubs", "ccro_nubs"]
+    for scenario in ["B", "C", "A"]:
+        instances = metrics.get("scenarios", {}).get(scenario, {}).get("instances", [])
+        for item in instances:
+            trial = json.loads((input_path / item["trial_path"]).read_text(encoding="utf-8"))
+            if all(row_feasible(trial.get(method)) for method in full_methods):
+                return item["id"]
     for scenario in ["B", "C", "A"]:
         instances = metrics.get("scenarios", {}).get(scenario, {}).get("instances", [])
         for item in instances:
@@ -107,7 +122,7 @@ def plot(input_dir: str | Path, output_dir: str | Path) -> Path:
     fig = plt.figure(figsize=(11.5, 4.5))
     ax0 = fig.add_subplot(1, 2, 1, projection="3d")
     if len(obstacle):
-        keep = np.linspace(0, len(obstacle) - 1, min(len(obstacle), 1200)).round().astype(int)
+        keep = np.linspace(0, len(obstacle) - 1, min(len(obstacle), 900)).round().astype(int)
         shown = obstacle[keep]
         ax0.scatter(shown[:, 0], shown[:, 1], shown[:, 2], s=2, c="black", alpha=0.35, label="GT obstacle")
     colors = {
@@ -119,12 +134,12 @@ def plot(input_dir: str | Path, output_dir: str | Path) -> Path:
         if not samples:
             continue
         q_values = np.asarray(samples["q"], dtype=float)
-        marker_idx = np.linspace(0, len(q_values) - 1, min(5, len(q_values))).round().astype(int)
+        marker_idx = np.linspace(0, len(q_values) - 1, min(4, len(q_values))).round().astype(int)
         ee_path = []
         for draw_index, index in enumerate(marker_idx):
             robot_points, centers = robot_workspace_snapshot(surface_model, q_values[index])
             if len(robot_points):
-                keep = np.linspace(0, len(robot_points) - 1, min(len(robot_points), 260)).round().astype(int)
+                keep = np.linspace(0, len(robot_points) - 1, min(len(robot_points), 180)).round().astype(int)
                 shown_robot = robot_points[keep]
                 ax0.scatter(
                     shown_robot[:, 0],
@@ -132,21 +147,21 @@ def plot(input_dir: str | Path, output_dir: str | Path) -> Path:
                     shown_robot[:, 2],
                     s=1.6,
                     color=color,
-                    alpha=0.12 + 0.08 * draw_index,
+                    alpha=0.10 + 0.05 * draw_index,
                 )
             if len(centers):
                 ax0.plot(centers[:, 0], centers[:, 1], centers[:, 2], color=color, alpha=0.55, linewidth=1.0)
                 ee_path.append(centers[-1])
         if ee_path:
             ee = np.vstack(ee_path)
-            ax0.plot(ee[:, 0], ee[:, 1], ee[:, 2], color=color, linewidth=2.0, label=method)
+            ax0.plot(ee[:, 0], ee[:, 1], ee[:, 2], color=color, linewidth=2.0, label=METHOD_DISPLAY[method])
     pair = nearest_workspace_pair(surface_model, trial.get("ccro_nubs", {}).get("plot_samples", {}), obstacle)
     if pair is not None:
         robot_point, obstacle_point = pair
         segment = np.vstack([robot_point, obstacle_point])
-        ax0.plot(segment[:, 0], segment[:, 1], segment[:, 2], color="crimson", linewidth=2.0, label="nearest CCRO pair")
+        ax0.plot(segment[:, 0], segment[:, 1], segment[:, 2], color="crimson", linewidth=2.0, label="Nearest CCRO pair")
         ax0.scatter([robot_point[0]], [robot_point[1]], [robot_point[2]], color="crimson", s=26)
-    ax0.set_title(f"{scenario} representative workspace")
+    ax0.set_title(f"{metrics['scenarios'][scenario]['label']} representative workspace")
     ax0.set_xlabel("x / m")
     ax0.set_ylabel("y / m")
     ax0.set_zlabel("z / m")
@@ -158,7 +173,7 @@ def plot(input_dir: str | Path, output_dir: str | Path) -> Path:
         if not samples:
             continue
         times, values = jerk_norm_curve(samples)
-        ax1.plot(times, values, label=method)
+        ax1.plot(times, values, label=METHOD_DISPLAY[method])
     ax1.set_xlabel("time / s")
     ax1.set_ylabel(r"$\|q^{(3)}(t)\|_2$")
     ax1.grid(True, alpha=0.25)

@@ -3,6 +3,10 @@
   "config": "/home/hzy/Code/manipulator_occupancy/config/ccro_stage2.yaml",
   "instances_per_scenario": 10,
   "time_limit_ms": 10000.0,
+  "validation_d_accept_m": 0.08,
+  "rerun_methods": [
+    "rrt_connect_smooth"
+  ],
   "scenarios": {
     "A": {
       "label": "P1",
@@ -60,22 +64,22 @@
       ],
       "methods": {
         "rrt_connect_smooth": {
-          "dense_feasible_count": 9,
-          "budgeted_accepted_count": 9,
+          "dense_feasible_count": 10,
+          "budgeted_accepted_count": 10,
           "total_count": 10,
-          "dense_feasible_rate": 0.9,
-          "budgeted_accepted_rate": 0.9,
+          "dense_feasible_rate": 1.0,
+          "budgeted_accepted_rate": 1.0,
           "D_min": {
-            "mean": 0.15833524235877525,
-            "std": 0.08204854035458985
+            "mean": 0.12936085925932322,
+            "std": 0.04393975559498392
           },
           "J_smooth": {
-            "mean": 1.91920184206027,
-            "std": 2.437027015998816
+            "mean": 0.5915306811683989,
+            "std": 0.6554159920505015
           },
           "T_plan_ms": {
-            "mean": 2302.088783599902,
-            "std": 1524.8755056688233
+            "mean": 1285.768946400276,
+            "std": 367.1291246715043
           },
           "timeout_count": 0
         },
@@ -217,22 +221,22 @@
       ],
       "methods": {
         "rrt_connect_smooth": {
-          "dense_feasible_count": 8,
-          "budgeted_accepted_count": 8,
+          "dense_feasible_count": 10,
+          "budgeted_accepted_count": 10,
           "total_count": 10,
-          "dense_feasible_rate": 0.8,
-          "budgeted_accepted_rate": 0.8,
+          "dense_feasible_rate": 1.0,
+          "budgeted_accepted_rate": 1.0,
           "D_min": {
-            "mean": 0.1389107586549243,
-            "std": 0.08505520594363294
+            "mean": 0.1279416850940696,
+            "std": 0.02542504874287153
           },
           "J_smooth": {
-            "mean": 0.5250240846428628,
-            "std": 0.9965092729595928
+            "mean": 0.4426411519660974,
+            "std": 0.6593261807478851
           },
           "T_plan_ms": {
-            "mean": 2220.928751300198,
-            "std": 1376.8317836262445
+            "mean": 1461.2616375998186,
+            "std": 617.9019989008788
           },
           "timeout_count": 0
         },
@@ -380,16 +384,16 @@
           "dense_feasible_rate": 1.0,
           "budgeted_accepted_rate": 1.0,
           "D_min": {
-            "mean": 0.11574260607092597,
-            "std": 0.024694793991310464
+            "mean": 0.12059814718221688,
+            "std": 0.03082994838425064
           },
           "J_smooth": {
-            "mean": 0.6278655640267864,
-            "std": 0.8856034308956341
+            "mean": 1.5079398346178419,
+            "std": 1.4681259906245843
           },
           "T_plan_ms": {
-            "mean": 3039.536398599739,
-            "std": 1218.7010575809538
+            "mean": 3702.826659900529,
+            "std": 1530.2162077249845
           },
           "timeout_count": 0
         },

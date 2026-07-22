@@ -33,7 +33,7 @@ MAIN_METHODS = [
 METHOD_DISPLAY = {
     "rrt_connect_smooth": "RRT-Connect + smoothing",
     "minco_risk": "MINCO-risk",
-    "nubs_without_risk": "NUBS without CCRO risk",
+    "nubs_without_risk": "NUBS w/o risk (ablation)",
     "critical_point_nubs": "Critical-point-NUBS",
     "ccro_nubs": "CCRO-NUBS",
 }
@@ -359,6 +359,10 @@ def aggregate_method_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def validation_accept_distance(config: dict[str, Any]) -> float:
+    return float(config.get("validation", {}).get("d_accept", 0.08))
+
+
 def aggregate_rrt_retry_trials(trials: list[dict[str, Any]], *, max_attempts: int) -> dict[str, Any]:
     elapsed = 0.0
     attempted: list[dict[str, Any]] = []
@@ -545,7 +549,7 @@ def build_context(config: dict[str, Any]) -> dict[str, Any]:
     verifier = TrajectoryVerifier(
         validation_evaluator,
         limits,
-        d_stop=config.get("validation", {}).get("d_accept", 0.08),
+        d_stop=validation_accept_distance(config),
         time_step=config["validation"]["dense_time_step"],
         density=risk_cfg["validation_density"],
         epsilon_goal=config["validation"]["epsilon_goal"],
@@ -607,14 +611,84 @@ def make_frozen_instance(context: dict[str, Any], scenario: str, index: int) -> 
     }
 
 
+def run_rrt_for_instance(context: dict[str, Any], instance: dict[str, Any]) -> dict[str, Any]:
+    from experiments.exp_64_external_baselines import (
+        _rrt_connect,
+        _rrt_to_trajectory,
+        _shortcut_path,
+    )
+    from planning.mesh_risk import StaticObstacleField
+
+    head = context["head"]
+    tail = context["tail"]
+    durations = context["durations"]
+    limits = context["limits"]
+    evaluator = context["evaluator"]
+    verifier = context["verifier"]
+    config = context["config"]
+    sample_times = context["sample_times"]
+    planning_obstacle = StaticObstacleField.from_points(instance["observed_points"])
+    validation_obstacle = StaticObstacleField.from_points(instance["gt_dense_points"])
+    rrt_clearance = validation_accept_distance(config)
+
+    rrt_elapsed = 0.0
+    rrt_attempts = 0
+    selected_row = None
+    for seed_index in range(3):
+        rrt_attempts += 1
+        rng = np.random.default_rng(
+            int(config["experiment"]["random_seed"])
+            + 6300
+            + 97 * seed_index
+            + int(instance["index"])
+            + 13 * ord(instance["scenario"][0])
+        )
+        started = time.perf_counter()
+        raw_path, _ = _rrt_connect(
+            head[:, 0],
+            tail[:, 0],
+            limits,
+            evaluator,
+            planning_obstacle,
+            rrt_clearance,
+            rng,
+        )
+        trajectory = None
+        if raw_path is not None:
+            smooth_path = _shortcut_path(raw_path, evaluator, planning_obstacle, rrt_clearance, rng)
+            trajectory = _rrt_to_trajectory(smooth_path, head, tail, float(np.sum(durations)))
+        rrt_elapsed += (time.perf_counter() - started) * 1000.0
+        if trajectory is None:
+            continue
+        row = _row_for_trajectory(
+            method="rrt_connect_smooth",
+            trajectory=trajectory,
+            solver_success=True,
+            optimizer_result={"elapsed_ms": rrt_elapsed, "success": True, "attempt_count": rrt_attempts},
+            planning_evaluator=evaluator,
+            planning_obstacle=planning_obstacle,
+            verifier=verifier,
+            validation_obstacle=validation_obstacle,
+            head=head,
+            tail=tail,
+            sample_times=sample_times,
+        )
+        row["attempt_count"] = rrt_attempts
+        row["planning_clearance_m"] = rrt_clearance
+        selected_row = row
+        if row["verification"].get("accepted"):
+            break
+    if selected_row is None:
+        selected_row = _failed_rrt_row(rrt_elapsed, rrt_attempts)
+        selected_row["planning_clearance_m"] = rrt_clearance
+    return selected_row
+
+
 def run_methods_for_instance(context: dict[str, Any], instance: dict[str, Any]) -> dict[str, Any]:
     from experiments.exp_ccro_stage2 import _risk_optimizer
     from experiments.exp_64_external_baselines import (
         FixedTimeMINCOOptimizer,
-        _rrt_connect,
         _minco_metrics,
-        _rrt_to_trajectory,
-        _shortcut_path,
     )
     from planning.mesh_risk import StaticObstacleField
 
@@ -673,54 +747,7 @@ def run_methods_for_instance(context: dict[str, Any], instance: dict[str, Any]) 
     rows["minco_risk"]["plot_samples"] = trajectory_plot_payload(minco_result["trajectory"])
     rows["minco_risk"] = _annotate_budget(rows["minco_risk"])
 
-    rrt_elapsed = 0.0
-    rrt_attempts = 0
-    rows["rrt_connect_smooth"] = None
-    for seed_index in range(3):
-        rrt_attempts += 1
-        rng = np.random.default_rng(
-            int(config["experiment"]["random_seed"])
-            + 6300
-            + 97 * seed_index
-            + int(instance["index"])
-            + 13 * ord(instance["scenario"][0])
-        )
-        started = time.perf_counter()
-        raw_path, _ = _rrt_connect(
-            head[:, 0],
-            tail[:, 0],
-            limits,
-            evaluator,
-            planning_obstacle,
-            config["risk"]["d_stop"],
-            rng,
-        )
-        trajectory = None
-        if raw_path is not None:
-            smooth_path = _shortcut_path(raw_path, evaluator, planning_obstacle, config["risk"]["d_stop"], rng)
-            trajectory = _rrt_to_trajectory(smooth_path, head, tail, float(np.sum(durations)))
-        rrt_elapsed += (time.perf_counter() - started) * 1000.0
-        if trajectory is None:
-            continue
-        row = _row_for_trajectory(
-            method="rrt_connect_smooth",
-            trajectory=trajectory,
-            solver_success=True,
-            optimizer_result={"elapsed_ms": rrt_elapsed, "success": True, "attempt_count": rrt_attempts},
-            planning_evaluator=evaluator,
-            planning_obstacle=planning_obstacle,
-            verifier=verifier,
-            validation_obstacle=validation_obstacle,
-            head=head,
-            tail=tail,
-            sample_times=sample_times,
-        )
-        row["attempt_count"] = rrt_attempts
-        if row["verification"].get("accepted"):
-            rows["rrt_connect_smooth"] = row
-            break
-    if rows["rrt_connect_smooth"] is None:
-        rows["rrt_connect_smooth"] = _failed_rrt_row(rrt_elapsed, rrt_attempts)
+    rows["rrt_connect_smooth"] = run_rrt_for_instance(context, instance)
 
     rows["nubs_without_risk"] = _row_for_trajectory(
         method="nubs_without_risk",
@@ -802,7 +829,30 @@ def render_table(metrics: dict[str, Any]) -> str:
                 )
                 + " |"
             )
+    lines.extend(
+        [
+            "",
+            "Note: $D_{\\min}$ and $J_{\\mathrm{smooth}}$ are computed only over dense-feasible trajectories. "
+            "Budget accepted requires dense feasibility and raw planning time no greater than 10 s; the 10 s budget is an offline evaluation criterion, not a hard solver termination.",
+        ]
+    )
     return "\n".join(lines) + "\n"
+
+
+def parse_method_list(value: str | None) -> set[str]:
+    if value is None or not value.strip():
+        return set()
+    methods = {item.strip() for item in value.split(",") if item.strip()}
+    unknown = methods - set(MAIN_METHODS)
+    if unknown:
+        raise ValueError(f"unknown methods for rerun: {sorted(unknown)}")
+    unsupported = methods - {"rrt_connect_smooth"}
+    if unsupported:
+        raise ValueError(
+            "selective rerun is currently supported only for rrt_connect_smooth, "
+            f"got {sorted(unsupported)}"
+        )
+    return methods
 
 
 def run(
@@ -811,6 +861,7 @@ def run(
     instances_per_scenario: int = 10,
     force_regenerate: bool = False,
     resume: bool = True,
+    rerun_methods: set[str] | None = None,
 ) -> dict[str, Any]:
     config_path = Path(config_path).resolve()
     from experiments.exp_ccro_stage2 import _load
@@ -831,6 +882,8 @@ def run(
         "config": str(config_path),
         "instances_per_scenario": int(instances_per_scenario),
         "time_limit_ms": TIME_LIMIT_MS,
+        "validation_d_accept_m": validation_accept_distance(config),
+        "rerun_methods": sorted(rerun_methods or []),
         "scenarios": {},
     }
     started_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -849,7 +902,17 @@ def run(
             trial_path = output / trial_rel
             if resume and not force_regenerate and trial_path.exists():
                 rows = load_trial(trial_path)
-                print(f"[6_3] reuse {instance['id']} -> {trial_rel}", flush=True)
+                rerun = set() if rerun_methods is None else set(rerun_methods)
+                if rerun:
+                    print(f"[6_3] rerun {sorted(rerun)} for {instance['id']} -> {trial_rel}", flush=True)
+                    if "rrt_connect_smooth" in rerun:
+                        rows["rrt_connect_smooth"] = run_rrt_for_instance(context, instance)
+                    trial_path.write_text(
+                        json.dumps(rows, indent=2, ensure_ascii=False, default=json_default) + "\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    print(f"[6_3] reuse {instance['id']} -> {trial_rel}", flush=True)
             else:
                 print(f"[6_3] run {instance['id']} ({scenario} {index + 1}/{instances_per_scenario})", flush=True)
                 rows = run_methods_for_instance(context, instance)
@@ -896,13 +959,16 @@ def main() -> None:
     parser.add_argument("--instances-per-scenario", type=int, default=10)
     parser.add_argument("--force-regenerate", action="store_true")
     parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--rerun-methods", default="")
     args = parser.parse_args()
+    rerun_methods = parse_method_list(args.rerun_methods)
     metrics = run(
         args.config,
         args.output,
         args.instances_per_scenario,
         args.force_regenerate,
         resume=not args.no_resume,
+        rerun_methods=rerun_methods,
     )
     print(render_table(metrics))
     print(f"[6_3] saved results to {args.output}")
