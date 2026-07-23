@@ -101,6 +101,7 @@ def run_trial(
     first_safety_hold = None
     first_replan = None
     false_replan = False
+    bridge_min_distances: list[float] = []
     timeline: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
     planning_control_cycles = 0
@@ -152,46 +153,55 @@ def run_trial(
                 risk_level = "medium"
 
         if pending_candidate is not None:
-            if timestamp >= pending_candidate["completed_timestamp"]:
+            if timestamp >= pending_candidate["planned_switch_timestamp"]:
                 event = pending_candidate["event"]
-                switch_forecast = ShiftedForecast(forecast, 0.0, max(1.0, pending_candidate["trajectory"].total_duration))
-                switch_verification = verifier.verify(
-                    pending_candidate["trajectory"],
-                    switch_forecast,
-                    current_q=q,
-                    current_qd=qd,
-                    current_qdd=qdd,
-                    q_goal=q_goal,
-                    solver_success=True,
-                )
-                switch_checks = dict(switch_verification.checks)
-                switch_checks["solver_ok"] = True
-                switch_accepted = bool(all(switch_checks.values()))
-                switch_reasons = [name for name, passed in switch_checks.items() if not passed]
-                event["actual_switch_timestamp"] = timestamp
-                event["switch_validation"] = {
-                    **asdict(switch_verification),
-                    "accepted_without_solver_flag": switch_accepted,
-                }
-                if switch_accepted:
-                    event["outcome"] = "accepted"
-                    event["candidate_accepted"] = True
-                    event["candidate_min_distance"] = switch_verification.min_distance
-                    event["rejection_reasons"] = []
-                    events.append(event)
-                    active = pending_candidate["trajectory"]
-                    tau = 0.0
-                    accepted_count += 1
-                    alpha = 1.0
-                    safety_hold = False
-                    risk_level = "switched"
-                else:
-                    event["outcome"] = "rejected_at_switch"
+                if timestamp + 1.0e-9 < pending_candidate["completed_timestamp"]:
+                    event["outcome"] = "timeout_before_switch"
+                    event["actual_switch_timestamp"] = timestamp
                     event["candidate_accepted"] = False
-                    event["candidate_min_distance"] = switch_verification.min_distance
-                    event["rejection_reasons"] = switch_reasons
+                    event["rejection_reasons"] = ["planning_budget"]
                     events.append(event)
-                pending_candidate = None
+                    pending_candidate = None
+                else:
+                    event = pending_candidate["event"]
+                    switch_forecast = ShiftedForecast(forecast, 0.0, max(1.0, pending_candidate["trajectory"].total_duration))
+                    switch_verification = verifier.verify(
+                        pending_candidate["trajectory"],
+                        switch_forecast,
+                        current_q=q,
+                        current_qd=qd,
+                        current_qdd=qdd,
+                        q_goal=q_goal,
+                        solver_success=True,
+                    )
+                    switch_checks = dict(switch_verification.checks)
+                    switch_checks["solver_ok"] = True
+                    switch_accepted = bool(all(switch_checks.values()))
+                    switch_reasons = [name for name, passed in switch_checks.items() if not passed]
+                    event["actual_switch_timestamp"] = timestamp
+                    event["switch_validation"] = {
+                        **asdict(switch_verification),
+                        "accepted_without_solver_flag": switch_accepted,
+                    }
+                    if switch_accepted:
+                        event["outcome"] = "accepted"
+                        event["candidate_accepted"] = True
+                        event["candidate_min_distance"] = switch_verification.min_distance
+                        event["rejection_reasons"] = []
+                        events.append(event)
+                        active = pending_candidate["trajectory"]
+                        tau = 0.0
+                        accepted_count += 1
+                        alpha = 1.0
+                        safety_hold = False
+                        risk_level = "switched"
+                    else:
+                        event["outcome"] = "rejected_at_switch"
+                        event["candidate_accepted"] = False
+                        event["candidate_min_distance"] = switch_verification.min_distance
+                        event["rejection_reasons"] = switch_reasons
+                        events.append(event)
+                    pending_candidate = None
 
         if (
             method == "ccro_nubs"
@@ -259,6 +269,16 @@ def run_trial(
                     "predicted_tau_at_switch": predicted_tau,
                     "planning_alpha": planning_alpha,
                 }
+                bridge = future_min_distance(
+                    evaluator,
+                    active,
+                    tau,
+                    forecast,
+                    horizon=expected_switch_delay,
+                )
+                event["bridge_min_distance"] = bridge["distance"]
+                event["bridge_time_to_min"] = bridge["time"]
+                bridge_min_distances.append(float(bridge["distance"]))
                 if timestamp + elapsed_s > deadline_timestamp:
                     event["outcome"] = "timeout_before_switch"
                     event["rejection_reasons"] = ["planning_budget"]
@@ -284,11 +304,11 @@ def run_trial(
                     "q": q.tolist(),
                     "D_gt": gt_distance,
                     "nearest_link_gt": gt_link,
-            "risk_level": risk_level,
-            "alpha": alpha,
-            "safety_hold": safety_hold,
-            "planner_pending": pending_candidate is not None,
-        }
+                    "risk_level": risk_level,
+                    "alpha": alpha,
+                    "safety_hold": safety_hold,
+                    "planner_pending": pending_candidate is not None,
+                }
             )
             break
 
@@ -305,6 +325,7 @@ def run_trial(
                 "risk_level": risk_level,
                 "alpha": alpha,
                 "safety_hold": safety_hold,
+                "planner_pending": pending_candidate is not None,
             }
         )
         if safety_hold:
@@ -321,19 +342,21 @@ def run_trial(
     min_gt = min(row["D_gt"] for row in timeline) if timeline else math.inf
     violation_steps = sum(1 for row in timeline if row["D_gt"] < cfg.D_STOP)
     finished = bool(np.linalg.norm(q_final - q_goal) <= cfg.FINISH_TOLERANCE and tau >= active.total_duration - 1.0e-9)
+    task_safe_success = bool(finished and violation_steps == 0)
+    replan_success = bool(accepted_count >= 1)
     if instance["scenario_type"] == "far_safe" and replan_attempts:
         false_replan = True
     if method == "reference_only":
-        success = finished and violation_steps == 0
+        success = task_safe_success
     elif method == "ssm":
-        success = finished and violation_steps == 0
+        success = task_safe_success
     else:
         if instance["scenario_type"] == "far_safe":
             success = finished and not false_replan and violation_steps == 0
         elif instance["scenario_type"] == "initial_high_risk":
             success = first_safety_hold is not None and accepted_count == 0
         else:
-            success = finished and violation_steps == 0 and accepted_count >= 1
+            success = task_safe_success
 
     return {
         "trial_id": f"{instance['instance_id']}_{method}",
@@ -341,6 +364,8 @@ def run_trial(
         "scenario_type": instance["scenario_type"],
         "method": method,
         "success": bool(success),
+        "task_safe_success": bool(task_safe_success),
+        "replan_success": bool(replan_success),
         "finished": finished,
         "duration_s": float(timeline[-1]["time"] if timeline else 0.0),
         "min_distance_gt": float(min_gt),
@@ -352,6 +377,7 @@ def run_trial(
         "first_safety_hold_time": first_safety_hold,
         "false_replan": false_replan,
         "planning_control_cycles": int(planning_control_cycles),
+        "bridge_min_distance": None if not bridge_min_distances else float(min(bridge_min_distances)),
         "events": events,
         "timeline": timeline,
         "wall_elapsed_ms": float((time.perf_counter() - started) * 1000.0),

@@ -39,6 +39,8 @@ def aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
                 "method_name": cfg.METHOD_NAMES.get(group["method"], group["method"]),
                 "n": len(items),
                 "success_rate": float(np.mean([bool(item["success"]) for item in items])),
+                "task_safe_success_rate": float(np.mean([bool(item.get("task_safe_success", item["success"])) for item in items])),
+                "replan_success_rate": float(np.mean([bool(item.get("replan_success", item["accepted_count"] >= 1)) for item in items])),
                 "finish_rate": float(np.mean([bool(item["finished"]) for item in items])),
                 "safety_violation_rate": float(np.mean([item["safety_violation_time_s"] > 0.0 for item in items])),
                 "min_distance_gt": _stat([item["min_distance_gt"] for item in items]),
@@ -48,6 +50,7 @@ def aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
                 "first_replan_time": _stat([item["first_replan_time"] for item in items if item["first_replan_time"] is not None]),
                 "first_safety_hold_time": _stat([item["first_safety_hold_time"] for item in items if item["first_safety_hold_time"] is not None]),
                 "planning_cycles": _stat([item["planning_control_cycles"] for item in items]),
+                "bridge_min_distance": _stat([item["bridge_min_distance"] for item in items if item.get("bridge_min_distance") is not None]),
                 "planner_elapsed_ms": _stat(
                     [
                         event["elapsed_ms"]
@@ -82,25 +85,25 @@ def _fmt(value: Any, digits: int = 3) -> str:
 
 def write_paper_table(summary: dict[str, Any], path: Path) -> None:
     lines = [
-        "| scenario | method | n | success | finish | violation | Dmin GT / m | replans | accepted | first hold / s | planner ms | false replans |",
+        "| scenario | method | n | task safe | replan success | finish | violation | Dmin GT / m | bridge Dmin / m | replans | accepted | planner ms |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in summary["groups"]:
         lines.append(
-            "| {scenario_type} | {method_name} | {n} | {success:.2f} | {finish:.2f} | {violation:.2f} | "
-            "{dmin} | {replans} | {accepted} | {hold} | {planner} | {false_replans} |".format(
+            "| {scenario_type} | {method_name} | {n} | {task:.2f} | {replan_success:.2f} | {finish:.2f} | {violation:.2f} | "
+            "{dmin} | {bridge} | {replans} | {accepted} | {planner} |".format(
                 scenario_type=row["scenario_type"],
                 method_name=row["method_name"],
                 n=row["n"],
-                success=row["success_rate"],
+                task=row["task_safe_success_rate"],
+                replan_success=row["replan_success_rate"],
                 finish=row["finish_rate"],
                 violation=row["safety_violation_rate"],
                 dmin=_fmt(row["min_distance_gt"]["mean"]),
+                bridge=_fmt(row["bridge_min_distance"]["mean"]),
                 replans=_fmt(row["replan_count"]["mean"], 2),
                 accepted=_fmt(row["accepted_count"]["mean"], 2),
-                hold=_fmt(row["first_safety_hold_time"]["mean"]),
                 planner=_fmt(row["planner_elapsed_ms"]["mean"], 1),
-                false_replans=row["false_replans"],
             )
         )
     lines.extend(
@@ -110,7 +113,8 @@ def write_paper_table(summary: dict[str, Any], path: Path) -> None:
             "",
             "- `violation` is GT safety-distance violation rate under the executed closed loop.",
             "- `initial_high_risk` is a safety-hold test: `finish=0` and `violation=1` are expected because the obstacle is initialized inside the hold region; acceptance is judged by immediate hold, zero replans, and zero candidate switches.",
-            "- Candidate switching uses independent dense validation as the acceptance gate; optimizer convergence flags are reported separately in `table_6_4_candidate_validation_audit.md`.",
+            "- `task safe` reports task completion without GT safety violation; `replan success` reports at least one accepted candidate switch after a trigger.",
+            "- Candidate switching uses online medium validation and is followed by dense GT offline audit; optimizer convergence flags are reported separately in `table_6_4_candidate_validation_audit.md`.",
         ]
     )
     path.parent.mkdir(parents=True, exist_ok=True)

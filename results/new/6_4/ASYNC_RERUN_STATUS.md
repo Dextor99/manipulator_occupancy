@@ -1,25 +1,27 @@
-# 6.4 Async Rerun Status
+# 6.4 Strict Async Rerun Status
 
-This directory currently contains an interrupted strict-asynchronous rerun.
-It should not be used as the final paper result table.
+This directory contains a completed strict-asynchronous virtual-loop rerun.
+It supersedes the earlier synchronous-result interpretation for claims about
+asynchronous rolling replanning.
 
-Implemented corrections:
+What was fixed:
 
-- virtual time continues while candidate planning is pending;
-- candidate completion is delayed and revalidated at switch time;
-- `switch_delay` is treated as a deadline, with actual switch after candidate completion;
-- D1/D2 obstacles use `motion_start_time` and `pre_motion_center` to avoid t=0-only triggering;
-- online validation is medium-density and dense GT recheck remains offline;
-- optimizer convergence metadata is stored separately from candidate acceptance.
+- virtual time, obstacle motion, observations, and trajectory clock continue while planning is pending;
+- candidates are planned for a fixed switch slot and are revalidated at that planned switch time;
+- candidates that miss the switch deadline are rejected;
+- task-safe success and replan-switch success are reported separately;
+- online validation uses medium density, with dense GT recheck reported offline;
+- optimizer convergence is recorded separately from candidate acceptance;
+- bridge risk between submission and planned switch is logged.
 
-Current finding:
+Main finding:
 
-- corrected D1 smoke tests can pass after increasing dynamic risk weight;
-- strict asynchronous formal rerun exposed failing D1/D2 instances and was interrupted;
-- therefore the current strict-asynchronous result is not yet paper-ready.
+- D1 body-crossing is mostly supported: CCRO-NUBS task-safe rate is 14/15 and replan-switch rate is 13/15.
+- D2 end-effector crossing is not yet stable under the strict async timing: CCRO-NUBS task-safe rate is 7/15 and replan-switch rate is 7/15.
+- D3 no-risk and D4 immediate-hold functional checks remain complete.
 
-Next required work:
+Paper-use guidance:
 
-- add asynchronous feasibility screening during D1/D2 instance generation, or improve the dynamic optimizer so delayed switch candidates keep sufficient margin;
-- then rerun the full D1/D2 90-trial comparison plus D3/D4 functional checks;
-- regenerate `metrics.json`, `manifest.json`, paper tables, and dense GT audit.
+- Use this result as an honest strict-async capability-boundary result.
+- Do not claim stable asynchronous dynamic replanning for all D1/D2 cases.
+- A positive final-claim experiment still requires either stronger execution-layer safety correction or a method-independent operating-domain restriction based on trigger-to-contact lead time.
