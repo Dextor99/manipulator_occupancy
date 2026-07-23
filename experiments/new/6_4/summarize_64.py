@@ -103,6 +103,15 @@ def write_paper_table(summary: dict[str, Any], path: Path) -> None:
                 false_replans=row["false_replans"],
             )
         )
+    lines.extend(
+        [
+            "",
+            "Notes:",
+            "",
+            "- `violation` is GT safety-distance violation rate under the executed closed loop.",
+            "- `initial_high_risk` is a safety-hold test: `finish=0` and `violation=1` are expected because the obstacle is initialized inside the hold region; acceptance is judged by immediate hold, zero replans, and zero candidate switches.",
+            "- Candidate switching uses independent dense validation as the acceptance gate; optimizer convergence flags are reported separately in `table_6_4_candidate_validation_audit.md`.",
+        ]
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-

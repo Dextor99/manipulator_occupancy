@@ -1,0 +1,1399 @@
+{
+  "candidate": {
+    "events": 59,
+    "accepted": 57,
+    "rejected": 2,
+    "accepted_rate": 0.9661016949152542,
+    "solver_success": 3,
+    "solver_success_rate": 0.05084745762711865,
+    "elapsed_ms": {
+      "n": 59,
+      "mean": 1214.5859835589486,
+      "std": 220.0036487325723,
+      "min": 892.2209390002536,
+      "p05": 956.1076635931386,
+      "p50": 1186.9447479984956,
+      "p95": 1703.6660832003686,
+      "max": 1941.709157996229
+    },
+    "accepted_elapsed_ms": {
+      "n": 57,
+      "mean": 1190.1618220525274,
+      "std": 179.39806994415076,
+      "min": 892.2209390002536,
+      "p05": 955.338679192937,
+      "p50": 1184.765530997538,
+      "p95": 1530.7711523986652,
+      "max": 1787.127549003344
+    },
+    "candidate_min_distance": {
+      "n": 59,
+      "mean": 0.10128852326157532,
+      "std": 0.009345721141667523,
+      "min": 0.05081604590674002,
+      "p05": 0.09747127392921195,
+      "p50": 0.10221059280340063,
+      "p95": 0.10954323145677503,
+      "max": 0.11033627140520974
+    },
+    "accepted_candidate_min_distance": {
+      "n": 57,
+      "mean": 0.10290674437335981,
+      "std": 0.003340023802479323,
+      "min": 0.0961384915162132,
+      "p05": 0.09783095296007865,
+      "p50": 0.10222310023250109,
+      "p95": 0.10956121066065265,
+      "max": 0.11033627140520974
+    },
+    "rejection_reasons": {
+      "none": 57,
+      "distance_ok": 2
+    },
+    "by_scenario": {
+      "body_crossing": {
+        "events": 29,
+        "accepted": 29,
+        "solver_success": 3,
+        "elapsed_ms": {
+          "n": 29,
+          "mean": 1161.3082672401074,
+          "std": 139.86319770507234,
+          "min": 949.1868039913243,
+          "p05": 970.0369007972768,
+          "p50": 1147.2068799921544,
+          "p95": 1353.148137201788,
+          "max": 1557.3375820094952
+        },
+        "candidate_min_distance": {
+          "n": 29,
+          "mean": 0.10121647090116252,
+          "std": 0.00242274984891802,
+          "min": 0.0961384915162132,
+          "p05": 0.09761955481802409,
+          "p50": 0.10140094389530752,
+          "p95": 0.10454910362346798,
+          "max": 0.10506922315768054
+        },
+        "accepted_candidate_min_distance": {
+          "n": 29,
+          "mean": 0.10121647090116252,
+          "std": 0.00242274984891802,
+          "min": 0.0961384915162132,
+          "p05": 0.09761955481802409,
+          "p50": 0.10140094389530752,
+          "p95": 0.10454910362346798,
+          "max": 0.10506922315768054
+        }
+      },
+      "ee_crossing": {
+        "events": 30,
+        "accepted": 28,
+        "solver_success": 0,
+        "elapsed_ms": {
+          "n": 30,
+          "mean": 1266.087776000495,
+          "std": 268.9491136995996,
+          "min": 892.2209390002536,
+          "p05": 954.9979180053924,
+          "p50": 1189.8868580028648,
+          "p95": 1838.009405294724,
+          "max": 1941.709157996229
+        },
+        "candidate_min_distance": {
+          "n": 30,
+          "mean": 0.10135817387664099,
+          "std": 0.01300028786142696,
+          "min": 0.05081604590674002,
+          "p05": 0.0774246959580839,
+          "p50": 0.10384834526183333,
+          "p95": 0.10971723537649294,
+          "max": 0.11033627140520974
+        },
+        "accepted_candidate_min_distance": {
+          "n": 28,
+          "mean": 0.10465738475527837,
+          "std": 0.0032869210854141067,
+          "min": 0.09930528327444743,
+          "p05": 0.1009312059472593,
+          "p50": 0.10427565841110881,
+          "p95": 0.10971945193736919,
+          "max": 0.11033627140520974
+        }
+      }
+    },
+    "interpretation": "candidate_accepted means independent dense validation passed under the experiment acceptance checks; solver_success is retained as a separate optimizer convergence flag and is not used alone for switching."
+  },
+  "d4_hold": {
+    "n": 10,
+    "immediate_hold": 10,
+    "no_replan": 10,
+    "no_candidate_accept": 10,
+    "goal_completion_expected": false,
+    "hold_time_s": {
+      "n": 10,
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "p05": 0.0,
+      "p50": 0.0,
+      "p95": 0.0,
+      "max": 0.0
+    },
+    "min_distance_gt": {
+      "n": 10,
+      "mean": -0.04711456542680352,
+      "std": 0.004655357159359328,
+      "min": -0.05264667060334493,
+      "p05": -0.052097101935942816,
+      "p50": -0.04716984147743723,
+      "p95": -0.04026498872258145,
+      "max": -0.03791526578381524
+    }
+  },
+  "dense_gt_recheck": {
+    "density": "dense",
+    "time_step": 0.04,
+    "d_stop": 0.08,
+    "groups": [
+      {
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "n": 15,
+        "checked_samples": 3002,
+        "violation_rate": 0.0,
+        "min_distance_gt_recheck": {
+          "n": 15,
+          "mean": 0.14844679197782526,
+          "std": 0.022190101908365425,
+          "min": 0.12117178600313866,
+          "p05": 0.12148594002236794,
+          "p50": 0.14227439558036223,
+          "p95": 0.18286232628755444,
+          "max": 0.19893272686631153
+        }
+      },
+      {
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "n": 15,
+        "checked_samples": 1336,
+        "violation_rate": 1.0,
+        "min_distance_gt_recheck": {
+          "n": 15,
+          "mean": 0.07502850524261571,
+          "std": 0.0028592699129730485,
+          "min": 0.06961522788670411,
+          "p05": 0.07024343733527955,
+          "p50": 0.07540520147392084,
+          "p95": 0.07865606440453951,
+          "max": 0.07910374319646662
+        }
+      },
+      {
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "n": 15,
+        "checked_samples": 6966,
+        "violation_rate": 0.6666666666666666,
+        "min_distance_gt_recheck": {
+          "n": 15,
+          "mean": 0.04405974119146545,
+          "std": 0.04072821781373555,
+          "min": -0.010023390399591464,
+          "p05": -0.00797575286541589,
+          "p50": 0.0746715891443534,
+          "p95": 0.0827510960382495,
+          "max": 0.08281137457946361
+        }
+      },
+      {
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "n": 15,
+        "checked_samples": 3001,
+        "violation_rate": 0.0,
+        "min_distance_gt_recheck": {
+          "n": 15,
+          "mean": 0.1377342175043907,
+          "std": 0.013098857595085606,
+          "min": 0.12005842230885186,
+          "p05": 0.1216095622648347,
+          "p50": 0.13630956481227585,
+          "p95": 0.16053968809721658,
+          "max": 0.1676893891612265
+        }
+      },
+      {
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "n": 15,
+        "checked_samples": 1327,
+        "violation_rate": 1.0,
+        "min_distance_gt_recheck": {
+          "n": 15,
+          "mean": 0.07632498236258933,
+          "std": 0.0024959357077163186,
+          "min": 0.07117429057237937,
+          "p05": 0.07242127709948142,
+          "p50": 0.07650181590812218,
+          "p95": 0.07959574937333111,
+          "max": 0.07970282852160336
+        }
+      },
+      {
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "n": 15,
+        "checked_samples": 7515,
+        "violation_rate": 1.0,
+        "min_distance_gt_recheck": {
+          "n": 15,
+          "mean": -0.03773303144328622,
+          "std": 0.014666149160149836,
+          "min": -0.055711670077741866,
+          "p05": -0.052497084069775865,
+          "p50": -0.041583562643297343,
+          "p95": -0.012261741343434964,
+          "max": -0.0012167068615701188
+        }
+      },
+      {
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "n": 10,
+        "checked_samples": 2000,
+        "violation_rate": 0.0,
+        "min_distance_gt_recheck": {
+          "n": 10,
+          "mean": 0.6621415509555969,
+          "std": 0.028283659237111198,
+          "min": 0.6137855488207754,
+          "p05": 0.621200920047866,
+          "p50": 0.6656638538452451,
+          "p95": 0.6940943940471129,
+          "max": 0.6965590664745341
+        }
+      },
+      {
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "n": 10,
+        "checked_samples": 5010,
+        "violation_rate": 1.0,
+        "min_distance_gt_recheck": {
+          "n": 10,
+          "mean": -0.04795162502252996,
+          "std": 0.0041077649102856184,
+          "min": -0.05264667060334493,
+          "p05": -0.0522316376061894,
+          "p50": -0.048842945200903785,
+          "p95": -0.0422548856188109,
+          "max": -0.04153139362932359
+        }
+      }
+    ],
+    "per_trial": [
+      {
+        "trial_id": "D1_00_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.14001261631664152,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_00_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 88,
+        "min_distance_gt_recheck": 0.06961522788670411,
+        "min_time": 3.480000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_00_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.0746715891443534,
+        "min_time": 3.6800000000000024,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_01_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.14641922334452617,
+        "min_time": 3.360000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_01_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 86,
+        "min_distance_gt_recheck": 0.07741032505071159,
+        "min_time": 3.400000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_01_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.08272526237772916,
+        "min_time": 4.040000000000003,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_02_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.14450708116769123,
+        "min_time": 3.6000000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_02_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 90,
+        "min_distance_gt_recheck": 0.07828181086667906,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_02_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.017439695513163038,
+        "min_time": 6.720000000000005,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_03_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.13849027627147562,
+        "min_time": 3.6800000000000024,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_03_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 91,
+        "min_distance_gt_recheck": 0.07446516508594382,
+        "min_time": 3.6000000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_03_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.012820571925297057,
+        "min_time": 7.2000000000000055,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_04_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.19893272686631153,
+        "min_time": 3.320000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_04_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 88,
+        "min_distance_gt_recheck": 0.07846420206514218,
+        "min_time": 3.480000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_04_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.07857484011494895,
+        "min_time": 4.040000000000003,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_05_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.17163690021249128,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_05_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 90,
+        "min_distance_gt_recheck": 0.07374027483893171,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_05_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.0001385113457390008,
+        "min_time": 6.1200000000000045,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_06_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.17597501175380142,
+        "min_time": 3.400000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_06_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 87,
+        "min_distance_gt_recheck": 0.07254862463231157,
+        "min_time": 3.440000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_06_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.08008390783418623,
+        "min_time": 3.5200000000000022,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_07_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.17503194017810092,
+        "min_time": 3.200000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_07_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 90,
+        "min_distance_gt_recheck": 0.07910374319646662,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_07_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.08281137457946361,
+        "min_time": 4.040000000000003,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_08_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.14227439558036223,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_08_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 94,
+        "min_distance_gt_recheck": 0.07569863843547239,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_08_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.01143200448162613,
+        "min_time": 5.920000000000004,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_09_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 201,
+        "min_distance_gt_recheck": 0.12769924731674598,
+        "min_time": 3.6400000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_09_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 90,
+        "min_distance_gt_recheck": 0.07279491602597915,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_09_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.007098193922197786,
+        "min_time": 5.840000000000004,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_10_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.1467976761782102,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_10_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 90,
+        "min_distance_gt_recheck": 0.07433309472114918,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_10_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.005692575352617517,
+        "min_time": 5.480000000000004,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_11_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.12117178600313866,
+        "min_time": 3.360000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_11_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 88,
+        "min_distance_gt_recheck": 0.07568697853869855,
+        "min_time": 3.480000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_11_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 229,
+        "min_distance_gt_recheck": 0.07844648575334279,
+        "min_time": 3.6400000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_12_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.13702655712408762,
+        "min_time": 3.360000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_12_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 88,
+        "min_distance_gt_recheck": 0.0773667058650275,
+        "min_time": 3.480000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_12_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": 0.08255153292660844,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_13_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.13910586389461405,
+        "min_time": 3.360000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_13_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 86,
+        "min_distance_gt_recheck": 0.07540520147392084,
+        "min_time": 3.400000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_13_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 224,
+        "min_distance_gt_recheck": 0.0820145015499306,
+        "min_time": 3.480000000000002,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_14_ccro_nubs",
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 201,
+        "min_distance_gt_recheck": 0.12162057745918049,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "foreArm_Link",
+        "violation": false
+      },
+      {
+        "trial_id": "D1_14_reference_only",
+        "scenario_type": "body_crossing",
+        "method": "reference_only",
+        "checked_samples": 90,
+        "min_distance_gt_recheck": 0.07051266995609759,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D1_14_ssm",
+        "scenario_type": "body_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.010023390399591464,
+        "min_time": 5.480000000000004,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_00_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.12227433653168449,
+        "min_time": 3.7600000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_00_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 82,
+        "min_distance_gt_recheck": 0.0776111635650246,
+        "min_time": 3.240000000000002,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_00_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.046420309963379924,
+        "min_time": 8.599999999999993,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_01_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.13130998007740932,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_01_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 78,
+        "min_distance_gt_recheck": 0.0775534026257377,
+        "min_time": 3.080000000000002,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_01_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.04881008461488827,
+        "min_time": 7.960000000000006,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_02_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.1407237730104367,
+        "min_time": 3.8400000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_02_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 83,
+        "min_distance_gt_recheck": 0.07930365196095704,
+        "min_time": 3.280000000000002,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_02_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.03900727724072428,
+        "min_time": 6.440000000000005,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_03_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.15747553049835522,
+        "min_time": 3.8800000000000026,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_03_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 86,
+        "min_distance_gt_recheck": 0.07954985830978585,
+        "min_time": 3.400000000000002,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_03_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.039508438728861235,
+        "min_time": 8.71999999999999,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_04_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.14160334923842488,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_04_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 83,
+        "min_distance_gt_recheck": 0.07970282852160336,
+        "min_time": 3.280000000000002,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_04_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.048414132584877353,
+        "min_time": 7.680000000000006,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_05_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.15191582475650262,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_05_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 89,
+        "min_distance_gt_recheck": 0.07331224815461117,
+        "min_time": 3.5200000000000022,
+        "nearest_link": "wrist3_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_05_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.055711670077741866,
+        "min_time": 13.639999999999885,
+        "nearest_link": "shoulder_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_06_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.1676893891612265,
+        "min_time": 3.6800000000000024,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_06_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 91,
+        "min_distance_gt_recheck": 0.07577110923204199,
+        "min_time": 3.6000000000000023,
+        "nearest_link": "wrist3_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_06_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.030083861052839125,
+        "min_time": 14.79999999999986,
+        "nearest_link": "shoulder_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_07_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.13630956481227585,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_07_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 91,
+        "min_distance_gt_recheck": 0.07729714437988165,
+        "min_time": 3.6000000000000023,
+        "nearest_link": "wrist3_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_07_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.041583562643297343,
+        "min_time": 14.79999999999986,
+        "nearest_link": "shoulder_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_08_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.1367717236299331,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_08_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 86,
+        "min_distance_gt_recheck": 0.07702867078281261,
+        "min_time": 3.400000000000002,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_08_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.043320634137779666,
+        "min_time": 14.79999999999986,
+        "nearest_link": "shoulder_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_09_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.1259715154298932,
+        "min_time": 3.8400000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_09_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 90,
+        "min_distance_gt_recheck": 0.07418179850968422,
+        "min_time": 3.5600000000000023,
+        "nearest_link": "wrist3_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_09_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.025138864552122553,
+        "min_time": 5.520000000000004,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_10_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.1396696616974335,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_10_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 92,
+        "min_distance_gt_recheck": 0.07648775616723463,
+        "min_time": 3.6400000000000023,
+        "nearest_link": "gripper_base_link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_10_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.03038545653468526,
+        "min_time": 12.239999999999915,
+        "nearest_link": "shoulder_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_11_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.1345635772958031,
+        "min_time": 3.8400000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_11_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 93,
+        "min_distance_gt_recheck": 0.07650181590812218,
+        "min_time": 3.6800000000000024,
+        "nearest_link": "gripper_base_link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_11_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.05111940435207615,
+        "min_time": 11.279999999999935,
+        "nearest_link": "shoulder_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_12_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.12687652965778784,
+        "min_time": 3.9200000000000026,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_12_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 95,
+        "min_distance_gt_recheck": 0.0764432968521527,
+        "min_time": 3.7600000000000025,
+        "nearest_link": "gripper_base_link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_12_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.0482797407545016,
+        "min_time": 11.319999999999935,
+        "nearest_link": "shoulder_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_13_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 201,
+        "min_distance_gt_recheck": 0.12005842230885186,
+        "min_time": 3.8400000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_13_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 95,
+        "min_distance_gt_recheck": 0.07117429057237937,
+        "min_time": 3.7600000000000025,
+        "nearest_link": "gripper_base_link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_13_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.0012167068615701188,
+        "min_time": 4.800000000000003,
+        "nearest_link": "gripper_base_link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_14_ccro_nubs",
+        "scenario_type": "ee_crossing",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.13280008445984215,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "right_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D2_14_reference_only",
+        "scenario_type": "ee_crossing",
+        "method": "reference_only",
+        "checked_samples": 93,
+        "min_distance_gt_recheck": 0.07295569989681086,
+        "min_time": 3.6800000000000024,
+        "nearest_link": "gripper_base_link",
+        "violation": true
+      },
+      {
+        "trial_id": "D2_14_ssm",
+        "scenario_type": "ee_crossing",
+        "method": "ssm",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.016995327549948445,
+        "min_time": 4.800000000000003,
+        "nearest_link": "gripper_base_link",
+        "violation": true
+      },
+      {
+        "trial_id": "D3_00_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6905686516781346,
+        "min_time": 3.6800000000000024,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_01_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6302641515476433,
+        "min_time": 4.000000000000003,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_02_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6562303390985047,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_03_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6438158050116678,
+        "min_time": 3.8400000000000025,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_04_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6465735930937799,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_05_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6774389686031235,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_06_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6750973685919854,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_07_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6910820166358204,
+        "min_time": 4.000000000000003,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_08_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6965590664745341,
+        "min_time": 3.7200000000000024,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D3_09_ccro_nubs",
+        "scenario_type": "far_safe",
+        "method": "ccro_nubs",
+        "checked_samples": 200,
+        "min_distance_gt_recheck": 0.6137855488207754,
+        "min_time": 3.8800000000000026,
+        "nearest_link": "left_link",
+        "violation": false
+      },
+      {
+        "trial_id": "D4_00_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.05099477749014658,
+        "min_time": 1.6400000000000008,
+        "nearest_link": "upperArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_01_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.04669111291166099,
+        "min_time": 4.480000000000003,
+        "nearest_link": "wrist1_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_02_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.051192694322792116,
+        "min_time": 0.36,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_03_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.05264667060334493,
+        "min_time": 1.2800000000000005,
+        "nearest_link": "upperArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_04_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.044262342906865156,
+        "min_time": 1.5600000000000007,
+        "nearest_link": "foreArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_05_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.051425406898006905,
+        "min_time": 0.16,
+        "nearest_link": "wrist1_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_06_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.05172437505411043,
+        "min_time": 18.319999999999787,
+        "nearest_link": "upperArm_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_07_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.04153139362932359,
+        "min_time": 7.040000000000005,
+        "nearest_link": "wrist1_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_08_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.04313915360596204,
+        "min_time": 3.8000000000000025,
+        "nearest_link": "wrist2_Link",
+        "violation": true
+      },
+      {
+        "trial_id": "D4_09_ccro_nubs",
+        "scenario_type": "initial_high_risk",
+        "method": "ccro_nubs",
+        "checked_samples": 501,
+        "min_distance_gt_recheck": -0.04590832280308681,
+        "min_time": 0.08,
+        "nearest_link": "upperArm_Link",
+        "violation": true
+      }
+    ]
+  }
+}

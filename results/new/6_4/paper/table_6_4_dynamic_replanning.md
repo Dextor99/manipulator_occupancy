@@ -8,3 +8,9 @@
 | ee_crossing | SSM | 15 | 0.00 | 0.00 | 1.00 | -0.034 | 0.00 | 0.00 | 3.523 | - | 0 |
 | far_safe | CCRO-NUBS | 10 | 1.00 | 1.00 | 0.00 | 0.673 | 0.00 | 0.00 | - | - | 0 |
 | initial_high_risk | CCRO-NUBS | 10 | 1.00 | 0.00 | 1.00 | -0.047 | 0.00 | 0.00 | 0.000 | - | 0 |
+
+Notes:
+
+- `violation` is GT safety-distance violation rate under the executed closed loop.
+- `initial_high_risk` is a safety-hold test: `finish=0` and `violation=1` are expected because the obstacle is initialized inside the hold region; acceptance is judged by immediate hold, zero replans, and zero candidate switches.
+- Candidate switching uses independent dense validation as the acceptance gate; optimizer convergence flags are reported separately in `table_6_4_candidate_validation_audit.md`.
