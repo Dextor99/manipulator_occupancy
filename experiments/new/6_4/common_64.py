@@ -21,7 +21,7 @@ from planning.dynamic_optimizer import DynamicRiskNUBSOptimizer  # noqa: E402
 from planning.nubs_trajectory import NUBSTrajectory6D  # noqa: E402
 from planning.obstacle_forecast import ConstantVelocitySphereForecast, ShiftedForecast  # noqa: E402
 from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
-from planning.spatiotemporal_risk import SpatioTemporalRiskEvaluator  # noqa: E402
+from planning.spatiotemporal_risk import DynamicConfigurationRisk, SpatioTemporalRiskEvaluator  # noqa: E402
 from planning.verifier import DynamicTrajectoryVerifier  # noqa: E402
 
 from . import config_64 as cfg
@@ -92,6 +92,119 @@ def make_risk_stack(config: dict[str, Any], model: RobotSurfaceModel, forecast):
         limit_tolerance=1.0e-8,
     )
     return evaluator, verifier, limits
+
+
+class CriticalPointSpatioTemporalRiskEvaluator(SpatioTemporalRiskEvaluator):
+    """Sparse critical-point dynamic risk with 6.2-style equivalent radii."""
+
+    def _critical_points_by_link(self, q: np.ndarray) -> dict[str, list[tuple[str, np.ndarray, float]]]:
+        selected_by_link: dict[str, list[tuple[str, np.ndarray, float]]] = {}
+        for region, links in cfg.CRITICAL_POINT_LINKS.items():
+            radius = float(cfg.CRITICAL_POINT_RADII[region])
+            for link in links:
+                if link not in self.surface_model.link_names:
+                    continue
+                points = self.surface_model.surface_by_link(q, density="coarse", links={link})[link]
+                if len(points) == 0:
+                    continue
+                centroid = points.mean(axis=0)
+                distances = np.linalg.norm(points - centroid[None, :], axis=1)
+                selected = [int(np.argmax(distances))]
+                if cfg.CRITICAL_POINTS_PER_REGION > 1:
+                    farthest = int(np.argmax(np.linalg.norm(points - points[selected[0]][None, :], axis=1)))
+                    selected.append(farthest)
+                selected_by_link.setdefault(link, [])
+                for local_index, point_index in enumerate(selected[: cfg.CRITICAL_POINTS_PER_REGION]):
+                    selected_by_link[link].append(
+                        (
+                            f"{region}_{link}_{local_index}",
+                            points[point_index].copy(),
+                            radius,
+                        )
+                    )
+        return selected_by_link
+
+    def _evaluate_no_gradient(self, q, occupancy, links, density) -> DynamicConfigurationRisk:
+        del density
+        critical_by_link = self._critical_points_by_link(np.asarray(q, dtype=np.float64))
+        if links is not None:
+            critical_by_link = {link: points for link, points in critical_by_link.items() if link in links}
+        if not critical_by_link or not occupancy.spheres:
+            return DynamicConfigurationRisk(
+                0.0, math.inf, None, None, None, None, {}, occupancy.extrapolated
+            )
+        per_link: dict[str, float] = {}
+        total_cost = 0.0
+        total_weight = 0.0
+        min_distance = math.inf
+        nearest_link = None
+        nearest_object_id = None
+        nearest_robot = None
+        nearest_obstacle = None
+        for link, critical_points in critical_by_link.items():
+            point_distances = []
+            for _, point, point_radius in critical_points:
+                best_point_distance = math.inf
+                best_sphere = None
+                for sphere in occupancy.spheres:
+                    clearance = float(np.linalg.norm(point - sphere.center) - point_radius - sphere.radius)
+                    if clearance < best_point_distance:
+                        best_point_distance = clearance
+                        best_sphere = sphere
+                point_distances.append(best_point_distance)
+                if best_sphere is not None and best_point_distance < min_distance:
+                    min_distance = best_point_distance
+                    nearest_link = link
+                    nearest_object_id = int(best_sphere.object_id)
+                    nearest_robot = point.copy()
+                    direction = point - best_sphere.center
+                    norm = float(np.linalg.norm(direction))
+                    direction = np.array([1.0, 0.0, 0.0]) if norm < 1.0e-12 else direction / norm
+                    nearest_obstacle = best_sphere.center + best_sphere.radius * direction
+            distances = np.asarray(point_distances, dtype=np.float64)
+            hinge = np.maximum(self.d_safe - distances, 0.0)
+            link_cost = float(np.mean(hinge * hinge))
+            per_link[link] = link_cost
+            weight = float(self.link_weights.get(link, 1.0))
+            if weight < 0.0 or not np.isfinite(weight):
+                raise ValueError(f"invalid link weight for {link}")
+            total_cost += weight * link_cost
+            total_weight += weight
+        return DynamicConfigurationRisk(
+            cost=0.0 if total_weight <= 0.0 else total_cost / total_weight,
+            min_distance=min_distance,
+            nearest_link=nearest_link,
+            nearest_object_id=nearest_object_id,
+            robot_point=nearest_robot,
+            obstacle_point=nearest_obstacle,
+            per_link_cost=per_link,
+            extrapolated=occupancy.extrapolated,
+        )
+
+
+def make_critical_risk_stack(config: dict[str, Any], model: RobotSurfaceModel):
+    limits = _limits(config)
+    risk_cfg = config["risk"]
+    evaluator = CriticalPointSpatioTemporalRiskEvaluator(
+        model,
+        d_safe=max(float(risk_cfg["d_safe"]), cfg.D_ACCEPT),
+        d_activate=max(float(risk_cfg["d_activate"]), cfg.D_REPLAN_OUT),
+        fd_epsilon_q=float(risk_cfg["fd_epsilon_q"]),
+        density=cfg.SURFACE_DENSITY_LOOP,
+    )
+    verifier = DynamicTrajectoryVerifier(
+        evaluator,
+        limits,
+        d_stop=cfg.D_ACCEPT,
+        time_step=cfg.DT,
+        density=cfg.SURFACE_DENSITY_VERIFY,
+        epsilon_goal=1.0e-2,
+        epsilon_continuity_q=5.0e-3,
+        epsilon_continuity_qd=3.0e-3,
+        epsilon_continuity_qdd=3.0e-3,
+        limit_tolerance=1.0e-8,
+    )
+    return evaluator, verifier
 
 
 def constant_forecast(center: np.ndarray, velocity: np.ndarray, radius: float):

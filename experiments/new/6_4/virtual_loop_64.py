@@ -95,6 +95,34 @@ def future_min_distance_with_links(
     return best
 
 
+def executed_bridge_min_distance(
+    evaluator,
+    trajectory,
+    local_tau: float,
+    forecast,
+    *,
+    horizon: float,
+    alpha: float,
+) -> dict[str, Any]:
+    horizon = min(float(horizon), float(forecast.valid_horizon))
+    if horizon <= 1.0e-9:
+        return {"distance": math.inf, "time": None, "tau": float(local_tau), "nearest_link": None}
+    best = {"distance": math.inf, "time": None, "tau": float(local_tau), "nearest_link": None}
+    tau_cursor = float(local_tau)
+    for delta in np.arange(0.0, horizon + 0.5 * cfg.DT, cfg.DT):
+        q = trajectory.evaluate(min(tau_cursor, trajectory.total_duration))
+        risk = evaluator.configuration(q, forecast, float(delta), density=cfg.SURFACE_DENSITY_LOOP, with_gradient=False)
+        if risk.min_distance < best["distance"]:
+            best = {
+                "distance": float(risk.min_distance),
+                "time": float(delta),
+                "tau": float(tau_cursor),
+                "nearest_link": risk.nearest_link,
+            }
+        tau_cursor = min(trajectory.total_duration, tau_cursor + float(alpha) * cfg.DT)
+    return best
+
+
 def apf_velocity_correction(evaluator, q: np.ndarray, forecast) -> np.ndarray:
     risk = evaluator.configuration(
         q,
@@ -124,6 +152,8 @@ def run_trial(
     limits,
     instance: dict[str, Any],
     method: str,
+    critical_evaluator=None,
+    critical_verifier=None,
 ) -> dict[str, Any]:
     gt_center0 = np.asarray(instance["gt_center0"], dtype=np.float64)
     gt_velocity = np.asarray(instance["gt_velocity"], dtype=np.float64)
@@ -145,19 +175,16 @@ def run_trial(
     safety_hold = False
     first_safety_hold = None
     first_replan = None
+    last_replan = None
     false_replan = False
-    bridge_min_distances: list[float] = []
     timeline: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
     planning_control_cycles = 0
     started = time.perf_counter()
     execution_scale = 1.0
     q_exec = reference.evaluate(0.0).copy()
-    critical_links = (
-        {instance["target_region"]}
-        if instance.get("target_region") not in {None, "far"}
-        else None
-    )
+    online_evaluator = critical_evaluator if method == "critical_point_nubs" and critical_evaluator is not None else evaluator
+    online_verifier = critical_verifier if method == "critical_point_nubs" and critical_verifier is not None else verifier
 
     while timestamp <= cfg.MAX_TRIAL_TIME:
         q_ref_now = active.evaluate(min(tau, active.total_duration))
@@ -189,18 +216,7 @@ def run_trial(
             model, q, obs.center, obs.radius, cfg.SURFACE_DENSITY_LOOP
         )
         future = future_min_distance(evaluator, active, tau, forecast, horizon=cfg.EVALUATE_HORIZON)
-        method_future = (
-            future
-            if method != "critical_point_nubs"
-            else future_min_distance_with_links(
-                evaluator,
-                active,
-                tau,
-                forecast,
-                horizon=cfg.EVALUATE_HORIZON,
-                links=critical_links,
-            )
-        )
+        method_future = future_min_distance(online_evaluator, active, tau, forecast, horizon=cfg.EVALUATE_HORIZON)
         alpha = 1.0
         risk_level = "low"
 
@@ -219,8 +235,13 @@ def run_trial(
                 risk_level = "medium"
 
         if pending_candidate is not None:
+            event = pending_candidate["event"]
+            event["bridge_min_distance_gt_executed"] = min(
+                float(event.get("bridge_min_distance_gt_executed", math.inf)),
+                float(gt_distance),
+            )
+            event["bridge_gt_sample_count"] = int(event.get("bridge_gt_sample_count", 0)) + 1
             if timestamp >= pending_candidate["planned_switch_timestamp"]:
-                event = pending_candidate["event"]
                 if timestamp + 1.0e-9 < pending_candidate["completed_timestamp"]:
                     event["outcome"] = "timeout_before_switch"
                     event["actual_switch_timestamp"] = timestamp
@@ -228,10 +249,17 @@ def run_trial(
                     event["rejection_reasons"] = ["planning_budget"]
                     events.append(event)
                     pending_candidate = None
+                elif not pending_candidate["submission_accepted"]:
+                    event["outcome"] = "rejected_before_switch"
+                    event["actual_switch_timestamp"] = timestamp
+                    event["candidate_accepted"] = False
+                    event["rejection_reasons"] = pending_candidate["submission_reasons"]
+                    events.append(event)
+                    pending_candidate = None
                 else:
                     event = pending_candidate["event"]
                     switch_forecast = ShiftedForecast(forecast, 0.0, max(1.0, pending_candidate["trajectory"].total_duration))
-                    switch_verification = verifier.verify(
+                    switch_verification = online_verifier.verify(
                         pending_candidate["trajectory"],
                         switch_forecast,
                         current_q=q,
@@ -243,7 +271,7 @@ def run_trial(
                     switch_checks = dict(switch_verification.checks)
                     switch_checks["solver_ok"] = True
                     reference_at_switch = future_min_distance(
-                        evaluator,
+                        online_evaluator,
                         active,
                         tau,
                         forecast,
@@ -289,30 +317,32 @@ def run_trial(
             and risk_level == "medium"
             and replan_attempts < cfg.MAX_REPLAN_ATTEMPTS
         ):
-            if first_replan is None or timestamp - first_replan >= cfg.REPLAN_INTERVAL:
-                first_replan = timestamp if first_replan is None else first_replan
+            if last_replan is None or timestamp - last_replan >= cfg.REPLAN_INTERVAL:
+                if first_replan is None:
+                    first_replan = timestamp
+                last_replan = timestamp
                 replan_attempts += 1
-                expected_switch_delay = min(cfg.EXPECTED_SWITCH_DELAY, cfg.SWITCH_DELAY)
-                deadline_timestamp = timestamp + cfg.SWITCH_DELAY
-                planned_switch_timestamp = timestamp + expected_switch_delay
+                planned_switch_delay = cfg.PLANNED_SWITCH_DELAY
+                deadline_timestamp = timestamp + planned_switch_delay
+                planned_switch_timestamp = deadline_timestamp
                 planning_alpha = min(alpha, cfg.PENDING_SLOW_SCALE)
-                predicted_tau = min(active.total_duration, tau + planning_alpha * expected_switch_delay)
+                predicted_tau = min(active.total_duration, tau + planning_alpha * planned_switch_delay)
                 q_plan = active.evaluate(predicted_tau)
                 qd_plan = planning_alpha * active.evaluate(predicted_tau, derivative_order=1)
                 qdd_plan = (planning_alpha ** 2) * active.evaluate(predicted_tau, derivative_order=2)
-                forecast_after_switch = max(1.0, float(forecast.valid_horizon) - expected_switch_delay)
+                forecast_after_switch = max(1.0, float(forecast.valid_horizon) - planned_switch_delay)
                 remaining_duration = min(
                     max(float(active.total_duration - predicted_tau), 1.2),
                     forecast_after_switch,
                 )
                 local_forecast = ShiftedForecast(
                     forecast,
-                    expected_switch_delay,
+                    planned_switch_delay,
                     remaining_duration,
                 )
                 candidate = optimize_candidate(
                     config,
-                    evaluator,
+                    online_evaluator,
                     limits,
                     local_forecast,
                     q_now=q_plan,
@@ -320,8 +350,7 @@ def run_trial(
                     qdd_now=qdd_plan,
                     q_goal=q_goal,
                     remaining_duration=remaining_duration,
-                    verifier=verifier,
-                    risk_links=critical_links if method == "critical_point_nubs" else None,
+                    verifier=online_verifier,
                 )
                 elapsed_s = float(candidate["optimization"]["elapsed_ms"]) / 1000.0
                 planning_control_cycles += int(math.ceil(elapsed_s / cfg.DT))
@@ -349,32 +378,33 @@ def run_trial(
                     "predicted_tau_at_switch": predicted_tau,
                     "planning_alpha": planning_alpha,
                 }
-                bridge = future_min_distance(
-                    evaluator,
+                bridge = executed_bridge_min_distance(
+                    online_evaluator,
                     active,
                     tau,
                     forecast,
-                    horizon=expected_switch_delay,
+                    horizon=planned_switch_delay,
+                    alpha=planning_alpha,
                 )
-                event["bridge_min_distance"] = bridge["distance"]
-                event["bridge_time_to_min"] = bridge["time"]
-                bridge_min_distances.append(float(bridge["distance"]))
+                event["bridge_min_distance_obs_predicted"] = bridge["distance"]
+                event["bridge_time_to_min_obs_predicted"] = bridge["time"]
+                event["bridge_tau_to_min_obs_predicted"] = bridge["tau"]
+                event["bridge_min_distance_gt_executed"] = float(gt_distance)
+                event["bridge_gt_sample_count"] = 1
                 if timestamp + elapsed_s > deadline_timestamp:
-                    event["outcome"] = "timeout_before_switch"
-                    event["rejection_reasons"] = ["planning_budget"]
-                    events.append(event)
+                    event["expected_outcome_if_waited"] = "timeout_before_switch"
                 elif not candidate["verification"]["accepted"]:
-                    event["outcome"] = "rejected_before_switch"
+                    event["expected_outcome_if_waited"] = "rejected_before_switch"
                     event["rejection_reasons"] = candidate["verification"]["reasons"]
-                    events.append(event)
-                else:
-                    pending_candidate = {
-                        "trajectory": candidate["trajectory"],
-                        "event": event,
-                        "completed_timestamp": timestamp + elapsed_s,
-                        "planned_switch_timestamp": planned_switch_timestamp,
-                        "planning_alpha": planning_alpha,
-                    }
+                pending_candidate = {
+                    "trajectory": candidate["trajectory"],
+                    "event": event,
+                    "completed_timestamp": timestamp + elapsed_s,
+                    "planned_switch_timestamp": planned_switch_timestamp,
+                    "planning_alpha": planning_alpha,
+                    "submission_accepted": bool(candidate["verification"]["accepted"]),
+                    "submission_reasons": list(candidate["verification"]["reasons"]),
+                }
 
         if method == "reference_only" and gt_distance <= cfg.D_STOP:
             timeline.append(
@@ -412,7 +442,7 @@ def run_trial(
             alpha = 0.0
         elif pending_candidate is not None:
             bridge_distance = min(
-                float(pending_candidate["event"].get("bridge_min_distance", math.inf)),
+                float(pending_candidate["event"].get("bridge_min_distance_obs_predicted", math.inf)),
                 float(method_future["distance"]),
             )
             if bridge_distance < cfg.D_SLOW:
@@ -427,6 +457,16 @@ def run_trial(
         q_finish_check = q_exec if method == "ssm_apf" else active.evaluate(active.total_duration)
         if np.linalg.norm(q_finish_check - q_goal) <= cfg.FINISH_TOLERANCE and tau >= active.total_duration - 1.0e-9:
             break
+
+    if pending_candidate is not None:
+        event = pending_candidate["event"]
+        event["outcome"] = "unfinished_pending_at_trial_end"
+        event["actual_switch_timestamp"] = None
+        event["candidate_accepted"] = False
+        if not event.get("rejection_reasons"):
+            event["rejection_reasons"] = ["trial_end_pending"]
+        events.append(event)
+        pending_candidate = None
 
     q_final = q_exec if method == "ssm_apf" else active.evaluate(min(tau, active.total_duration))
     min_gt = min(row["D_gt"] for row in timeline) if timeline else math.inf
@@ -471,10 +511,34 @@ def run_trial(
         "replan_count": int(replan_attempts),
         "accepted_count": int(accepted_count),
         "first_replan_time": first_replan,
+        "last_replan_time": last_replan,
         "first_safety_hold_time": first_safety_hold,
         "false_replan": false_replan,
         "planning_control_cycles": int(planning_control_cycles),
-        "bridge_min_distance": None if not bridge_min_distances else float(min(bridge_min_distances)),
+        "bridge_min_distance_obs_predicted": (
+            None
+            if not events
+            else min(
+                (
+                    float(event["bridge_min_distance_obs_predicted"])
+                    for event in events
+                    if event.get("bridge_min_distance_obs_predicted") is not None
+                ),
+                default=None,
+            )
+        ),
+        "bridge_min_distance_gt_executed": (
+            None
+            if not events
+            else min(
+                (
+                    float(event["bridge_min_distance_gt_executed"])
+                    for event in events
+                    if event.get("bridge_min_distance_gt_executed") is not None
+                ),
+                default=None,
+            )
+        ),
         "events": events,
         "timeline": timeline,
         "wall_elapsed_ms": float((time.perf_counter() - started) * 1000.0),

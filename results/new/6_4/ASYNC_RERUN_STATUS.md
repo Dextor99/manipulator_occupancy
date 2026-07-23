@@ -2,22 +2,23 @@
 
 Run directory: `results/new/6_4`
 
-This rerun implements the stricter experiment definition requested by the latest review notes:
+This rerun addresses the latest review notes and replaces the previous 6.4 formal data:
 
-- asynchronous planning is decoupled from immediate slowdown; the scene clock, obstacle motion, and reference execution continue while a candidate is pending;
-- candidate switches are delayed to the planned switch time, then revalidated against online predicted occupancy, continuity limits, and a reference-vs-candidate safety gate;
-- optimizer convergence is reported separately from candidate acceptance;
-- SSM+APF and Critical-point-NUBS baselines are included in addition to Reference-only, SSM, and CCRO-NUBS;
-- summary tables report task-safe success separately from replan-switch success;
-- speed and trigger-lead-time stratified tables are generated;
-- dense GT audit tables are generated after the formal run.
+- Critical-point-NUBS now uses a full-body sparse critical-point geometry with equivalent radii, rather than target-link mesh filtering.
+- CCRO-NUBS and Critical-point-NUBS share the same trigger, optimization variables, asynchronous pending state, planned switch slot, and acceptance workflow; the geometric risk representation is the intended difference.
+- The planned switch delay is unified as `PLANNED_SWITCH_DELAY = 3.0 s`; the candidate deadline is the same planned switch timestamp.
+- Replanning interval control now uses `first_replan_time` and `last_replan_time` separately.
+- Candidate events remain pending until the planned switch slot, including candidates that eventually exceed the planning budget, so pending-interval execution is recorded.
+- Bridge distance is split into `bridge_min_distance_obs_predicted` and `bridge_min_distance_gt_executed`.
+- The main table reports `task safe` separately from `replan success`.
+- Speed, trigger-lead-time, candidate-validation, dense-GT, and initial-high-risk audit tables are regenerated.
 
 Current interpretation:
 
-- `body_crossing` is the strongest positive evidence for the proposed CCRO-NUBS loop: CCRO-NUBS reaches 0.93 task-safe success and 0.87 replan success, clearly above Critical-point-NUBS, SSM, SSM+APF, and Reference-only.
-- `ee_crossing` should be written as a time-coupled capability-boundary case, not as a uniformly successful benchmark. CCRO-NUBS still improves over Critical-point-NUBS, SSM, and SSM+APF, but only reaches 0.40 task-safe/replan success under the current strict 3 s asynchronous switch model, while Reference-only remains safe in many samples because those samples are not all initially unsafe.
-- `far_safe` is a non-trigger sanity check.
-- `initial_high_risk` is a safety-hold sanity check. Its negative Dmin and zero finish are expected and should not be mixed with ordinary task-completion success.
+- `body_crossing` is the main positive evidence. CCRO-NUBS reaches 0.93 task-safe success and 0.73 replan success, with dense-GT violation rate 0.07. Critical-point-NUBS reaches 0.67 task-safe success but 0.00 replan success and dense-GT violation rate 0.20, showing that the sparse representation can miss or fail to generate acceptable candidate switches even when it sometimes becomes safe by waiting.
+- `ee_crossing` should be written as an operating-domain boundary. CCRO-NUBS improves over Critical-point-NUBS, SSM, and SSM+APF in some low-speed samples, but its overall task-safe success is 0.27 and dense-GT violation rate is 0.73. Reference-only remains safe in 0.80 of these samples, so this scenario must not be used to claim unconditional superiority over the reference trajectory.
+- `far_safe` remains a non-trigger sanity check.
+- `initial_high_risk` remains a safety-hold sanity check; negative Dmin and zero finish are expected.
 
 Paper-facing tables:
 

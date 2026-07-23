@@ -12,6 +12,7 @@ from .common_64 import (
     git_commit_hash,
     load_stage4_config,
     load_surface_model,
+    make_critical_risk_stack,
     make_reference,
     make_risk_stack,
     write_json,
@@ -55,6 +56,7 @@ def main() -> None:
     model = load_surface_model(config)
     reference, head, tail, durations = make_reference(config)
     evaluator, verifier, limits = make_risk_stack(config, model, None)
+    critical_evaluator, critical_verifier = make_critical_risk_stack(config, model)
     instances = generate_instances(model, reference, instances_dir, smoke=args.smoke)
     if args.scenario:
         instances = [item for item in instances if item["instance_id"].startswith(args.scenario + "_")]
@@ -81,6 +83,8 @@ def main() -> None:
                     durations=durations,
                     evaluator=evaluator,
                     verifier=verifier,
+                    critical_evaluator=critical_evaluator,
+                    critical_verifier=critical_verifier,
                     limits=limits,
                     instance=instance,
                     method=method,

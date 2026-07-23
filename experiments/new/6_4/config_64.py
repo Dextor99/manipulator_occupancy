@@ -25,6 +25,21 @@ METHOD_NAMES = {
 
 BODY_LINKS = ("upperArm_Link", "foreArm_Link", "wrist1_Link")
 EE_LINKS = ("wrist3_Link", "gripper_base_link", "left_link", "right_link")
+CRITICAL_POINT_LINKS = {
+    "upper_arm": ("upperArm_Link",),
+    "elbow": ("upperArm_Link", "foreArm_Link"),
+    "forearm": ("foreArm_Link",),
+    "wrist": ("wrist1_Link", "wrist2_Link", "wrist3_Link"),
+    "end_effector": ("gripper_base_link", "left_link", "right_link"),
+}
+CRITICAL_POINTS_PER_REGION = 2
+CRITICAL_POINT_RADII = {
+    "upper_arm": 0.055,
+    "elbow": 0.050,
+    "forearm": 0.045,
+    "wrist": 0.040,
+    "end_effector": 0.035,
+}
 
 DT = 0.04
 OBSERVATION_DT = 1.0 / 30.0
@@ -49,8 +64,7 @@ EVALUATE_STEPS = 31
 REPLAN_INTERVAL = 0.5
 MAX_REPLAN_ATTEMPTS = 2
 PLANNING_BUDGET = 3.0
-SWITCH_DELAY = 3.00
-EXPECTED_SWITCH_DELAY = 2.60
+PLANNED_SWITCH_DELAY = 3.00
 PENDING_SLOW_SCALE = 0.02
 APF_GAIN = 0.18
 APF_MAX_STEP = 0.020

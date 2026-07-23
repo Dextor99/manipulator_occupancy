@@ -50,7 +50,20 @@ def aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
                 "first_replan_time": _stat([item["first_replan_time"] for item in items if item["first_replan_time"] is not None]),
                 "first_safety_hold_time": _stat([item["first_safety_hold_time"] for item in items if item["first_safety_hold_time"] is not None]),
                 "planning_cycles": _stat([item["planning_control_cycles"] for item in items]),
-                "bridge_min_distance": _stat([item["bridge_min_distance"] for item in items if item.get("bridge_min_distance") is not None]),
+                "bridge_min_distance_obs_predicted": _stat(
+                    [
+                        item["bridge_min_distance_obs_predicted"]
+                        for item in items
+                        if item.get("bridge_min_distance_obs_predicted") is not None
+                    ]
+                ),
+                "bridge_min_distance_gt_executed": _stat(
+                    [
+                        item["bridge_min_distance_gt_executed"]
+                        for item in items
+                        if item.get("bridge_min_distance_gt_executed") is not None
+                    ]
+                ),
                 "planner_elapsed_ms": _stat(
                     [
                         event["elapsed_ms"]
@@ -133,13 +146,13 @@ def _fmt(value: Any, digits: int = 3) -> str:
 
 def write_paper_table(summary: dict[str, Any], path: Path) -> None:
     lines = [
-        "| scenario | method | n | task safe | replan success | finish | violation | Dmin GT / m | bridge Dmin / m | replans | accepted | planner ms |",
+        "| scenario | method | n | task safe | replan success | finish | violation | Dmin GT / m | bridge GT / m | bridge pred / m | replans | accepted | planner ms |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in summary["groups"]:
         lines.append(
             "| {scenario_type} | {method_name} | {n} | {task:.2f} | {replan_success:.2f} | {finish:.2f} | {violation:.2f} | "
-            "{dmin} | {bridge} | {replans} | {accepted} | {planner} |".format(
+            "{dmin} | {bridge_gt} | {bridge_pred} | {replans} | {accepted} | {planner} |".format(
                 scenario_type=row["scenario_type"],
                 method_name=row["method_name"],
                 n=row["n"],
@@ -148,7 +161,8 @@ def write_paper_table(summary: dict[str, Any], path: Path) -> None:
                 finish=row["finish_rate"],
                 violation=row["safety_violation_rate"],
                 dmin=_fmt(row["min_distance_gt"]["mean"]),
-                bridge=_fmt(row["bridge_min_distance"]["mean"]),
+                bridge_gt=_fmt(row["bridge_min_distance_gt_executed"]["mean"]),
+                bridge_pred=_fmt(row["bridge_min_distance_obs_predicted"]["mean"]),
                 replans=_fmt(row["replan_count"]["mean"], 2),
                 accepted=_fmt(row["accepted_count"]["mean"], 2),
                 planner=_fmt(row["planner_elapsed_ms"]["mean"], 1),
@@ -162,6 +176,7 @@ def write_paper_table(summary: dict[str, Any], path: Path) -> None:
             "- `violation` is GT safety-distance violation rate under the executed closed loop.",
             "- `initial_high_risk` is a safety-hold test: `finish=0` and `violation=1` are expected because the obstacle is initialized inside the hold region; acceptance is judged by immediate hold, zero replans, and zero candidate switches.",
             "- `task safe` reports task completion without GT safety violation; `replan success` reports at least one accepted candidate switch after a trigger.",
+            "- `bridge GT` is the minimum GT distance actually observed during the pending interval; `bridge pred` is the online forecast distance under the expected slowed execution.",
             "- Candidate switching uses online medium validation and is followed by dense GT offline audit; optimizer convergence flags are reported separately in `table_6_4_candidate_validation_audit.md`.",
         ]
     )

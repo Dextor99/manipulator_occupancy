@@ -91,6 +91,8 @@ def candidate_audit(trials: list[dict[str, Any]]) -> dict[str, Any]:
                 sum(bool(row.get("optimizer_converged", row.get("solver_success"))) for row in rows)
             ),
             "elapsed_ms": _stat([row.get("elapsed_ms") for row in rows]),
+            "bridge_min_distance_obs_predicted": _stat([row.get("bridge_min_distance_obs_predicted") for row in rows]),
+            "bridge_min_distance_gt_executed": _stat([row.get("bridge_min_distance_gt_executed") for row in rows]),
             "candidate_min_distance": _stat([row.get("candidate_min_distance") for row in rows]),
             "accepted_candidate_min_distance": _stat([row.get("candidate_min_distance") for row in accepted_rows]),
         }
@@ -108,6 +110,8 @@ def candidate_audit(trials: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "elapsed_ms": _stat([event.get("elapsed_ms") for event in events]),
         "accepted_elapsed_ms": _stat([event.get("elapsed_ms") for event in accepted]),
+        "bridge_min_distance_obs_predicted": _stat([event.get("bridge_min_distance_obs_predicted") for event in events]),
+        "bridge_min_distance_gt_executed": _stat([event.get("bridge_min_distance_gt_executed") for event in events]),
         "candidate_min_distance": _stat([event.get("candidate_min_distance") for event in events]),
         "accepted_candidate_min_distance": _stat([event.get("candidate_min_distance") for event in accepted]),
         "rejection_reasons": dict(reasons),
@@ -217,11 +221,13 @@ def write_candidate_table(audit: dict[str, Any], path: Path) -> None:
     c = audit["candidate"]
     reasons = ", ".join(f"{name}: {count}" for name, count in c["rejection_reasons"].items())
     lines = [
-        "| scope | events | accepted | accepted rate | optimizer converged | optimizer converged rate | Dmin accepted min / m | planner p95 / ms | rejection reasons |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| scope | events | accepted | accepted rate | optimizer converged | optimizer converged rate | bridge GT mean / m | bridge pred mean / m | Dmin accepted min / m | planner p95 / ms | rejection reasons |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         (
             f"| all async NUBS candidates | {c['events']} | {c['accepted']} | {_fmt(c['accepted_rate'], 3)} | "
             f"{c['optimizer_converged']} | {_fmt(c['optimizer_converged_rate'], 3)} | "
+            f"{_fmt(c['bridge_min_distance_gt_executed']['mean'])} | "
+            f"{_fmt(c['bridge_min_distance_obs_predicted']['mean'])} | "
             f"{_fmt(c['accepted_candidate_min_distance']['min'])} | "
             f"{_fmt(c['accepted_elapsed_ms']['p95'], 1)} | {reasons} |"
         ),
@@ -231,6 +237,7 @@ def write_candidate_table(audit: dict[str, Any], path: Path) -> None:
             f"| {row['scenario_type']} / {row['method']} | {row['events']} | {row['accepted']} | "
             f"{_fmt(row['accepted'] / row['events'] if row['events'] else None, 3)} | "
             f"{row['optimizer_converged']} | {_fmt(row['optimizer_converged'] / row['events'] if row['events'] else None, 3)} | "
+            f"{_fmt(row['bridge_min_distance_gt_executed']['mean'])} | {_fmt(row['bridge_min_distance_obs_predicted']['mean'])} | "
             f"{_fmt(row['accepted_candidate_min_distance']['min'])} | {_fmt(row['elapsed_ms']['p95'], 1)} | - |"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
