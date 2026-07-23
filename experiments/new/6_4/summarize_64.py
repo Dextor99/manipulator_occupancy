@@ -62,10 +62,58 @@ def aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
                 "false_replans": int(sum(bool(item.get("false_replan")) for item in items)),
             }
         )
+    speed_rows = []
+    speed_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for trial in trials:
+        if trial.get("speed_group") is None:
+            continue
+        key = (trial["scenario_type"], trial["method"], f"{float(trial['speed_group']):.2f}")
+        speed_groups.setdefault(key, []).append(trial)
+    for (scenario_type, method, speed), items in sorted(speed_groups.items()):
+        speed_rows.append(
+            {
+                "scenario_type": scenario_type,
+                "method": method,
+                "speed_group": speed,
+                "n": len(items),
+                "task_safe_success_rate": float(np.mean([bool(item.get("task_safe_success", item["success"])) for item in items])),
+                "replan_success_rate": float(np.mean([bool(item.get("replan_success", item["accepted_count"] >= 1)) for item in items])),
+                "violation_rate": float(np.mean([item["safety_violation_time_s"] > 0.0 for item in items])),
+                "min_distance_gt": _stat([item["min_distance_gt"] for item in items]),
+                "trigger_to_reference_risk": _stat([item["trigger_to_reference_risk"] for item in items if item.get("trigger_to_reference_risk") is not None]),
+            }
+        )
+    lead_rows = []
+    for label, low, high in [
+        ("short", -math.inf, 1.5),
+        ("medium", 1.5, 3.0),
+        ("long", 3.0, math.inf),
+    ]:
+        items = [
+            trial for trial in trials
+            if trial.get("trigger_to_reference_risk") is not None
+            and low <= float(trial["trigger_to_reference_risk"]) < high
+        ]
+        for method in sorted(set(item["method"] for item in items)):
+            lead_items = [item for item in items if item["method"] == method]
+            lead_rows.append(
+                {
+                    "lead_group": label,
+                    "method": method,
+                    "n": len(lead_items),
+                    "task_safe_success_rate": float(np.mean([bool(item.get("task_safe_success", item["success"])) for item in lead_items])),
+                    "replan_success_rate": float(np.mean([bool(item.get("replan_success", item["accepted_count"] >= 1)) for item in lead_items])),
+                    "violation_rate": float(np.mean([item["safety_violation_time_s"] > 0.0 for item in lead_items])),
+                    "lead_time": _stat([item["trigger_to_reference_risk"] for item in lead_items]),
+                }
+            )
+
     return {
         "trial_count": len(trials),
-        "accepted": bool(all(row["success_rate"] >= 0.0 for row in rows)),
+        "accepted": bool(all(row["task_safe_success_rate"] >= 0.0 for row in rows)),
         "groups": sorted(rows, key=lambda row: (row["scenario_type"], row["method"])),
+        "by_speed": speed_rows,
+        "by_lead_time": lead_rows,
     }
 
 
@@ -119,3 +167,30 @@ def write_paper_table(summary: dict[str, Any], path: Path) -> None:
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_stratified_tables(summary: dict[str, Any], paper_dir: Path) -> None:
+    speed_lines = [
+        "| scenario | method | speed / m/s | n | task safe | replan success | violation | Dmin mean / m | lead mean / s |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in summary.get("by_speed", []):
+        speed_lines.append(
+            f"| {row['scenario_type']} | {cfg.METHOD_NAMES.get(row['method'], row['method'])} | {row['speed_group']} | "
+            f"{row['n']} | {_fmt(row['task_safe_success_rate'], 2)} | {_fmt(row['replan_success_rate'], 2)} | "
+            f"{_fmt(row['violation_rate'], 2)} | {_fmt(row['min_distance_gt']['mean'])} | "
+            f"{_fmt(row['trigger_to_reference_risk']['mean'])} |"
+        )
+    lead_lines = [
+        "| lead group | method | n | task safe | replan success | violation | lead mean / s |",
+        "|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for row in summary.get("by_lead_time", []):
+        lead_lines.append(
+            f"| {row['lead_group']} | {cfg.METHOD_NAMES.get(row['method'], row['method'])} | {row['n']} | "
+            f"{_fmt(row['task_safe_success_rate'], 2)} | {_fmt(row['replan_success_rate'], 2)} | "
+            f"{_fmt(row['violation_rate'], 2)} | {_fmt(row['lead_time']['mean'])} |"
+        )
+    paper_dir.mkdir(parents=True, exist_ok=True)
+    (paper_dir / "table_6_4_by_speed.md").write_text("\n".join(speed_lines) + "\n", encoding="utf-8")
+    (paper_dir / "table_6_4_by_lead_time.md").write_text("\n".join(lead_lines) + "\n", encoding="utf-8")

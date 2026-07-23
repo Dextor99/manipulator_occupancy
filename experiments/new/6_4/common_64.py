@@ -120,6 +120,7 @@ def optimize_candidate(
     q_goal: np.ndarray,
     remaining_duration: float,
     verifier: DynamicTrajectoryVerifier,
+    risk_links: set[str] | None = None,
 ) -> dict[str, Any]:
     head = NUBSTrajectory6D.make_boundary_state(q_now, qd_now, qdd_now)
     tail = NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6))
@@ -134,6 +135,7 @@ def optimize_candidate(
         forecast,
         lambda_risk=2.0 * float(config["optimizer"]["lambda_risk"]),
         risk_samples_per_segment=cfg.RISK_SAMPLES_PER_SEGMENT,
+        risk_links=risk_links,
         lambda_smooth=float(config["optimizer"]["lambda_smooth"]),
         lambda_position=float(config["optimizer"]["lambda_position"]),
         lambda_velocity=float(config["optimizer"]["lambda_velocity"]),

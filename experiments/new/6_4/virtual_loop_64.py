@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
 
 from planning.obstacle_forecast import ShiftedForecast
-from dataclasses import asdict
 
 from . import config_64 as cfg
 from .common_64 import constant_forecast, min_distance_to_sphere, optimize_candidate
@@ -67,6 +66,52 @@ def future_min_distance(evaluator, trajectory, local_tau: float, forecast, *, ho
     return best
 
 
+def future_min_distance_with_links(
+    evaluator,
+    trajectory,
+    local_tau: float,
+    forecast,
+    *,
+    horizon: float,
+    links: set[str] | None,
+) -> dict[str, Any]:
+    remaining = max(0.0, trajectory.total_duration - float(local_tau))
+    horizon = min(float(horizon), remaining, float(forecast.valid_horizon))
+    if horizon <= 1.0e-9:
+        return {"distance": math.inf, "time": None, "nearest_link": None}
+    best = {"distance": math.inf, "time": None, "nearest_link": None}
+    for delta in np.linspace(0.0, horizon, cfg.EVALUATE_STEPS):
+        q = trajectory.evaluate(min(float(local_tau + delta), trajectory.total_duration))
+        risk = evaluator.configuration(
+            q,
+            forecast,
+            float(delta),
+            links=links,
+            density=cfg.SURFACE_DENSITY_LOOP,
+            with_gradient=False,
+        )
+        if risk.min_distance < best["distance"]:
+            best = {"distance": float(risk.min_distance), "time": float(delta), "nearest_link": risk.nearest_link}
+    return best
+
+
+def apf_velocity_correction(evaluator, q: np.ndarray, forecast) -> np.ndarray:
+    risk = evaluator.configuration(
+        q,
+        forecast,
+        0.0,
+        density=cfg.SURFACE_DENSITY_LOOP,
+        with_gradient=True,
+    )
+    if risk.gradient_q is None or risk.min_distance >= cfg.APF_ACTIVATE_DISTANCE:
+        return np.zeros(6, dtype=np.float64)
+    correction = -cfg.APF_GAIN * np.asarray(risk.gradient_q, dtype=np.float64)
+    norm = float(np.linalg.norm(correction))
+    if norm > cfg.APF_MAX_STEP:
+        correction *= cfg.APF_MAX_STEP / max(norm, 1.0e-12)
+    return correction
+
+
 def run_trial(
     *,
     config: dict[str, Any],
@@ -107,11 +152,20 @@ def run_trial(
     planning_control_cycles = 0
     started = time.perf_counter()
     execution_scale = 1.0
+    q_exec = reference.evaluate(0.0).copy()
+    critical_links = (
+        {instance["target_region"]}
+        if instance.get("target_region") not in {None, "far"}
+        else None
+    )
 
     while timestamp <= cfg.MAX_TRIAL_TIME:
-        q = active.evaluate(min(tau, active.total_duration))
-        qd = execution_scale * active.evaluate(min(tau, active.total_duration), derivative_order=1)
-        qdd = (execution_scale ** 2) * active.evaluate(min(tau, active.total_duration), derivative_order=2)
+        q_ref_now = active.evaluate(min(tau, active.total_duration))
+        q = q_exec.copy() if method == "ssm_apf" else q_ref_now
+        qd_ref_now = active.evaluate(min(tau, active.total_duration), derivative_order=1)
+        qdd_ref_now = active.evaluate(min(tau, active.total_duration), derivative_order=2)
+        qd = execution_scale * qd_ref_now
+        qdd = (execution_scale ** 2) * qdd_ref_now
         motion_start_time = float(instance.get("motion_start_time", 0.0))
         pre_motion_center = (
             None
@@ -135,6 +189,18 @@ def run_trial(
             model, q, obs.center, obs.radius, cfg.SURFACE_DENSITY_LOOP
         )
         future = future_min_distance(evaluator, active, tau, forecast, horizon=cfg.EVALUATE_HORIZON)
+        method_future = (
+            future
+            if method != "critical_point_nubs"
+            else future_min_distance_with_links(
+                evaluator,
+                active,
+                tau,
+                forecast,
+                horizon=cfg.EVALUATE_HORIZON,
+                links=critical_links,
+            )
+        )
         alpha = 1.0
         risk_level = "low"
 
@@ -149,7 +215,7 @@ def run_trial(
                 safety_hold = True
                 if first_safety_hold is None:
                     first_safety_hold = timestamp
-            elif future["distance"] < cfg.D_REPLAN_IN:
+            elif method_future["distance"] < cfg.D_REPLAN_IN:
                 risk_level = "medium"
 
         if pending_candidate is not None:
@@ -176,9 +242,22 @@ def run_trial(
                     )
                     switch_checks = dict(switch_verification.checks)
                     switch_checks["solver_ok"] = True
+                    reference_at_switch = future_min_distance(
+                        evaluator,
+                        active,
+                        tau,
+                        forecast,
+                        horizon=min(cfg.EVALUATE_HORIZON, pending_candidate["trajectory"].total_duration),
+                    )
+                    reference_gate_ok = (
+                        switch_verification.min_distance
+                        >= float(reference_at_switch["distance"]) + cfg.SWITCH_IMPROVEMENT_MARGIN
+                    )
+                    switch_checks["reference_gate_ok"] = reference_gate_ok
                     switch_accepted = bool(all(switch_checks.values()))
                     switch_reasons = [name for name, passed in switch_checks.items() if not passed]
                     event["actual_switch_timestamp"] = timestamp
+                    event["reference_min_distance_at_switch"] = reference_at_switch["distance"]
                     event["switch_validation"] = {
                         **asdict(switch_verification),
                         "accepted_without_solver_flag": switch_accepted,
@@ -204,7 +283,7 @@ def run_trial(
                     pending_candidate = None
 
         if (
-            method == "ccro_nubs"
+            method in {"ccro_nubs", "critical_point_nubs"}
             and pending_candidate is None
             and not safety_hold
             and risk_level == "medium"
@@ -242,6 +321,7 @@ def run_trial(
                     q_goal=q_goal,
                     remaining_duration=remaining_duration,
                     verifier=verifier,
+                    risk_links=critical_links if method == "critical_point_nubs" else None,
                 )
                 elapsed_s = float(candidate["optimization"]["elapsed_ms"]) / 1000.0
                 planning_control_cycles += int(math.ceil(elapsed_s / cfg.DT))
@@ -265,7 +345,7 @@ def run_trial(
                     "candidate_min_distance": candidate["verification"]["min_distance"],
                     "submission_validation": candidate["verification"],
                     "rejection_reasons": [],
-                    "future_min_distance_at_submit": future["distance"],
+                    "future_min_distance_at_submit": method_future["distance"],
                     "predicted_tau_at_switch": predicted_tau,
                     "planning_alpha": planning_alpha,
                 }
@@ -331,14 +411,24 @@ def run_trial(
         if safety_hold:
             alpha = 0.0
         elif pending_candidate is not None:
-            alpha = min(alpha, pending_candidate["planning_alpha"])
+            bridge_distance = min(
+                float(pending_candidate["event"].get("bridge_min_distance", math.inf)),
+                float(method_future["distance"]),
+            )
+            if bridge_distance < cfg.D_SLOW:
+                alpha = min(alpha, pending_candidate["planning_alpha"])
+        if method == "ssm_apf":
+            correction = apf_velocity_correction(evaluator, q, forecast)
+            q_exec = q + (alpha * qd_ref_now + correction) * cfg.DT
+            q_exec = np.minimum(np.maximum(q_exec, limits.q_min), limits.q_max)
         tau = min(active.total_duration, tau + alpha * cfg.DT)
         execution_scale = alpha
         timestamp += cfg.DT
-        if np.linalg.norm(active.evaluate(active.total_duration) - q_goal) <= cfg.FINISH_TOLERANCE and tau >= active.total_duration - 1.0e-9:
+        q_finish_check = q_exec if method == "ssm_apf" else active.evaluate(active.total_duration)
+        if np.linalg.norm(q_finish_check - q_goal) <= cfg.FINISH_TOLERANCE and tau >= active.total_duration - 1.0e-9:
             break
 
-    q_final = active.evaluate(min(tau, active.total_duration))
+    q_final = q_exec if method == "ssm_apf" else active.evaluate(min(tau, active.total_duration))
     min_gt = min(row["D_gt"] for row in timeline) if timeline else math.inf
     violation_steps = sum(1 for row in timeline if row["D_gt"] < cfg.D_STOP)
     finished = bool(np.linalg.norm(q_final - q_goal) <= cfg.FINISH_TOLERANCE and tau >= active.total_duration - 1.0e-9)
@@ -362,6 +452,13 @@ def run_trial(
         "trial_id": f"{instance['instance_id']}_{method}",
         "instance_id": instance["instance_id"],
         "scenario_type": instance["scenario_type"],
+        "speed_group": instance.get("speed_group"),
+        "reference_risk_time": instance.get("reference_risk_time"),
+        "trigger_to_reference_risk": (
+            None
+            if first_replan is None or instance.get("reference_risk_time") is None
+            else float(instance["reference_risk_time"]) - float(first_replan)
+        ),
         "method": method,
         "success": bool(success),
         "task_safe_success": bool(task_safe_success),

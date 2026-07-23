@@ -14,10 +14,12 @@ SPEED_GROUPS = (0.06, 0.09, 0.12)
 INSTANCES_PER_SPEED = 5
 CALIBRATION_TRIALS = 10
 
-METHODS = ("reference_only", "ssm", "ccro_nubs")
+METHODS = ("reference_only", "ssm", "ssm_apf", "critical_point_nubs", "ccro_nubs")
 METHOD_NAMES = {
     "reference_only": "Reference-only",
     "ssm": "SSM",
+    "ssm_apf": "SSM+APF",
+    "critical_point_nubs": "Critical-point-NUBS",
     "ccro_nubs": "CCRO-NUBS",
 }
 
@@ -50,6 +52,10 @@ PLANNING_BUDGET = 3.0
 SWITCH_DELAY = 3.00
 EXPECTED_SWITCH_DELAY = 2.60
 PENDING_SLOW_SCALE = 0.02
+APF_GAIN = 0.18
+APF_MAX_STEP = 0.020
+APF_ACTIVATE_DISTANCE = 0.16
+SWITCH_IMPROVEMENT_MARGIN = 0.0
 
 OPTIMIZER_MAX_ITERATIONS = 60
 OPTIMIZER_SAMPLES_PER_SEGMENT = 8

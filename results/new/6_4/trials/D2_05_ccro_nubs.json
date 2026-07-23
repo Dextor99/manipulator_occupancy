@@ -2,6 +2,9 @@
   "trial_id": "D2_05_ccro_nubs",
   "instance_id": "D2_05",
   "scenario_type": "ee_crossing",
+  "speed_group": 0.09,
+  "reference_risk_time": 4.4,
+  "trigger_to_reference_risk": 3.3600000000000003,
   "method": "ccro_nubs",
   "success": false,
   "task_safe_success": false,
@@ -16,17 +19,17 @@
   "first_replan_time": 1.0400000000000003,
   "first_safety_hold_time": 5.440000000000004,
   "false_replan": false,
-  "planning_control_cycles": 199,
+  "planning_control_cycles": 206,
   "bridge_min_distance": 0.0,
   "events": [
     {
       "attempt": 1,
       "submitted_timestamp": 1.0400000000000003,
-      "completed_timestamp": 3.4587691480037757,
+      "completed_timestamp": 3.780894586997456,
       "planned_switch_timestamp": 3.6400000000000006,
       "deadline_timestamp": 4.04,
-      "outcome": "rejected_at_switch",
-      "elapsed_ms": 2418.7691480037756,
+      "outcome": "timeout_before_switch",
+      "elapsed_ms": 2740.894586997456,
       "optimizer_converged": false,
       "solver_success": false,
       "optimizer_status": 1,
@@ -36,7 +39,7 @@
       "optimizer_initial_cost": 80.07763961641349,
       "optimizer_final_cost": 0.029011506417361447,
       "candidate_accepted": false,
-      "candidate_min_distance": 0.05996166343747228,
+      "candidate_min_distance": 0.10034658799637297,
       "submission_validation": {
         "accepted": true,
         "strict_accepted": false,
@@ -59,58 +62,26 @@
         },
         "min_distance": 0.10034658799637297,
         "goal_error": 5.594315114139762e-16,
-        "validation_ms": 130.02649700501934
+        "validation_ms": 125.68971699511167
       },
       "rejection_reasons": [
-        "distance_ok"
+        "planning_budget"
       ],
       "future_min_distance_at_submit": 0.04579254419165585,
       "predicted_tau_at_switch": 1.0920000000000003,
       "planning_alpha": 0.02,
       "bridge_min_distance": 0.14181486875470364,
       "bridge_time_to_min": 2.6,
-      "actual_switch_timestamp": 3.6400000000000023,
-      "switch_validation": {
-        "accepted": false,
-        "reasons": [
-          "distance_ok"
-        ],
-        "checks": {
-          "solver_ok": true,
-          "finite_ok": true,
-          "goal_ok": true,
-          "distance_ok": false,
-          "position_ok": true,
-          "velocity_ok": true,
-          "acceleration_ok": true,
-          "continuity_q_ok": true,
-          "continuity_qd_ok": true,
-          "continuity_qdd_ok": true,
-          "forecast_horizon_ok": true
-        },
-        "goal_error": 5.594315114139762e-16,
-        "min_distance": 0.05996166343747228,
-        "nearest_link": "wrist2_Link",
-        "max_q_violation": 0.0,
-        "max_qd_violation": 0.0,
-        "max_qdd_violation": 0.0,
-        "continuity_q": 1.1837933995621513e-15,
-        "continuity_qd": 1.15328690379327e-16,
-        "continuity_qdd": 4.143579500195732e-15,
-        "validation_ms": 142.699433999951,
-        "self_collision_checked": false,
-        "extrapolated_sample_count": 0,
-        "accepted_without_solver_flag": false
-      }
+      "actual_switch_timestamp": 3.6400000000000023
     },
     {
       "attempt": 2,
       "submitted_timestamp": 3.6400000000000023,
-      "completed_timestamp": 9.13299575899204,
+      "completed_timestamp": 9.08430942500185,
       "planned_switch_timestamp": 6.240000000000002,
       "deadline_timestamp": 6.640000000000002,
       "outcome": "timeout_before_switch",
-      "elapsed_ms": 5492.995758992038,
+      "elapsed_ms": 5444.309425001848,
       "optimizer_converged": true,
       "solver_success": true,
       "optimizer_status": 0,
@@ -145,7 +116,7 @@
         },
         "min_distance": 0.07119331221065822,
         "goal_error": 5.594315114139762e-16,
-        "validation_ms": 123.27762800850905
+        "validation_ms": 116.80085898842663
       },
       "rejection_reasons": [
         "planning_budget"
@@ -10680,5 +10651,5 @@
       "planner_pending": false
     }
   ],
-  "wall_elapsed_ms": 20060.36681200203
+  "wall_elapsed_ms": 19760.980979001033
 }

@@ -64,10 +64,11 @@ def load_instances(output: Path) -> dict[str, dict[str, Any]]:
 
 
 def candidate_audit(trials: list[dict[str, Any]]) -> dict[str, Any]:
+    async_methods = {"ccro_nubs", "critical_point_nubs"}
     events = [
-        {**event, "scenario_type": trial["scenario_type"], "trial_id": trial["trial_id"]}
+        {**event, "scenario_type": trial["scenario_type"], "method": trial["method"], "trial_id": trial["trial_id"]}
         for trial in trials
-        if trial["method"] == "ccro_nubs"
+        if trial["method"] in async_methods
         for event in trial.get("events", [])
     ]
     reasons = Counter(
@@ -77,13 +78,18 @@ def candidate_audit(trials: list[dict[str, Any]]) -> dict[str, Any]:
     accepted = [event for event in events if event.get("candidate_accepted")]
     rejected = [event for event in events if not event.get("candidate_accepted")]
     by_scenario: dict[str, dict[str, Any]] = {}
-    for scenario in sorted({event["scenario_type"] for event in events}):
-        rows = [event for event in events if event["scenario_type"] == scenario]
+    for scenario in sorted({f"{event['scenario_type']}::{event['method']}" for event in events}):
+        scenario_type, method = scenario.split("::", 1)
+        rows = [event for event in events if event["scenario_type"] == scenario_type and event["method"] == method]
         accepted_rows = [event for event in rows if event.get("candidate_accepted")]
         by_scenario[scenario] = {
+            "scenario_type": scenario_type,
+            "method": method,
             "events": len(rows),
             "accepted": len(accepted_rows),
-            "solver_success": int(sum(bool(row.get("solver_success")) for row in rows)),
+            "optimizer_converged": int(
+                sum(bool(row.get("optimizer_converged", row.get("solver_success"))) for row in rows)
+            ),
             "elapsed_ms": _stat([row.get("elapsed_ms") for row in rows]),
             "candidate_min_distance": _stat([row.get("candidate_min_distance") for row in rows]),
             "accepted_candidate_min_distance": _stat([row.get("candidate_min_distance") for row in accepted_rows]),
@@ -93,9 +99,11 @@ def candidate_audit(trials: list[dict[str, Any]]) -> dict[str, Any]:
         "accepted": len(accepted),
         "rejected": len(rejected),
         "accepted_rate": len(accepted) / len(events) if events else None,
-        "solver_success": int(sum(bool(event.get("solver_success")) for event in events)),
-        "solver_success_rate": (
-            sum(bool(event.get("solver_success")) for event in events) / len(events)
+        "optimizer_converged": int(
+            sum(bool(event.get("optimizer_converged", event.get("solver_success"))) for event in events)
+        ),
+        "optimizer_converged_rate": (
+            sum(bool(event.get("optimizer_converged", event.get("solver_success"))) for event in events) / len(events)
             if events else None
         ),
         "elapsed_ms": _stat([event.get("elapsed_ms") for event in events]),
@@ -103,10 +111,10 @@ def candidate_audit(trials: list[dict[str, Any]]) -> dict[str, Any]:
         "candidate_min_distance": _stat([event.get("candidate_min_distance") for event in events]),
         "accepted_candidate_min_distance": _stat([event.get("candidate_min_distance") for event in accepted]),
         "rejection_reasons": dict(reasons),
-        "by_scenario": by_scenario,
+        "by_scenario_method": by_scenario,
         "interpretation": (
-            "candidate_accepted means independent dense validation passed under the "
-            "experiment acceptance checks; solver_success is retained as a separate "
+            "candidate_accepted means online validation and switch gating passed under the "
+            "experiment acceptance checks; optimizer_converged is retained as a separate "
             "optimizer convergence flag and is not used alone for switching."
         ),
     }
@@ -209,20 +217,20 @@ def write_candidate_table(audit: dict[str, Any], path: Path) -> None:
     c = audit["candidate"]
     reasons = ", ".join(f"{name}: {count}" for name, count in c["rejection_reasons"].items())
     lines = [
-        "| scope | events | accepted | accepted rate | solver success | solver success rate | Dmin accepted min / m | planner p95 / ms | rejection reasons |",
+        "| scope | events | accepted | accepted rate | optimizer converged | optimizer converged rate | Dmin accepted min / m | planner p95 / ms | rejection reasons |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---|",
         (
-            f"| all CCRO-NUBS candidates | {c['events']} | {c['accepted']} | {_fmt(c['accepted_rate'], 3)} | "
-            f"{c['solver_success']} | {_fmt(c['solver_success_rate'], 3)} | "
+            f"| all async NUBS candidates | {c['events']} | {c['accepted']} | {_fmt(c['accepted_rate'], 3)} | "
+            f"{c['optimizer_converged']} | {_fmt(c['optimizer_converged_rate'], 3)} | "
             f"{_fmt(c['accepted_candidate_min_distance']['min'])} | "
             f"{_fmt(c['accepted_elapsed_ms']['p95'], 1)} | {reasons} |"
         ),
     ]
-    for scenario, row in c["by_scenario"].items():
+    for _, row in c["by_scenario_method"].items():
         lines.append(
-            f"| {scenario} | {row['events']} | {row['accepted']} | "
+            f"| {row['scenario_type']} / {row['method']} | {row['events']} | {row['accepted']} | "
             f"{_fmt(row['accepted'] / row['events'] if row['events'] else None, 3)} | "
-            f"{row['solver_success']} | {_fmt(row['solver_success'] / row['events'] if row['events'] else None, 3)} | "
+            f"{row['optimizer_converged']} | {_fmt(row['optimizer_converged'] / row['events'] if row['events'] else None, 3)} | "
             f"{_fmt(row['accepted_candidate_min_distance']['min'])} | {_fmt(row['elapsed_ms']['p95'], 1)} | - |"
         )
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -2,6 +2,9 @@
   "trial_id": "D2_04_ccro_nubs",
   "instance_id": "D2_04",
   "scenario_type": "ee_crossing",
+  "speed_group": 0.06,
+  "reference_risk_time": 4.0,
+  "trigger_to_reference_risk": 3.1199999999999997,
   "method": "ccro_nubs",
   "success": false,
   "task_safe_success": false,
@@ -16,17 +19,17 @@
   "first_replan_time": 0.8800000000000002,
   "first_safety_hold_time": 5.520000000000004,
   "false_replan": false,
-  "planning_control_cycles": 120,
+  "planning_control_cycles": 116,
   "bridge_min_distance": 0.033205980815616196,
   "events": [
     {
       "attempt": 1,
       "submitted_timestamp": 0.8800000000000002,
-      "completed_timestamp": 4.047769373001647,
+      "completed_timestamp": 3.94794209999498,
       "planned_switch_timestamp": 3.4800000000000004,
       "deadline_timestamp": 3.8800000000000003,
       "outcome": "timeout_before_switch",
-      "elapsed_ms": 3167.769373001647,
+      "elapsed_ms": 3067.94209999498,
       "optimizer_converged": true,
       "solver_success": true,
       "optimizer_status": 0,
@@ -57,7 +60,7 @@
         },
         "min_distance": 0.10122034954614276,
         "goal_error": 5.594315114139762e-16,
-        "validation_ms": 139.23621599678881
+        "validation_ms": 122.93020100332797
       },
       "rejection_reasons": [
         "planning_budget"
@@ -71,11 +74,11 @@
     {
       "attempt": 2,
       "submitted_timestamp": 1.4000000000000006,
-      "completed_timestamp": 2.9665485740028092,
+      "completed_timestamp": 2.9383775140071524,
       "planned_switch_timestamp": 4.000000000000001,
       "deadline_timestamp": 4.4,
       "outcome": "rejected_at_switch",
-      "elapsed_ms": 1566.548574002809,
+      "elapsed_ms": 1538.377514007152,
       "optimizer_converged": true,
       "solver_success": true,
       "optimizer_status": 0,
@@ -106,7 +109,7 @@
         },
         "min_distance": 0.10647987132235029,
         "goal_error": 5.594315114139762e-16,
-        "validation_ms": 128.21085000177845
+        "validation_ms": 122.98846599878743
       },
       "rejection_reasons": [
         "distance_ok"
@@ -117,6 +120,7 @@
       "bridge_min_distance": 0.033205980815616196,
       "bridge_time_to_min": 2.6,
       "actual_switch_timestamp": 4.000000000000003,
+      "reference_min_distance_at_switch": 0.0,
       "switch_validation": {
         "accepted": false,
         "reasons": [
@@ -144,7 +148,7 @@
         "continuity_q": 1.3130653580321367e-15,
         "continuity_qd": 2.8169183257464795e-16,
         "continuity_qdd": 1.8547930126913534e-15,
-        "validation_ms": 123.94989700987935,
+        "validation_ms": 121.78054099786095,
         "self_collision_checked": false,
         "extrapolated_sample_count": 0,
         "accepted_without_solver_flag": false
@@ -10674,5 +10678,5 @@
       "planner_pending": false
     }
   ],
-  "wall_elapsed_ms": 16891.950871999143
+  "wall_elapsed_ms": 16584.508321000612
 }

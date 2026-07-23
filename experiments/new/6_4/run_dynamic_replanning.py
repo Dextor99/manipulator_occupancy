@@ -17,7 +17,7 @@ from .common_64 import (
     write_json,
 )
 from .scenarios_64 import generate_instances
-from .summarize_64 import aggregate, write_paper_table
+from .summarize_64 import aggregate, write_paper_table, write_stratified_tables
 from .virtual_loop_64 import run_trial
 
 
@@ -110,10 +110,10 @@ def main() -> None:
     write_json(output / "metrics.json", metrics)
     write_json(output / "manifest.json", {k: metrics[k] for k in ("experiment", "scope", "git_commit", "mode", "trial_count", "output_dir")})
     write_paper_table(summary, paper_dir / "table_6_4_dynamic_replanning.md")
+    write_stratified_tables(summary, paper_dir)
     print(f"[6.4] saved metrics to {output / 'metrics.json'}")
     print(f"[6.4] saved paper table to {paper_dir / 'table_6_4_dynamic_replanning.md'}")
 
 
 if __name__ == "__main__":
     main()
-

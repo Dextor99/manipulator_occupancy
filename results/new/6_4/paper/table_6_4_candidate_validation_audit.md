@@ -1,5 +1,7 @@
-| scope | events | accepted | accepted rate | solver success | solver success rate | Dmin accepted min / m | planner p95 / ms | rejection reasons |
+| scope | events | accepted | accepted rate | optimizer converged | optimizer converged rate | Dmin accepted min / m | planner p95 / ms | rejection reasons |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| all CCRO-NUBS candidates | 60 | 26 | 0.433 | 59 | 0.983 | 0.085 | 2419.8 | none: 26, distance_ok: 21, planning_budget: 13 |
-| body_crossing | 30 | 18 | 0.600 | 30 | 1.000 | 0.086 | 2695.6 | - |
-| ee_crossing | 30 | 8 | 0.267 | 29 | 0.967 | 0.085 | 6144.3 | - |
+| all async NUBS candidates | 120 | 32 | 0.267 | 100 | 0.833 | 0.085 | 2410.4 | none: 32, distance_ok+reference_gate_ok: 1, distance_ok: 67, planning_budget: 13, continuity_q_ok+continuity_qd_ok+continuity_qdd_ok: 4, continuity_q_ok+continuity_qd_ok+continuity_qdd_ok+reference_gate_ok: 1, distance_ok+continuity_q_ok+continuity_qd_ok+continuity_qdd_ok+reference_gate_ok: 1, continuity_q_ok: 1 |
+| body_crossing / ccro_nubs | 30 | 16 | 0.533 | 30 | 1.000 | 0.086 | 2708.8 | - |
+| body_crossing / critical_point_nubs | 30 | 9 | 0.300 | 30 | 1.000 | 0.094 | 649.3 | - |
+| ee_crossing / ccro_nubs | 30 | 6 | 0.200 | 29 | 0.967 | 0.085 | 6097.5 | - |
+| ee_crossing / critical_point_nubs | 30 | 1 | 0.033 | 11 | 0.367 | 0.104 | 1440.1 | - |
