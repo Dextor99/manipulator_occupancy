@@ -1,0 +1,255 @@
+{
+  "experiment": "6.4 dynamic obstacle CCRO-NUBS virtual closed loop",
+  "scope": "software simulation only; no real robot commands",
+  "git_commit": "7ff2a2d028e3508e83c277854c61ef2f306e4ba3",
+  "mode": "formal",
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_4_single",
+  "config_source": "/home/hzy/Code/manipulator_occupancy/config/ccro_stage4.yaml",
+  "trial_count": 1,
+  "instances": [
+    "D1_01"
+  ],
+  "summary": {
+    "trial_count": 1,
+    "accepted": true,
+    "groups": [
+      {
+        "scenario_type": "body_crossing",
+        "method": "ccro_nubs",
+        "method_name": "CCRO-NUBS",
+        "n": 1,
+        "success_rate": 1.0,
+        "finish_rate": 1.0,
+        "safety_violation_rate": 0.0,
+        "min_distance_gt": {
+          "mean": 0.18088953844814504,
+          "std": 0.0,
+          "min": 0.18088953844814504,
+          "max": 0.18088953844814504
+        },
+        "goal_error": {
+          "mean": 5.594315114139762e-16,
+          "std": 0.0,
+          "min": 5.594315114139762e-16,
+          "max": 5.594315114139762e-16
+        },
+        "replan_count": {
+          "mean": 2.0,
+          "std": 0.0,
+          "min": 2.0,
+          "max": 2.0
+        },
+        "accepted_count": {
+          "mean": 1.0,
+          "std": 0.0,
+          "min": 1.0,
+          "max": 1.0
+        },
+        "first_replan_time": {
+          "mean": 1.2000000000000004,
+          "std": 0.0,
+          "min": 1.2000000000000004,
+          "max": 1.2000000000000004
+        },
+        "first_safety_hold_time": {
+          "mean": null,
+          "std": null,
+          "min": null,
+          "max": null
+        },
+        "planning_cycles": {
+          "mean": 89.0,
+          "std": 0.0,
+          "min": 89.0,
+          "max": 89.0
+        },
+        "planner_elapsed_ms": {
+          "mean": 1761.7403599942918,
+          "std": 150.03739439122367,
+          "min": 1655.647900988697,
+          "max": 1867.8328189998865
+        },
+        "false_replans": 0
+      }
+    ]
+  },
+  "trials": [
+    {
+      "trial_id": "D1_01_ccro_nubs",
+      "instance_id": "D1_01",
+      "scenario_type": "body_crossing",
+      "method": "ccro_nubs",
+      "success": true,
+      "finished": true,
+      "duration_s": 10.639999999999949,
+      "min_distance_gt": 0.18088953844814504,
+      "safety_violation_time_s": 0.0,
+      "goal_error": 5.594315114139762e-16,
+      "replan_count": 2,
+      "accepted_count": 1,
+      "first_replan_time": 1.2000000000000004,
+      "first_safety_hold_time": null,
+      "false_replan": false,
+      "planning_control_cycles": 89,
+      "events": [
+        {
+          "attempt": 1,
+          "submitted_timestamp": 1.2000000000000004,
+          "completed_timestamp": 2.8556479009886973,
+          "planned_switch_timestamp": 3.8000000000000007,
+          "deadline_timestamp": 4.2,
+          "outcome": "rejected_at_switch",
+          "elapsed_ms": 1655.647900988697,
+          "optimizer_converged": true,
+          "solver_success": true,
+          "optimizer_status": 0,
+          "optimizer_message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+          "optimizer_iterations": 42,
+          "optimizer_function_evaluations": 52,
+          "optimizer_initial_cost": 11.118358125405674,
+          "optimizer_final_cost": 0.021425397213229648,
+          "candidate_accepted": false,
+          "candidate_min_distance": 0.048525274101835436,
+          "submission_validation": {
+            "accepted": true,
+            "strict_accepted": true,
+            "reasons": [],
+            "strict_reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "min_distance": 0.10226404407226114,
+            "goal_error": 5.594315114139762e-16,
+            "validation_ms": 124.43775599240325
+          },
+          "rejection_reasons": [
+            "distance_ok"
+          ],
+          "future_min_distance_at_submit": 0.05082397464191857,
+          "predicted_tau_at_switch": 1.2520000000000004,
+          "planning_alpha": 0.02,
+          "actual_switch_timestamp": 2.8800000000000017,
+          "switch_validation": {
+            "accepted": false,
+            "reasons": [
+              "distance_ok"
+            ],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": false,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 5.594315114139762e-16,
+            "min_distance": 0.048525274101835436,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0023521801081604608,
+            "continuity_qd": 6.178087737104206e-05,
+            "continuity_qdd": 3.6322738765039504e-07,
+            "validation_ms": 121.27431000408251,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0,
+            "accepted_without_solver_flag": false
+          }
+        },
+        {
+          "attempt": 2,
+          "submitted_timestamp": 2.8800000000000017,
+          "completed_timestamp": 4.747832818999888,
+          "planned_switch_timestamp": 5.480000000000002,
+          "deadline_timestamp": 5.880000000000002,
+          "outcome": "accepted",
+          "elapsed_ms": 1867.8328189998865,
+          "optimizer_converged": true,
+          "solver_success": true,
+          "optimizer_status": 0,
+          "optimizer_message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+          "optimizer_iterations": 42,
+          "optimizer_function_evaluations": 48,
+          "optimizer_initial_cost": 59.26874966412631,
+          "optimizer_final_cost": 0.033176395918428206,
+          "candidate_accepted": true,
+          "candidate_min_distance": 0.08177858333358756,
+          "submission_validation": {
+            "accepted": true,
+            "strict_accepted": true,
+            "reasons": [],
+            "strict_reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "min_distance": 0.10306321947636005,
+            "goal_error": 5.594315114139762e-16,
+            "validation_ms": 120.39667399949394
+          },
+          "rejection_reasons": [],
+          "future_min_distance_at_submit": 0.0,
+          "predicted_tau_at_switch": 1.2855999999999967,
+          "planning_alpha": 0.02,
+          "actual_switch_timestamp": 4.760000000000003,
+          "switch_validation": {
+            "accepted": true,
+            "reasons": [],
+            "checks": {
+              "solver_ok": true,
+              "finite_ok": true,
+              "goal_ok": true,
+              "distance_ok": true,
+              "position_ok": true,
+              "velocity_ok": true,
+              "acceleration_ok": true,
+              "continuity_q_ok": true,
+              "continuity_qd_ok": true,
+              "continuity_qdd_ok": true,
+              "forecast_horizon_ok": true
+            },
+            "goal_error": 5.594315114139762e-16,
+            "min_distance": 0.08177858333358756,
+            "nearest_link": "wrist2_Link",
+            "max_q_violation": 0.0,
+            "max_qd_violation": 0.0,
+            "max_qdd_violation": 0.0,
+            "continuity_q": 0.0019273338897519833,
+            "continuity_qd": 4.8834633486863695e-05,
+            "continuity_qdd": 2.59826224993648e-07,
+            "validation_ms": 119.49230098980479,
+            "self_collision_checked": false,
+            "extrapolated_sample_count": 0,
+            "accepted_without_solver_flag": true
+          }
+        }
+      ],
+      "wall_elapsed_ms": 10226.810355001362
+    }
+  ]
+}

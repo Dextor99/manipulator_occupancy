@@ -10,9 +10,11 @@ from typing import Any
 import numpy as np
 
 from planning.obstacle_forecast import ShiftedForecast
+from dataclasses import asdict
 
 from . import config_64 as cfg
 from .common_64 import constant_forecast, min_distance_to_sphere, optimize_candidate
+from .scenarios_64 import obstacle_center_at, obstacle_velocity_at
 
 
 @dataclass
@@ -27,7 +29,10 @@ class ObservationFilter:
         if timestamp + 1.0e-9 < self.next_update:
             return
         measured_center = gt_center + self.rng.normal(0.0, cfg.OBS_POS_SIGMA, size=3)
-        measured_velocity = gt_velocity + self.rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3)
+        if float(np.linalg.norm(gt_velocity)) < 1.0e-9:
+            measured_velocity = np.zeros(3, dtype=np.float64)
+        else:
+            measured_velocity = gt_velocity + self.rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3)
         self.center = measured_center
         self.velocity = (
             cfg.OBS_VEL_ALPHA * measured_velocity
@@ -91,6 +96,7 @@ def run_trial(
     timestamp = 0.0
     replan_attempts = 0
     accepted_count = 0
+    pending_candidate: dict[str, Any] | None = None
     safety_hold = False
     first_safety_hold = None
     first_replan = None
@@ -99,16 +105,30 @@ def run_trial(
     events: list[dict[str, Any]] = []
     planning_control_cycles = 0
     started = time.perf_counter()
+    execution_scale = 1.0
 
     while timestamp <= cfg.MAX_TRIAL_TIME:
         q = active.evaluate(min(tau, active.total_duration))
-        qd = active.evaluate(min(tau, active.total_duration), derivative_order=1)
-        qdd = active.evaluate(min(tau, active.total_duration), derivative_order=2)
-        gt_center = gt_center0 + gt_velocity * timestamp
+        qd = execution_scale * active.evaluate(min(tau, active.total_duration), derivative_order=1)
+        qdd = (execution_scale ** 2) * active.evaluate(min(tau, active.total_duration), derivative_order=2)
+        motion_start_time = float(instance.get("motion_start_time", 0.0))
+        pre_motion_center = (
+            None
+            if instance.get("pre_motion_center") is None
+            else np.asarray(instance["pre_motion_center"], dtype=np.float64)
+        )
+        gt_center = obstacle_center_at(
+            gt_center0,
+            gt_velocity,
+            timestamp,
+            motion_start_time,
+            pre_motion_center,
+        )
+        gt_velocity_now = obstacle_velocity_at(gt_velocity, timestamp, motion_start_time)
         gt_distance, gt_link = min_distance_to_sphere(
             model, q, gt_center, gt_radius, cfg.SURFACE_DENSITY_TRUTH
         )
-        obs.update(timestamp, gt_center, gt_velocity, gt_radius)
+        obs.update(timestamp, gt_center, gt_velocity_now, gt_radius)
         forecast = obs.forecast()
         obs_distance, obs_link = min_distance_to_sphere(
             model, q, obs.center, obs.radius, cfg.SURFACE_DENSITY_LOOP
@@ -131,48 +151,130 @@ def run_trial(
             elif future["distance"] < cfg.D_REPLAN_IN:
                 risk_level = "medium"
 
-        if method == "ccro_nubs" and risk_level == "medium" and replan_attempts < cfg.MAX_REPLAN_ATTEMPTS:
+        if pending_candidate is not None:
+            if timestamp >= pending_candidate["completed_timestamp"]:
+                event = pending_candidate["event"]
+                switch_forecast = ShiftedForecast(forecast, 0.0, max(1.0, pending_candidate["trajectory"].total_duration))
+                switch_verification = verifier.verify(
+                    pending_candidate["trajectory"],
+                    switch_forecast,
+                    current_q=q,
+                    current_qd=qd,
+                    current_qdd=qdd,
+                    q_goal=q_goal,
+                    solver_success=True,
+                )
+                switch_checks = dict(switch_verification.checks)
+                switch_checks["solver_ok"] = True
+                switch_accepted = bool(all(switch_checks.values()))
+                switch_reasons = [name for name, passed in switch_checks.items() if not passed]
+                event["actual_switch_timestamp"] = timestamp
+                event["switch_validation"] = {
+                    **asdict(switch_verification),
+                    "accepted_without_solver_flag": switch_accepted,
+                }
+                if switch_accepted:
+                    event["outcome"] = "accepted"
+                    event["candidate_accepted"] = True
+                    event["candidate_min_distance"] = switch_verification.min_distance
+                    event["rejection_reasons"] = []
+                    events.append(event)
+                    active = pending_candidate["trajectory"]
+                    tau = 0.0
+                    accepted_count += 1
+                    alpha = 1.0
+                    safety_hold = False
+                    risk_level = "switched"
+                else:
+                    event["outcome"] = "rejected_at_switch"
+                    event["candidate_accepted"] = False
+                    event["candidate_min_distance"] = switch_verification.min_distance
+                    event["rejection_reasons"] = switch_reasons
+                    events.append(event)
+                pending_candidate = None
+
+        if (
+            method == "ccro_nubs"
+            and pending_candidate is None
+            and not safety_hold
+            and risk_level == "medium"
+            and replan_attempts < cfg.MAX_REPLAN_ATTEMPTS
+        ):
             if first_replan is None or timestamp - first_replan >= cfg.REPLAN_INTERVAL:
                 first_replan = timestamp if first_replan is None else first_replan
                 replan_attempts += 1
-                local_forecast = ShiftedForecast(forecast, 0.0, max(1.0, active.total_duration - tau))
-                remaining_duration = max(float(active.total_duration - tau), 1.2)
+                expected_switch_delay = min(cfg.EXPECTED_SWITCH_DELAY, cfg.SWITCH_DELAY)
+                deadline_timestamp = timestamp + cfg.SWITCH_DELAY
+                planned_switch_timestamp = timestamp + expected_switch_delay
+                planning_alpha = min(alpha, cfg.PENDING_SLOW_SCALE)
+                predicted_tau = min(active.total_duration, tau + planning_alpha * expected_switch_delay)
+                q_plan = active.evaluate(predicted_tau)
+                qd_plan = planning_alpha * active.evaluate(predicted_tau, derivative_order=1)
+                qdd_plan = (planning_alpha ** 2) * active.evaluate(predicted_tau, derivative_order=2)
+                forecast_after_switch = max(1.0, float(forecast.valid_horizon) - expected_switch_delay)
+                remaining_duration = min(
+                    max(float(active.total_duration - predicted_tau), 1.2),
+                    forecast_after_switch,
+                )
+                local_forecast = ShiftedForecast(
+                    forecast,
+                    expected_switch_delay,
+                    remaining_duration,
+                )
                 candidate = optimize_candidate(
                     config,
                     evaluator,
                     limits,
                     local_forecast,
-                    q_now=q,
-                    qd_now=qd,
-                    qdd_now=qdd,
+                    q_now=q_plan,
+                    qd_now=qd_plan,
+                    qdd_now=qdd_plan,
                     q_goal=q_goal,
                     remaining_duration=remaining_duration,
                     verifier=verifier,
                 )
                 elapsed_s = float(candidate["optimization"]["elapsed_ms"]) / 1000.0
                 planning_control_cycles += int(math.ceil(elapsed_s / cfg.DT))
-                accepted = bool(candidate["verification"]["accepted"])
-                accepted_count += int(accepted)
                 event = {
                     "attempt": replan_attempts,
                     "submitted_timestamp": timestamp,
                     "completed_timestamp": timestamp + elapsed_s,
-                    "planned_switch_timestamp": timestamp + elapsed_s,
-                    "outcome": "accepted" if accepted else "rejected",
+                    "planned_switch_timestamp": planned_switch_timestamp,
+                    "deadline_timestamp": deadline_timestamp,
+                    "outcome": "pending",
                     "elapsed_ms": candidate["optimization"]["elapsed_ms"],
+                    "optimizer_converged": candidate["optimization"]["success"],
                     "solver_success": candidate["optimization"]["success"],
-                    "candidate_accepted": accepted,
+                    "optimizer_status": candidate["optimization"]["status"],
+                    "optimizer_message": candidate["optimization"]["message"],
+                    "optimizer_iterations": candidate["optimization"]["iterations"],
+                    "optimizer_function_evaluations": candidate["optimization"]["function_evaluations"],
+                    "optimizer_initial_cost": candidate["optimization"]["initial_cost"],
+                    "optimizer_final_cost": candidate["optimization"]["final_cost"],
+                    "candidate_accepted": False,
                     "candidate_min_distance": candidate["verification"]["min_distance"],
-                    "rejection_reasons": candidate["verification"]["reasons"],
+                    "submission_validation": candidate["verification"],
+                    "rejection_reasons": [],
                     "future_min_distance_at_submit": future["distance"],
+                    "predicted_tau_at_switch": predicted_tau,
+                    "planning_alpha": planning_alpha,
                 }
-                events.append(event)
-                if accepted:
-                    active = candidate["trajectory"]
-                    tau = 0.0
-                    alpha = 1.0
-                    safety_hold = False
-                    risk_level = "switched"
+                if timestamp + elapsed_s > deadline_timestamp:
+                    event["outcome"] = "timeout_before_switch"
+                    event["rejection_reasons"] = ["planning_budget"]
+                    events.append(event)
+                elif not candidate["verification"]["accepted"]:
+                    event["outcome"] = "rejected_before_switch"
+                    event["rejection_reasons"] = candidate["verification"]["reasons"]
+                    events.append(event)
+                else:
+                    pending_candidate = {
+                        "trajectory": candidate["trajectory"],
+                        "event": event,
+                        "completed_timestamp": timestamp + elapsed_s,
+                        "planned_switch_timestamp": planned_switch_timestamp,
+                        "planning_alpha": planning_alpha,
+                    }
 
         if method == "reference_only" and gt_distance <= cfg.D_STOP:
             timeline.append(
@@ -182,10 +284,11 @@ def run_trial(
                     "q": q.tolist(),
                     "D_gt": gt_distance,
                     "nearest_link_gt": gt_link,
-                    "risk_level": risk_level,
-                    "alpha": alpha,
-                    "safety_hold": safety_hold,
-                }
+            "risk_level": risk_level,
+            "alpha": alpha,
+            "safety_hold": safety_hold,
+            "planner_pending": pending_candidate is not None,
+        }
             )
             break
 
@@ -206,7 +309,10 @@ def run_trial(
         )
         if safety_hold:
             alpha = 0.0
+        elif pending_candidate is not None:
+            alpha = min(alpha, pending_candidate["planning_alpha"])
         tau = min(active.total_duration, tau + alpha * cfg.DT)
+        execution_scale = alpha
         timestamp += cfg.DT
         if np.linalg.norm(active.evaluate(active.total_duration) - q_goal) <= cfg.FINISH_TOLERANCE and tau >= active.total_duration - 1.0e-9:
             break

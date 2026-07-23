@@ -29,12 +29,32 @@ def _tangent_direction(outward: np.ndarray, rng: np.random.Generator) -> np.ndar
     return direction if rng.random() < 0.5 else -direction
 
 
+def obstacle_center_at(
+    center0: np.ndarray,
+    velocity: np.ndarray,
+    timestamp: float,
+    motion_start_time: float = 0.0,
+    pre_motion_center: np.ndarray | None = None,
+) -> np.ndarray:
+    if pre_motion_center is not None and float(timestamp) + 1.0e-9 < float(motion_start_time):
+        return np.asarray(pre_motion_center, dtype=np.float64)
+    return np.asarray(center0, dtype=np.float64) + np.asarray(velocity, dtype=np.float64) * max(0.0, float(timestamp) - float(motion_start_time))
+
+
+def obstacle_velocity_at(velocity: np.ndarray, timestamp: float, motion_start_time: float = 0.0) -> np.ndarray:
+    if float(timestamp) + 1.0e-9 < float(motion_start_time):
+        return np.zeros(3, dtype=np.float64)
+    return np.asarray(velocity, dtype=np.float64)
+
+
 def _reference_distance_rows(
     model,
     trajectory,
     center0: np.ndarray,
     velocity: np.ndarray,
     radius: float,
+    motion_start_time: float = 0.0,
+    pre_motion_center: np.ndarray | None = None,
     *,
     sample_count: int = 21,
     density: str = cfg.SURFACE_DENSITY_LOOP,
@@ -42,7 +62,7 @@ def _reference_distance_rows(
     rows: list[dict[str, Any]] = []
     for timestamp in np.linspace(0.0, trajectory.total_duration, int(sample_count)):
         q = trajectory.evaluate(float(timestamp))
-        center = center0 + velocity * float(timestamp)
+        center = obstacle_center_at(center0, velocity, float(timestamp), motion_start_time, pre_motion_center)
         distance, link = min_distance_to_sphere(model, q, center, radius, density)
         rows.append({"time": float(timestamp), "distance": float(distance), "nearest_link": link})
     return rows
@@ -51,7 +71,7 @@ def _reference_distance_rows(
 def _observed_from_gt(rng: np.random.Generator, center0: np.ndarray, velocity: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray, float]:
     return (
         center0 + rng.normal(0.0, cfg.OBS_POS_SIGMA, size=3),
-        velocity + rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3),
+        np.asarray(velocity, dtype=np.float64) + rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3),
         max(0.025, float(radius + rng.normal(0.0, cfg.OBS_RADIUS_SIGMA))),
     )
 
@@ -67,7 +87,7 @@ def _make_crossing_instance(
     seed: int,
 ) -> dict[str, Any]:
     links = cfg.BODY_LINKS if scenario_type == "D1" else cfg.EE_LINKS
-    time_range = (0.34, 0.70) if scenario_type == "D1" else (0.55, 0.82)
+    time_range = (0.45, 0.78) if scenario_type == "D1" else (0.58, 0.88)
     selected = _select_sweep_point(model, trajectory, links, time_range, [])
     best_item: dict[str, Any] | None = None
     for attempt in range(16):
@@ -77,24 +97,41 @@ def _make_crossing_instance(
         speed_actual = float(speed * rng.uniform(0.95, 1.05))
         direction = _tangent_direction(selected["outward"], rng)
         velocity = speed_actual * direction
-        clearance_low, clearance_high = ((0.055, 0.078) if scenario_type == "D1" else (0.075, 0.115))
+        motion_start_time = float(rng.uniform(0.5, 1.2) if scenario_type == "D2" else rng.uniform(0.8, 1.6))
+        clearance_low, clearance_high = ((0.060, 0.092) if scenario_type == "D1" else (0.110, 0.165))
         clearance = float(rng.uniform(clearance_low, clearance_high))
         crossing_center = selected["surface_point"] + (radius + clearance) * selected["outward"]
-        center0 = crossing_center - velocity * selected["time"] + rng.uniform(-0.02, 0.02, size=3)
-        rows = _reference_distance_rows(model, trajectory, center0, velocity, radius)
+        travel_time = max(0.4, float(selected["time"]) - motion_start_time)
+        center0 = crossing_center - velocity * travel_time + rng.uniform(-0.02, 0.02, size=3)
+        pre_motion_center = center0 + selected["outward"] * float(rng.uniform(0.35, 0.50))
+        rows = _reference_distance_rows(
+            model,
+            trajectory,
+            center0,
+            velocity,
+            radius,
+            motion_start_time,
+            pre_motion_center,
+        )
+        static_rows = _reference_distance_rows(model, trajectory, pre_motion_center, np.zeros(3), radius, 0.0)
         min_row = min(rows, key=lambda item: item["distance"])
+        static_min_row = min(static_rows, key=lambda item: item["distance"])
         initial_distance = rows[0]["distance"]
         valid = (
             initial_distance > cfg.D_INITIAL_SAFE
-            and 0.025 <= float(min_row["distance"]) <= (0.090 if scenario_type == "D2" else 0.080)
+            and float(static_min_row["distance"]) > cfg.D_REPLAN_OUT + 0.10
+            and (0.065 if scenario_type == "D2" else 0.045) <= float(min_row["distance"]) <= (0.120 if scenario_type == "D2" else 0.085)
             and float(min_row["time"]) >= 1.0
         )
         candidate = {
             "selected": selected,
             "radius": radius,
             "velocity": velocity,
+            "motion_start_time": motion_start_time,
+            "pre_motion_center": pre_motion_center,
             "center0": center0,
             "min_row": min_row,
+            "static_min_distance": float(static_min_row["distance"]),
             "initial_distance": initial_distance,
             "seed": attempt_seed,
         }
@@ -114,12 +151,14 @@ def _make_crossing_instance(
     selected = best_item["selected"]
     center0 = best_item["center0"]
     velocity = best_item["velocity"]
+    motion_start_time = best_item["motion_start_time"]
+    pre_motion_center = best_item["pre_motion_center"]
     radius = best_item["radius"]
     min_row = best_item["min_row"]
     initial_distance = best_item["initial_distance"]
     frozen_seed = int(best_item["seed"])
     obs_center0, obs_velocity, obs_radius = _observed_from_gt(
-        np.random.default_rng(frozen_seed + 100_000), center0, velocity, radius
+        np.random.default_rng(frozen_seed + 100_000), pre_motion_center, np.zeros(3), radius
     )
     return {
         "instance_id": f"{scenario_type}_{instance_index:02d}",
@@ -131,6 +170,8 @@ def _make_crossing_instance(
         "target_time": float(selected["time"]),
         "gt_center0": center0.tolist(),
         "gt_velocity": velocity.tolist(),
+        "motion_start_time": motion_start_time,
+        "pre_motion_center": pre_motion_center.tolist(),
         "gt_radius": radius,
         "observed_center0": obs_center0.tolist(),
         "observed_velocity": obs_velocity.tolist(),
@@ -138,6 +179,7 @@ def _make_crossing_instance(
         "observation_seed": int(frozen_seed + 100_000),
         "reference_initial_distance": float(initial_distance),
         "reference_min_distance": float(min_row["distance"]),
+        "static_wait_min_distance": float(best_item["static_min_distance"]),
         "reference_risk_time": float(min_row["time"]),
         "reference_nearest_link": min_row["nearest_link"],
     }
@@ -163,6 +205,7 @@ def _make_far_instance(model, trajectory, index: int, seed: int) -> dict[str, An
         "target_region": "far",
         "gt_center0": center.tolist(),
         "gt_velocity": velocity.tolist(),
+        "motion_start_time": 0.0,
         "gt_radius": radius,
         "observed_center0": obs_center0.tolist(),
         "observed_velocity": obs_velocity.tolist(),
@@ -196,6 +239,7 @@ def _make_high_instance(model, trajectory, index: int, seed: int) -> dict[str, A
         "target_region": link,
         "gt_center0": center.tolist(),
         "gt_velocity": velocity.tolist(),
+        "motion_start_time": 0.0,
         "gt_radius": radius,
         "observed_center0": obs_center0.tolist(),
         "observed_velocity": obs_velocity.tolist(),

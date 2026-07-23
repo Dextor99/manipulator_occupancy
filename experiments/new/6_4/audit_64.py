@@ -18,6 +18,7 @@ from .common_64 import (
     min_distance_to_sphere,
     write_json,
 )
+from .scenarios_64 import obstacle_center_at
 
 
 def _stat(values: list[float]) -> dict[str, float | None]:
@@ -141,6 +142,12 @@ def dense_gt_audit(
         gt_center0 = np.asarray(instance["gt_center0"], dtype=np.float64)
         gt_velocity = np.asarray(instance["gt_velocity"], dtype=np.float64)
         gt_radius = float(instance["gt_radius"])
+        motion_start_time = float(instance.get("motion_start_time", 0.0))
+        pre_motion_center = (
+            None
+            if instance.get("pre_motion_center") is None
+            else np.asarray(instance["pre_motion_center"], dtype=np.float64)
+        )
         best = math.inf
         best_time = None
         best_link = None
@@ -151,7 +158,13 @@ def dense_gt_audit(
             if timestamp + 1.0e-9 < last_time + time_step:
                 continue
             q = np.asarray(row["q"], dtype=np.float64)
-            center = gt_center0 + gt_velocity * timestamp
+            center = obstacle_center_at(
+                gt_center0,
+                gt_velocity,
+                timestamp,
+                motion_start_time,
+                pre_motion_center,
+            )
             distance, link = min_distance_to_sphere(model, q, center, gt_radius, density)
             checked += 1
             last_time = timestamp
