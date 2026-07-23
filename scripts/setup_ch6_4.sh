@@ -2,15 +2,9 @@
 set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-OUTPUT_DIR="${OUTPUT_DIR:-data/results/ch6_4}"
-EXTERNAL_OUTPUT_DIR="${EXTERNAL_OUTPUT_DIR:-data/results/ch6_4_external}"
-RRT_SEEDS="${RRT_SEEDS:-5}"
+OUTPUT_DIR="${OUTPUT_DIR:-results/new/6_4}"
 
-"${PYTHON_BIN}" -m experiments.exp_64_external_baselines \
-  --output "${EXTERNAL_OUTPUT_DIR}" \
-  --rrt-seeds "${RRT_SEEDS}"
-
-"${PYTHON_BIN}" -m experiments.exp_64_summary \
+"${PYTHON_BIN}" -m experiments.new.6_4.run_dynamic_replanning \
   --output "${OUTPUT_DIR}"
 
-echo "[setup_ch6_4] results saved to ${OUTPUT_DIR} and ${EXTERNAL_OUTPUT_DIR}"
+echo "[setup_ch6_4] results saved to ${OUTPUT_DIR}"
