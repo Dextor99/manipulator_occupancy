@@ -194,6 +194,7 @@ def run_trial(
     execution_scale = 1.0
     q_exec = reference.evaluate(0.0).copy()
     planning_evaluator = critical_evaluator if method == "critical_point_nubs" and critical_evaluator is not None else evaluator
+    local_resume: dict[str, Any] | None = None
 
     while timestamp <= cfg.MAX_TRIAL_TIME:
         q_ref_now = active.evaluate(min(tau, active.total_duration))
@@ -254,6 +255,10 @@ def run_trial(
                 if timestamp + 1.0e-9 < pending_candidate["completed_timestamp"]:
                     event["outcome"] = "timeout_before_switch"
                     event["actual_switch_timestamp"] = timestamp
+                    event["actual_tau_at_switch"] = tau
+                    event["tau_prediction_error_at_switch"] = float(
+                        abs(tau - float(event.get("predicted_tau_at_switch", tau)))
+                    )
                     event["candidate_accepted"] = False
                     event["rejection_reasons"] = ["planning_budget"]
                     events.append(event)
@@ -261,6 +266,10 @@ def run_trial(
                 elif not pending_candidate["submission_accepted"]:
                     event["outcome"] = "rejected_before_switch"
                     event["actual_switch_timestamp"] = timestamp
+                    event["actual_tau_at_switch"] = tau
+                    event["tau_prediction_error_at_switch"] = float(
+                        abs(tau - float(event.get("predicted_tau_at_switch", tau)))
+                    )
                     event["candidate_accepted"] = False
                     event["rejection_reasons"] = pending_candidate["submission_reasons"]
                     events.append(event)
@@ -274,11 +283,15 @@ def run_trial(
                         current_q=q,
                         current_qd=qd,
                         current_qdd=qdd,
-                        q_goal=q_goal,
+                        q_goal=pending_candidate["q_goal_candidate"],
                         solver_success=True,
                     )
                     switch_checks = dict(switch_verification.checks)
                     switch_checks["solver_ok"] = True
+                    event["actual_tau_at_switch"] = tau
+                    event["tau_prediction_error_at_switch"] = float(
+                        abs(tau - float(event.get("predicted_tau_at_switch", tau)))
+                    )
                     reference_at_switch = future_min_distance(
                         evaluator,
                         active,
@@ -315,6 +328,11 @@ def run_trial(
                         event["candidate_min_distance"] = switch_verification.min_distance
                         event["rejection_reasons"] = []
                         events.append(event)
+                        if pending_candidate.get("resume_trajectory") is not None:
+                            local_resume = {
+                                "trajectory": active,
+                                "tau": pending_candidate["resume_tau"],
+                            }
                         active = pending_candidate["trajectory"]
                         tau = 0.0
                         accepted_count += 1
@@ -354,15 +372,26 @@ def run_trial(
                 )
                 planning_bridge_distance = min(float(nominal_bridge["distance"]), float(method_future["distance"]))
                 planning_alpha = min(alpha, pending_speed_scale(planning_bridge_distance, obs_distance))
+                if risk_level == "medium":
+                    planning_alpha = min(planning_alpha, cfg.PENDING_LIGHT_SLOW_SCALE)
                 predicted_tau = min(active.total_duration, tau + planning_alpha * planned_switch_delay)
                 q_plan = active.evaluate(predicted_tau)
                 qd_plan = planning_alpha * active.evaluate(predicted_tau, derivative_order=1)
                 qdd_plan = (planning_alpha ** 2) * active.evaluate(predicted_tau, derivative_order=2)
                 forecast_after_switch = max(1.0, float(forecast.valid_horizon) - planned_switch_delay)
-                remaining_duration = min(
-                    max(float(active.total_duration - predicted_tau), 1.2),
-                    forecast_after_switch,
-                )
+                full_remaining_duration = max(float(active.total_duration - predicted_tau), 1.2)
+                if cfg.USE_LOCAL_CANDIDATE:
+                    resume_tau = min(active.total_duration, predicted_tau + cfg.LOCAL_REPLAN_HORIZON)
+                    q_candidate_goal = active.evaluate(resume_tau)
+                    qd_candidate_goal = active.evaluate(resume_tau, derivative_order=1)
+                    qdd_candidate_goal = active.evaluate(resume_tau, derivative_order=2)
+                    remaining_duration = min(max(float(resume_tau - predicted_tau), 1.2), forecast_after_switch)
+                else:
+                    resume_tau = None
+                    q_candidate_goal = q_goal
+                    qd_candidate_goal = np.zeros(6, dtype=np.float64)
+                    qdd_candidate_goal = np.zeros(6, dtype=np.float64)
+                    remaining_duration = min(full_remaining_duration, forecast_after_switch)
                 local_forecast = ShiftedForecast(
                     forecast,
                     planned_switch_delay,
@@ -376,9 +405,13 @@ def run_trial(
                     q_now=q_plan,
                     qd_now=qd_plan,
                     qdd_now=qdd_plan,
-                    q_goal=q_goal,
+                    q_goal=q_candidate_goal,
                     remaining_duration=remaining_duration,
                     verifier=verifier,
+                    qd_goal=qd_candidate_goal,
+                    qdd_goal=qdd_candidate_goal,
+                    warm_start_trajectory=active,
+                    warm_start_tau=predicted_tau,
                 )
                 elapsed_s = float(candidate["optimization"]["elapsed_ms"]) / 1000.0
                 planning_control_cycles += int(math.ceil(elapsed_s / cfg.DT))
@@ -404,7 +437,11 @@ def run_trial(
                     "rejection_reasons": [],
                     "future_min_distance_at_submit": method_future["distance"],
                     "predicted_tau_at_switch": predicted_tau,
+                    "local_candidate": bool(cfg.USE_LOCAL_CANDIDATE),
+                    "resume_tau": resume_tau,
                     "planning_alpha": planning_alpha,
+                    "alpha_slot": planning_alpha,
+                    "warm_start_used": candidate["optimization"]["warm_start_used"],
                 }
                 bridge = executed_bridge_min_distance(
                     evaluator,
@@ -430,8 +467,12 @@ def run_trial(
                     "completed_timestamp": timestamp + elapsed_s,
                     "planned_switch_timestamp": planned_switch_timestamp,
                     "planning_alpha": planning_alpha,
+                    "alpha_slot": planning_alpha,
                     "submission_accepted": bool(candidate["verification"]["accepted"]),
                     "submission_reasons": list(candidate["verification"]["reasons"]),
+                    "resume_trajectory": active if cfg.USE_LOCAL_CANDIDATE else None,
+                    "resume_tau": resume_tau,
+                    "q_goal_candidate": q_candidate_goal,
                 }
 
         if method == "reference_only" and gt_distance <= cfg.D_STOP:
@@ -482,7 +523,7 @@ def run_trial(
                 float(pending_candidate["event"].get("bridge_min_distance_obs_predicted", math.inf)),
                 bridge_distance,
             )
-            alpha = min(alpha, pending_speed_scale(bridge_distance, obs_distance))
+            alpha = min(alpha, float(pending_candidate["alpha_slot"]))
         if method == "ssm_apf":
             correction = apf_velocity_correction(evaluator, q, forecast)
             q_exec = q + (alpha * qd_ref_now + correction) * cfg.DT
@@ -490,6 +531,12 @@ def run_trial(
         tau = min(active.total_duration, tau + alpha * cfg.DT)
         execution_scale = alpha
         timestamp += cfg.DT
+        if local_resume is not None and tau >= active.total_duration - 1.0e-9:
+            active = local_resume["trajectory"]
+            tau = min(float(local_resume["tau"]), active.total_duration)
+            local_resume = None
+            execution_scale = 1.0
+            continue
         q_finish_check = q_exec if method == "ssm_apf" else active.evaluate(active.total_duration)
         if np.linalg.norm(q_finish_check - q_goal) <= cfg.FINISH_TOLERANCE and tau >= active.total_duration - 1.0e-9:
             break

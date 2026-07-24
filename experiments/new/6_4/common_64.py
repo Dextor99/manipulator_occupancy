@@ -253,10 +253,18 @@ def optimize_candidate(
     q_goal: np.ndarray,
     remaining_duration: float,
     verifier: DynamicTrajectoryVerifier,
+    qd_goal: np.ndarray | None = None,
+    qdd_goal: np.ndarray | None = None,
     risk_links: set[str] | None = None,
+    warm_start_trajectory: NUBSTrajectory6D | None = None,
+    warm_start_tau: float | None = None,
 ) -> dict[str, Any]:
     head = NUBSTrajectory6D.make_boundary_state(q_now, qd_now, qdd_now)
-    tail = NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6))
+    tail = NUBSTrajectory6D.make_boundary_state(
+        q_goal,
+        np.zeros(6) if qd_goal is None else qd_goal,
+        np.zeros(6) if qdd_goal is None else qdd_goal,
+    )
     segment_count = max(3, int(config["trajectory"]["segment_count"]))
     durations = np.full(segment_count, max(float(remaining_duration), 1.2) / segment_count)
     optimizer = DynamicRiskNUBSOptimizer(
@@ -279,7 +287,18 @@ def optimize_candidate(
         max_iterations=cfg.OPTIMIZER_MAX_ITERATIONS,
         gradient_tolerance=float(config["optimizer"]["gradient_tolerance"]),
     )
-    result = optimizer.optimize()
+    p_inner_initial = None
+    if warm_start_trajectory is not None and warm_start_tau is not None and len(durations) > 1:
+        local_times = np.cumsum(durations)[:-1]
+        p_inner_initial = np.vstack(
+            [
+                warm_start_trajectory.evaluate(
+                    min(float(warm_start_tau) + float(local_time), warm_start_trajectory.total_duration)
+                )
+                for local_time in local_times
+            ]
+        )
+    result = optimizer.optimize(p_inner_initial=p_inner_initial)
     verification = verifier.verify(
         result.trajectory,
         forecast,
@@ -309,6 +328,7 @@ def optimize_candidate(
             "iterations": result.iterations,
             "function_evaluations": result.function_evaluations,
             "gradient_norm": result.gradient_norm,
+            "warm_start_used": p_inner_initial is not None,
         },
         "verification": {
             "accepted": accepted,
