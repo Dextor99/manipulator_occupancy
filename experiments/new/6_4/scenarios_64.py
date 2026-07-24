@@ -87,18 +87,23 @@ def _make_crossing_instance(
     seed: int,
 ) -> dict[str, Any]:
     links = cfg.BODY_LINKS if scenario_type == "D1" else cfg.EE_LINKS
-    time_range = (0.45, 0.78) if scenario_type == "D1" else (0.58, 0.88)
+    time_range = (0.82, 0.98) if scenario_type == "D1" else (0.76, 0.96)
     selected = _select_sweep_point(model, trajectory, links, time_range, [])
     best_item: dict[str, Any] | None = None
-    for attempt in range(16):
+    for attempt in range(80):
         attempt_seed = seed + attempt * 7919
         rng = np.random.default_rng(attempt_seed)
         radius = float(rng.uniform(0.04, 0.06))
         speed_actual = float(speed * rng.uniform(0.95, 1.05))
         direction = _tangent_direction(selected["outward"], rng)
         velocity = speed_actual * direction
-        motion_start_time = float(rng.uniform(0.5, 1.2) if scenario_type == "D2" else rng.uniform(0.8, 1.6))
-        clearance_low, clearance_high = ((0.060, 0.092) if scenario_type == "D1" else (0.110, 0.165))
+        motion_start_time = float(rng.uniform(0.5, 1.2) if scenario_type in {"D2", "D2M", "D2S"} else rng.uniform(0.8, 1.6))
+        if scenario_type == "D1":
+            clearance_low, clearance_high = (0.060, 0.092)
+        elif scenario_type == "D2M":
+            clearance_low, clearance_high = (0.045, 0.074)
+        else:
+            clearance_low, clearance_high = (0.110, 0.165)
         clearance = float(rng.uniform(clearance_low, clearance_high))
         crossing_center = selected["surface_point"] + (radius + clearance) * selected["outward"]
         travel_time = max(0.4, float(selected["time"]) - motion_start_time)
@@ -112,16 +117,26 @@ def _make_crossing_instance(
             radius,
             motion_start_time,
             pre_motion_center,
+            sample_count=81,
         )
         static_rows = _reference_distance_rows(model, trajectory, pre_motion_center, np.zeros(3), radius, 0.0)
         min_row = min(rows, key=lambda item: item["distance"])
         static_min_row = min(static_rows, key=lambda item: item["distance"])
         initial_distance = rows[0]["distance"]
+        if scenario_type == "D1":
+            min_low, min_high = 0.065, cfg.D_STOP - 0.002
+            min_time_ok = float(min_row["time"]) >= 6.0
+        elif scenario_type == "D2M":
+            min_low, min_high = 0.060, cfg.D_STOP - 0.002
+            min_time_ok = float(min_row["time"]) >= 5.8
+        else:
+            min_low, min_high = 0.065, 0.120
+            min_time_ok = float(min_row["time"]) >= 2.6
         valid = (
             initial_distance > cfg.D_INITIAL_SAFE
             and float(static_min_row["distance"]) > cfg.D_REPLAN_OUT + 0.10
-            and (0.065 if scenario_type == "D2" else 0.045) <= float(min_row["distance"]) <= (0.120 if scenario_type == "D2" else 0.085)
-            and float(min_row["time"]) >= 1.0
+            and min_low <= float(min_row["distance"]) <= min_high
+            and min_time_ok
         )
         candidate = {
             "selected": selected,
@@ -140,10 +155,10 @@ def _make_crossing_instance(
             break
         if best_item is None or (
             int(initial_distance > cfg.D_INITIAL_SAFE),
-            -abs(float(min_row["distance"]) - 0.06),
+            -abs(float(min_row["distance"]) - (0.055 if scenario_type == "D2M" else 0.06)),
         ) > (
             int(best_item["initial_distance"] > cfg.D_INITIAL_SAFE),
-            -abs(float(best_item["min_row"]["distance"]) - 0.06),
+            -abs(float(best_item["min_row"]["distance"]) - (0.055 if scenario_type == "D2M" else 0.06)),
         ):
             best_item = candidate
     if best_item is None:
@@ -162,7 +177,12 @@ def _make_crossing_instance(
     )
     return {
         "instance_id": f"{scenario_type}_{instance_index:02d}",
-        "scenario_type": "body_crossing" if scenario_type == "D1" else "ee_crossing",
+        "scenario_type": {
+            "D1": "body_crossing_main",
+            "D2M": "ee_crossing_main",
+            "D2": "ee_crossing_stress",
+            "D2S": "ee_crossing_stress",
+        }[scenario_type],
         "speed_group": float(speed),
         "repeat_index": int(repeat_index),
         "seed": frozen_seed,
@@ -255,10 +275,15 @@ def _make_high_instance(model, trajectory, index: int, seed: int) -> dict[str, A
 def generate_instances(model, trajectory, output_dir: Path, *, smoke: bool = False) -> list[dict[str, Any]]:
     output_dir.mkdir(parents=True, exist_ok=True)
     instances: list[dict[str, Any]] = []
-    per_speed = 1 if smoke else cfg.INSTANCES_PER_SPEED
+    d1_per_speed = 1 if smoke else cfg.D1_MAIN_INSTANCES_PER_SPEED
+    d2m_per_speed = 1 if smoke else cfg.D2_MAIN_INSTANCES_PER_SPEED
+    d2s_per_speed = 1 if smoke else cfg.D2_STRESS_INSTANCES_PER_SPEED
     calibration = 2 if smoke else cfg.CALIBRATION_TRIALS
-    for scenario_type in ("D1", "D2"):
-        offset = 1000 if scenario_type == "D1" else 2000
+    for scenario_type, per_speed, offset in [
+        ("D1", d1_per_speed, 1000),
+        ("D2M", d2m_per_speed, 2000),
+        ("D2S", d2s_per_speed, 5000),
+    ]:
         index = 0
         for speed in cfg.SPEED_GROUPS:
             for repeat in range(per_speed):

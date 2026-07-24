@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=str(cfg.DEFAULT_OUTPUT))
     parser.add_argument("--config", default=str(cfg.STAGE4_CONFIG))
     parser.add_argument("--smoke", action="store_true")
-    parser.add_argument("--scenario", choices=["D1", "D2", "D3", "D4"], default=None)
+    parser.add_argument("--scenario", choices=["D1", "D2M", "D2S", "D2", "D3", "D4"], default=None)
     parser.add_argument("--method", choices=cfg.METHODS, default=None)
     parser.add_argument("--instance", default=None)
     parser.add_argument("--resume", action="store_true")
@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
 def planned_methods(instance: dict[str, Any]) -> tuple[str, ...]:
     if instance["scenario_type"] in {"far_safe", "initial_high_risk"}:
         return ("ccro_nubs",)
-    return cfg.METHODS
+    return cfg.MAIN_METHODS
 
 
 def main() -> None:
@@ -59,7 +59,8 @@ def main() -> None:
     critical_evaluator, critical_verifier = make_critical_risk_stack(config, model)
     instances = generate_instances(model, reference, instances_dir, smoke=args.smoke)
     if args.scenario:
-        instances = [item for item in instances if item["instance_id"].startswith(args.scenario + "_")]
+        prefixes = ("D2S_",) if args.scenario == "D2" else (args.scenario + "_",)
+        instances = [item for item in instances if item["instance_id"].startswith(prefixes)]
     if args.instance:
         instances = [item for item in instances if item["instance_id"] == args.instance]
 

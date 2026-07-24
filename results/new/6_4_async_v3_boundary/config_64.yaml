@@ -1,0 +1,30 @@
+virtual_loop:
+  dt: 0.04
+  observation_dt: 0.033333
+  max_trial_time: 20.0
+  finish_tolerance: 0.02
+safety:
+  d_replan_in: 0.35
+  d_replan_out: 0.38
+  d_slow: 0.12
+  d_stop: 0.08
+  d_accept: 0.08
+replanner:
+  planning_budget: 3.0
+  planned_switch_delay: 3.0
+  replan_interval: 0.5
+  max_replan_attempts: 2
+  evaluate_horizon: 6.0
+  evaluate_steps: 31
+optimizer:
+  density: coarse
+  max_iterations: 60
+  risk_samples_per_segment: 5
+  samples_per_segment: 8
+validation:
+  density: medium
+  dense_time_step: 0.04
+  epsilon_goal: 0.01
+  epsilon_continuity_q: 5.0e-3
+  epsilon_continuity_qd: 3.0e-3
+  epsilon_continuity_qdd: 3.0e-3

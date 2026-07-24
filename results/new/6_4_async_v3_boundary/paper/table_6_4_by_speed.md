@@ -1,0 +1,32 @@
+| scenario | method | speed / m/s | n | task safe | replan success | violation | Dmin mean / m | lead mean / s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| body_crossing | CCRO-NUBS | 0.06 | 5 | 0.80 | 0.80 | 0.20 | 0.163 | 2.496 |
+| body_crossing | CCRO-NUBS | 0.09 | 5 | 1.00 | 0.80 | 0.00 | 0.184 | 2.736 |
+| body_crossing | CCRO-NUBS | 0.12 | 5 | 1.00 | 0.60 | 0.00 | 0.199 | 2.720 |
+| body_crossing | Critical-point-NUBS | 0.06 | 5 | 0.20 | 0.00 | 0.60 | 0.109 | 2.496 |
+| body_crossing | Critical-point-NUBS | 0.09 | 5 | 0.80 | 0.00 | 0.00 | 0.100 | 2.736 |
+| body_crossing | Critical-point-NUBS | 0.12 | 5 | 1.00 | 0.00 | 0.00 | 0.192 | 2.720 |
+| body_crossing | Reference-only | 0.06 | 5 | 0.00 | 0.00 | 1.00 | 0.078 | - |
+| body_crossing | Reference-only | 0.09 | 5 | 0.00 | 0.00 | 1.00 | 0.077 | - |
+| body_crossing | Reference-only | 0.12 | 5 | 0.00 | 0.00 | 1.00 | 0.077 | - |
+| body_crossing | SSM | 0.06 | 5 | 0.00 | 0.00 | 0.80 | 0.018 | - |
+| body_crossing | SSM | 0.09 | 5 | 0.00 | 0.00 | 1.00 | -0.005 | - |
+| body_crossing | SSM | 0.12 | 5 | 0.20 | 0.00 | 0.80 | 0.008 | - |
+| body_crossing | SSM+APF | 0.06 | 5 | 0.00 | 0.00 | 0.80 | 0.020 | - |
+| body_crossing | SSM+APF | 0.09 | 5 | 0.00 | 0.00 | 1.00 | -0.004 | - |
+| body_crossing | SSM+APF | 0.12 | 5 | 0.20 | 0.00 | 0.80 | 0.009 | - |
+| ee_crossing | CCRO-NUBS | 0.06 | 5 | 0.80 | 0.80 | 0.20 | 0.117 | 3.328 |
+| ee_crossing | CCRO-NUBS | 0.09 | 5 | 0.00 | 0.40 | 1.00 | -0.012 | 3.432 |
+| ee_crossing | CCRO-NUBS | 0.12 | 5 | 0.00 | 0.20 | 1.00 | -0.036 | 3.360 |
+| ee_crossing | Critical-point-NUBS | 0.06 | 5 | 0.00 | 0.00 | 1.00 | 0.003 | 3.328 |
+| ee_crossing | Critical-point-NUBS | 0.09 | 5 | 0.00 | 0.00 | 1.00 | -0.025 | 3.432 |
+| ee_crossing | Critical-point-NUBS | 0.12 | 5 | 0.00 | 0.00 | 1.00 | -0.036 | 3.360 |
+| ee_crossing | Reference-only | 0.06 | 5 | 0.80 | 0.00 | 0.20 | 0.090 | - |
+| ee_crossing | Reference-only | 0.09 | 5 | 0.80 | 0.00 | 0.20 | 0.089 | - |
+| ee_crossing | Reference-only | 0.12 | 5 | 0.80 | 0.00 | 0.20 | 0.093 | - |
+| ee_crossing | SSM | 0.06 | 5 | 0.40 | 0.00 | 0.60 | 0.039 | - |
+| ee_crossing | SSM | 0.09 | 5 | 0.20 | 0.00 | 0.80 | 0.019 | - |
+| ee_crossing | SSM | 0.12 | 5 | 0.40 | 0.00 | 0.60 | 0.048 | - |
+| ee_crossing | SSM+APF | 0.06 | 5 | 0.40 | 0.00 | 0.60 | 0.040 | - |
+| ee_crossing | SSM+APF | 0.09 | 5 | 0.20 | 0.00 | 0.80 | 0.018 | - |
+| ee_crossing | SSM+APF | 0.12 | 5 | 0.20 | 0.00 | 0.60 | 0.043 | - |

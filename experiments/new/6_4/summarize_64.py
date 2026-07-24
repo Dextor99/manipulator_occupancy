@@ -73,6 +73,15 @@ def aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
                     ]
                 ),
                 "false_replans": int(sum(bool(item.get("false_replan")) for item in items)),
+                "safe_with_switch": int(
+                    sum(bool(item.get("task_safe_success", item["success"])) and int(item.get("accepted_count", 0)) > 0 for item in items)
+                ),
+                "safe_without_switch": int(
+                    sum(bool(item.get("task_safe_success", item["success"])) and int(item.get("accepted_count", 0)) == 0 for item in items)
+                ),
+                "unsafe_or_unfinished": int(
+                    sum(not bool(item.get("task_safe_success", item["success"])) for item in items)
+                ),
             }
         )
     speed_rows = []
@@ -209,3 +218,13 @@ def write_stratified_tables(summary: dict[str, Any], paper_dir: Path) -> None:
     paper_dir.mkdir(parents=True, exist_ok=True)
     (paper_dir / "table_6_4_by_speed.md").write_text("\n".join(speed_lines) + "\n", encoding="utf-8")
     (paper_dir / "table_6_4_by_lead_time.md").write_text("\n".join(lead_lines) + "\n", encoding="utf-8")
+    switch_lines = [
+        "| scenario | method | n | safe with switch | safe without switch | unsafe or unfinished |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for row in summary["groups"]:
+        switch_lines.append(
+            f"| {row['scenario_type']} | {row['method_name']} | {row['n']} | "
+            f"{row['safe_with_switch']} | {row['safe_without_switch']} | {row['unsafe_or_unfinished']} |"
+        )
+    (paper_dir / "table_6_4_switch_outcomes.md").write_text("\n".join(switch_lines) + "\n", encoding="utf-8")

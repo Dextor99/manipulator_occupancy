@@ -123,6 +123,16 @@ def executed_bridge_min_distance(
     return best
 
 
+def pending_speed_scale(bridge_distance: float, current_distance: float) -> float:
+    if current_distance <= cfg.D_STOP:
+        return 0.0
+    if bridge_distance < cfg.BRIDGE_SLOW_IN:
+        return max(cfg.PENDING_MIN_SLOW_SCALE, speed_scale(current_distance))
+    if bridge_distance < cfg.BRIDGE_SLOW_OUT:
+        return cfg.PENDING_LIGHT_SLOW_SCALE
+    return 1.0
+
+
 def apf_velocity_correction(evaluator, q: np.ndarray, forecast) -> np.ndarray:
     risk = evaluator.configuration(
         q,
@@ -183,8 +193,7 @@ def run_trial(
     started = time.perf_counter()
     execution_scale = 1.0
     q_exec = reference.evaluate(0.0).copy()
-    online_evaluator = critical_evaluator if method == "critical_point_nubs" and critical_evaluator is not None else evaluator
-    online_verifier = critical_verifier if method == "critical_point_nubs" and critical_verifier is not None else verifier
+    planning_evaluator = critical_evaluator if method == "critical_point_nubs" and critical_evaluator is not None else evaluator
 
     while timestamp <= cfg.MAX_TRIAL_TIME:
         q_ref_now = active.evaluate(min(tau, active.total_duration))
@@ -216,7 +225,7 @@ def run_trial(
             model, q, obs.center, obs.radius, cfg.SURFACE_DENSITY_LOOP
         )
         future = future_min_distance(evaluator, active, tau, forecast, horizon=cfg.EVALUATE_HORIZON)
-        method_future = future_min_distance(online_evaluator, active, tau, forecast, horizon=cfg.EVALUATE_HORIZON)
+        method_future = future_min_distance(planning_evaluator, active, tau, forecast, horizon=cfg.EVALUATE_HORIZON)
         alpha = 1.0
         risk_level = "low"
 
@@ -259,7 +268,7 @@ def run_trial(
                 else:
                     event = pending_candidate["event"]
                     switch_forecast = ShiftedForecast(forecast, 0.0, max(1.0, pending_candidate["trajectory"].total_duration))
-                    switch_verification = online_verifier.verify(
+                    switch_verification = verifier.verify(
                         pending_candidate["trajectory"],
                         switch_forecast,
                         current_q=q,
@@ -271,21 +280,31 @@ def run_trial(
                     switch_checks = dict(switch_verification.checks)
                     switch_checks["solver_ok"] = True
                     reference_at_switch = future_min_distance(
-                        online_evaluator,
+                        evaluator,
                         active,
                         tau,
                         forecast,
                         horizon=min(cfg.EVALUATE_HORIZON, pending_candidate["trajectory"].total_duration),
                     )
-                    reference_gate_ok = (
+                    reference_safe = float(reference_at_switch["distance"]) >= cfg.D_ONLINE_ACCEPT
+                    candidate_better = (
                         switch_verification.min_distance
                         >= float(reference_at_switch["distance"]) + cfg.SWITCH_IMPROVEMENT_MARGIN
                     )
+                    remaining_ref_time = max(0.0, active.total_duration - tau)
+                    candidate_time_ok = (
+                        pending_candidate["trajectory"].total_duration
+                        <= remaining_ref_time + cfg.SWITCH_TIME_EXTENSION_MARGIN
+                    )
+                    reference_gate_ok = (not reference_safe) or (candidate_better and candidate_time_ok)
                     switch_checks["reference_gate_ok"] = reference_gate_ok
+                    switch_checks["candidate_time_ok"] = candidate_time_ok
                     switch_accepted = bool(all(switch_checks.values()))
                     switch_reasons = [name for name, passed in switch_checks.items() if not passed]
                     event["actual_switch_timestamp"] = timestamp
                     event["reference_min_distance_at_switch"] = reference_at_switch["distance"]
+                    event["reference_safe_at_switch"] = reference_safe
+                    event["candidate_time_ok"] = candidate_time_ok
                     event["switch_validation"] = {
                         **asdict(switch_verification),
                         "accepted_without_solver_flag": switch_accepted,
@@ -325,7 +344,16 @@ def run_trial(
                 planned_switch_delay = cfg.PLANNED_SWITCH_DELAY
                 deadline_timestamp = timestamp + planned_switch_delay
                 planned_switch_timestamp = deadline_timestamp
-                planning_alpha = min(alpha, cfg.PENDING_SLOW_SCALE)
+                nominal_bridge = executed_bridge_min_distance(
+                    evaluator,
+                    active,
+                    tau,
+                    forecast,
+                    horizon=planned_switch_delay,
+                    alpha=1.0,
+                )
+                planning_bridge_distance = min(float(nominal_bridge["distance"]), float(method_future["distance"]))
+                planning_alpha = min(alpha, pending_speed_scale(planning_bridge_distance, obs_distance))
                 predicted_tau = min(active.total_duration, tau + planning_alpha * planned_switch_delay)
                 q_plan = active.evaluate(predicted_tau)
                 qd_plan = planning_alpha * active.evaluate(predicted_tau, derivative_order=1)
@@ -342,7 +370,7 @@ def run_trial(
                 )
                 candidate = optimize_candidate(
                     config,
-                    online_evaluator,
+                    planning_evaluator,
                     limits,
                     local_forecast,
                     q_now=q_plan,
@@ -350,7 +378,7 @@ def run_trial(
                     qdd_now=qdd_plan,
                     q_goal=q_goal,
                     remaining_duration=remaining_duration,
-                    verifier=online_verifier,
+                    verifier=verifier,
                 )
                 elapsed_s = float(candidate["optimization"]["elapsed_ms"]) / 1000.0
                 planning_control_cycles += int(math.ceil(elapsed_s / cfg.DT))
@@ -379,7 +407,7 @@ def run_trial(
                     "planning_alpha": planning_alpha,
                 }
                 bridge = executed_bridge_min_distance(
-                    online_evaluator,
+                    evaluator,
                     active,
                     tau,
                     forecast,
@@ -441,12 +469,20 @@ def run_trial(
         if safety_hold:
             alpha = 0.0
         elif pending_candidate is not None:
-            bridge_distance = min(
-                float(pending_candidate["event"].get("bridge_min_distance_obs_predicted", math.inf)),
-                float(method_future["distance"]),
+            pending_bridge = executed_bridge_min_distance(
+                evaluator,
+                active,
+                tau,
+                forecast,
+                horizon=max(0.0, pending_candidate["planned_switch_timestamp"] - timestamp),
+                alpha=1.0,
             )
-            if bridge_distance < cfg.D_SLOW:
-                alpha = min(alpha, pending_candidate["planning_alpha"])
+            bridge_distance = min(float(pending_bridge["distance"]), float(method_future["distance"]))
+            pending_candidate["event"]["bridge_min_distance_obs_predicted"] = min(
+                float(pending_candidate["event"].get("bridge_min_distance_obs_predicted", math.inf)),
+                bridge_distance,
+            )
+            alpha = min(alpha, pending_speed_scale(bridge_distance, obs_distance))
         if method == "ssm_apf":
             correction = apf_velocity_correction(evaluator, q, forecast)
             q_exec = q + (alpha * qd_ref_now + correction) * cfg.DT

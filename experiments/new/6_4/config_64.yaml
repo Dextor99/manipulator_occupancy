@@ -9,6 +9,7 @@ safety:
   d_slow: 0.12
   d_stop: 0.08
   d_accept: 0.08
+  d_online_accept: 0.09
 replanner:
   planning_budget: 3.0
   planned_switch_delay: 3.0
@@ -16,11 +17,15 @@ replanner:
   max_replan_attempts: 2
   evaluate_horizon: 6.0
   evaluate_steps: 31
+  bridge_slow_in: 0.12
+  bridge_slow_out: 0.22
+  pending_light_slow_scale: 0.65
+  pending_min_slow_scale: 0.35
 optimizer:
   density: coarse
-  max_iterations: 60
-  risk_samples_per_segment: 5
-  samples_per_segment: 8
+  max_iterations: 35
+  risk_samples_per_segment: 4
+  samples_per_segment: 6
 validation:
   density: medium
   dense_time_step: 0.04

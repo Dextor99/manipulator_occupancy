@@ -74,7 +74,7 @@ def make_risk_stack(config: dict[str, Any], model: RobotSurfaceModel, forecast):
     risk_cfg = config["risk"]
     evaluator = SpatioTemporalRiskEvaluator(
         model,
-        d_safe=max(float(risk_cfg["d_safe"]), cfg.D_ACCEPT),
+        d_safe=max(float(risk_cfg["d_safe"]), cfg.D_ONLINE_ACCEPT),
         d_activate=max(float(risk_cfg["d_activate"]), cfg.D_REPLAN_OUT),
         fd_epsilon_q=float(risk_cfg["fd_epsilon_q"]),
         density=cfg.SURFACE_DENSITY_LOOP,
@@ -82,7 +82,7 @@ def make_risk_stack(config: dict[str, Any], model: RobotSurfaceModel, forecast):
     verifier = DynamicTrajectoryVerifier(
         evaluator,
         limits,
-        d_stop=cfg.D_ACCEPT,
+        d_stop=cfg.D_ONLINE_ACCEPT,
         time_step=cfg.DT,
         density=cfg.SURFACE_DENSITY_VERIFY,
         epsilon_goal=1.0e-2,
@@ -97,14 +97,19 @@ def make_risk_stack(config: dict[str, Any], model: RobotSurfaceModel, forecast):
 class CriticalPointSpatioTemporalRiskEvaluator(SpatioTemporalRiskEvaluator):
     """Sparse critical-point dynamic risk with 6.2-style equivalent radii."""
 
-    def _critical_points_by_link(self, q: np.ndarray) -> dict[str, list[tuple[str, np.ndarray, float]]]:
+    def __init__(self, surface_model: RobotSurfaceModel, **kwargs) -> None:
+        super().__init__(surface_model, **kwargs)
+        self._local_critical_points = self._build_local_critical_points()
+
+    def _build_local_critical_points(self) -> dict[str, list[tuple[str, np.ndarray, float]]]:
         selected_by_link: dict[str, list[tuple[str, np.ndarray, float]]] = {}
+        seen: set[tuple[str, int]] = set()
         for region, links in cfg.CRITICAL_POINT_LINKS.items():
             radius = float(cfg.CRITICAL_POINT_RADII[region])
             for link in links:
                 if link not in self.surface_model.link_names:
                     continue
-                points = self.surface_model.surface_by_link(q, density="coarse", links={link})[link]
+                points = self.surface_model.local_samples(link, density="coarse")
                 if len(points) == 0:
                     continue
                 centroid = points.mean(axis=0)
@@ -115,6 +120,10 @@ class CriticalPointSpatioTemporalRiskEvaluator(SpatioTemporalRiskEvaluator):
                     selected.append(farthest)
                 selected_by_link.setdefault(link, [])
                 for local_index, point_index in enumerate(selected[: cfg.CRITICAL_POINTS_PER_REGION]):
+                    key = (link, int(point_index))
+                    if key in seen:
+                        continue
+                    seen.add(key)
                     selected_by_link[link].append(
                         (
                             f"{region}_{link}_{local_index}",
@@ -124,15 +133,20 @@ class CriticalPointSpatioTemporalRiskEvaluator(SpatioTemporalRiskEvaluator):
                     )
         return selected_by_link
 
+    def critical_point_count(self) -> int:
+        return int(sum(len(points) for points in self._local_critical_points.values()))
+
     def _evaluate_no_gradient(self, q, occupancy, links, density) -> DynamicConfigurationRisk:
         del density
-        critical_by_link = self._critical_points_by_link(np.asarray(q, dtype=np.float64))
+        values = np.asarray(q, dtype=np.float64)
+        critical_by_link = self._local_critical_points
         if links is not None:
             critical_by_link = {link: points for link, points in critical_by_link.items() if link in links}
         if not critical_by_link or not occupancy.spheres:
             return DynamicConfigurationRisk(
                 0.0, math.inf, None, None, None, None, {}, occupancy.extrapolated
             )
+        fk = self.surface_model.urdf.link_transforms(self.surface_model._joint_dict(values))
         per_link: dict[str, float] = {}
         total_cost = 0.0
         total_weight = 0.0
@@ -142,26 +156,32 @@ class CriticalPointSpatioTemporalRiskEvaluator(SpatioTemporalRiskEvaluator):
         nearest_robot = None
         nearest_obstacle = None
         for link, critical_points in critical_by_link.items():
-            point_distances = []
-            for _, point, point_radius in critical_points:
-                best_point_distance = math.inf
-                best_sphere = None
-                for sphere in occupancy.spheres:
-                    clearance = float(np.linalg.norm(point - sphere.center) - point_radius - sphere.radius)
-                    if clearance < best_point_distance:
-                        best_point_distance = clearance
-                        best_sphere = sphere
-                point_distances.append(best_point_distance)
-                if best_sphere is not None and best_point_distance < min_distance:
-                    min_distance = best_point_distance
-                    nearest_link = link
-                    nearest_object_id = int(best_sphere.object_id)
-                    nearest_robot = point.copy()
-                    direction = point - best_sphere.center
-                    norm = float(np.linalg.norm(direction))
-                    direction = np.array([1.0, 0.0, 0.0]) if norm < 1.0e-12 else direction / norm
-                    nearest_obstacle = best_sphere.center + best_sphere.radius * direction
-            distances = np.asarray(point_distances, dtype=np.float64)
+            transform = fk.get(link)
+            if transform is None:
+                continue
+            local_points = np.asarray([item[1] for item in critical_points], dtype=np.float64)
+            point_radii = np.asarray([item[2] for item in critical_points], dtype=np.float64)
+            world_points = local_points @ transform[:3, :3].T + transform[:3, 3]
+            distance_columns = [
+                np.linalg.norm(world_points - sphere.center[None, :], axis=1) - point_radii - sphere.radius
+                for sphere in occupancy.spheres
+            ]
+            distance_matrix = np.column_stack(distance_columns)
+            sphere_indices = np.argmin(distance_matrix, axis=1)
+            distances = distance_matrix[np.arange(len(world_points)), sphere_indices]
+            local_index = int(np.argmin(distances))
+            local_distance = float(distances[local_index])
+            if local_distance < min_distance:
+                sphere = occupancy.spheres[int(sphere_indices[local_index])]
+                point = world_points[local_index]
+                min_distance = local_distance
+                nearest_link = link
+                nearest_object_id = int(sphere.object_id)
+                nearest_robot = point.copy()
+                direction = point - sphere.center
+                norm = float(np.linalg.norm(direction))
+                direction = np.array([1.0, 0.0, 0.0]) if norm < 1.0e-12 else direction / norm
+                nearest_obstacle = sphere.center + sphere.radius * direction
             hinge = np.maximum(self.d_safe - distances, 0.0)
             link_cost = float(np.mean(hinge * hinge))
             per_link[link] = link_cost
@@ -187,7 +207,7 @@ def make_critical_risk_stack(config: dict[str, Any], model: RobotSurfaceModel):
     risk_cfg = config["risk"]
     evaluator = CriticalPointSpatioTemporalRiskEvaluator(
         model,
-        d_safe=max(float(risk_cfg["d_safe"]), cfg.D_ACCEPT),
+        d_safe=max(float(risk_cfg["d_safe"]), cfg.D_ONLINE_ACCEPT),
         d_activate=max(float(risk_cfg["d_activate"]), cfg.D_REPLAN_OUT),
         fd_epsilon_q=float(risk_cfg["fd_epsilon_q"]),
         density=cfg.SURFACE_DENSITY_LOOP,
@@ -195,7 +215,7 @@ def make_critical_risk_stack(config: dict[str, Any], model: RobotSurfaceModel):
     verifier = DynamicTrajectoryVerifier(
         evaluator,
         limits,
-        d_stop=cfg.D_ACCEPT,
+        d_stop=cfg.D_ONLINE_ACCEPT,
         time_step=cfg.DT,
         density=cfg.SURFACE_DENSITY_VERIFY,
         epsilon_goal=1.0e-2,
@@ -246,7 +266,7 @@ def optimize_candidate(
         limits,
         evaluator,
         forecast,
-        lambda_risk=2.0 * float(config["optimizer"]["lambda_risk"]),
+        lambda_risk=5.0 * float(config["optimizer"]["lambda_risk"]),
         risk_samples_per_segment=cfg.RISK_SAMPLES_PER_SEGMENT,
         risk_links=risk_links,
         lambda_smooth=float(config["optimizer"]["lambda_smooth"]),
