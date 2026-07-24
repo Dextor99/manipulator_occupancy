@@ -51,6 +51,8 @@ class SpatioTemporalRiskEvaluator:
         fd_epsilon_q: float = 2.0e-4,
         density: str = "medium",
         link_weights: dict[str, float] | None = None,
+        topk_clearance_points: int = 0,
+        softmin_beta: float = 60.0,
     ) -> None:
         if not (0.0 < d_safe <= d_activate):
             raise ValueError("expected 0 < d_safe <= d_activate")
@@ -62,6 +64,10 @@ class SpatioTemporalRiskEvaluator:
         self.fd_epsilon_q = float(fd_epsilon_q)
         self.density = density
         self.link_weights = dict(link_weights or {})
+        self.topk_clearance_points = int(max(0, topk_clearance_points))
+        self.softmin_beta = float(softmin_beta)
+        if not np.isfinite(self.softmin_beta) or self.softmin_beta <= 0.0:
+            raise ValueError("softmin_beta must be positive")
 
     @staticmethod
     def _surface_to_occupancy_distances(
@@ -76,7 +82,7 @@ class SpatioTemporalRiskEvaluator:
         all_distances = []
         for sphere in occupancy.spheres:
             radial = np.linalg.norm(points - sphere.center[None, :], axis=1)
-            all_distances.append(np.maximum(radial - sphere.radius, 0.0))
+            all_distances.append(radial - sphere.radius)
         matrix = np.column_stack(all_distances)
         sphere_indices = np.argmin(matrix, axis=1)
         distances = matrix[np.arange(len(points)), sphere_indices]
@@ -85,6 +91,20 @@ class SpatioTemporalRiskEvaluator:
             dtype=np.int64,
         )
         return distances, sphere_indices, object_ids
+
+    def _link_clearance_cost(self, distances: np.ndarray) -> float:
+        if len(distances) == 0:
+            return 0.0
+        if self.topk_clearance_points <= 0 or len(distances) <= self.topk_clearance_points:
+            hinge = np.maximum(self.d_safe - distances, 0.0)
+            return float(np.mean(hinge * hinge))
+        k = min(self.topk_clearance_points, len(distances))
+        active = np.partition(distances, k - 1)[:k]
+        scaled = -self.softmin_beta * active
+        offset = float(np.max(scaled))
+        softmin = -(math.log(float(np.sum(np.exp(scaled - offset)))) + offset) / self.softmin_beta
+        hinge = max(self.d_safe - softmin, 0.0)
+        return float(hinge * hinge)
 
     def _evaluate_no_gradient(
         self,
@@ -112,8 +132,7 @@ class SpatioTemporalRiskEvaluator:
             distances, sphere_indices, object_ids = self._surface_to_occupancy_distances(
                 points, occupancy
             )
-            hinge = np.maximum(self.d_safe - distances, 0.0)
-            link_cost = float(np.mean(hinge * hinge))
+            link_cost = self._link_clearance_cost(distances)
             per_link[link] = link_cost
             weight = float(self.link_weights.get(link, 1.0))
             if weight < 0.0 or not np.isfinite(weight):

@@ -78,6 +78,8 @@ def make_risk_stack(config: dict[str, Any], model: RobotSurfaceModel, forecast):
         d_activate=max(float(risk_cfg["d_activate"]), cfg.D_REPLAN_OUT),
         fd_epsilon_q=float(risk_cfg["fd_epsilon_q"]),
         density=cfg.SURFACE_DENSITY_LOOP,
+        topk_clearance_points=cfg.CLEARANCE_SOFTMIN_TOPK,
+        softmin_beta=cfg.CLEARANCE_SOFTMIN_BETA,
     )
     verifier = DynamicTrajectoryVerifier(
         evaluator,
@@ -211,6 +213,8 @@ def make_critical_risk_stack(config: dict[str, Any], model: RobotSurfaceModel):
         d_activate=max(float(risk_cfg["d_activate"]), cfg.D_REPLAN_OUT),
         fd_epsilon_q=float(risk_cfg["fd_epsilon_q"]),
         density=cfg.SURFACE_DENSITY_LOOP,
+        topk_clearance_points=cfg.CLEARANCE_SOFTMIN_TOPK,
+        softmin_beta=cfg.CLEARANCE_SOFTMIN_BETA,
     )
     verifier = DynamicTrajectoryVerifier(
         evaluator,
@@ -379,9 +383,28 @@ def optimize_candidate(
             forecast,
         )
         seed_info["warm_start_used"] = True
+    if p_inner_initial is None:
+        seed_points = NUBSTrajectory6D.linear_inner_points(head[:, 0], tail[:, 0], durations)
+    else:
+        seed_points = np.asarray(p_inner_initial, dtype=np.float64)
+    seed_trajectory = NUBSTrajectory6D().generate(seed_points, head, tail, durations)
+    seed_verification = verifier.verify(
+        seed_trajectory,
+        forecast,
+        current_q=q_now,
+        current_qd=qd_now,
+        current_qdd=qdd_now,
+        q_goal=q_goal,
+        solver_success=True,
+    )
+    seed_checks_without_solver = dict(seed_verification.checks)
+    seed_checks_without_solver["solver_ok"] = True
+    seed_accepted = bool(all(seed_checks_without_solver.values()))
+
     result = optimizer.optimize(p_inner_initial=p_inner_initial, time_limit_s=optimization_budget_s)
+    result_trajectory = result.trajectory
     verification = verifier.verify(
-        result.trajectory,
+        result_trajectory,
         forecast,
         current_q=q_now,
         current_qd=qd_now,
@@ -392,9 +415,15 @@ def optimize_candidate(
     checks_without_solver = dict(verification.checks)
     checks_without_solver["solver_ok"] = True
     accepted = bool(all(checks_without_solver.values()))
+    fallback_to_seed = bool((not accepted) and seed_accepted)
+    if fallback_to_seed:
+        result_trajectory = seed_trajectory
+        verification = seed_verification
+        checks_without_solver = seed_checks_without_solver
+        accepted = True
     reasons = [name for name, passed in checks_without_solver.items() if not passed]
     return {
-        "trajectory": result.trajectory,
+        "trajectory": result_trajectory,
         "optimization": {
             "success": result.success,
             "status": result.status,
@@ -410,6 +439,9 @@ def optimize_candidate(
             "function_evaluations": result.function_evaluations,
             "gradient_norm": result.gradient_norm,
             "warm_start_used": p_inner_initial is not None,
+            "feasible_seed_cached": seed_accepted,
+            "feasible_seed_min_distance": seed_verification.min_distance,
+            "fallback_to_feasible_seed": fallback_to_seed,
             **seed_info,
         },
         "verification": {

@@ -21,26 +21,30 @@ Completed mechanism changes:
 - Kept D2-stress as the strict 3.0 s switch-slot boundary case.
 - Increased the local candidate segment horizon to 4.0 s.
 - Added one deterministic clearance-guided warm-start seed and selected it against the reference warm-start by coarse predicted clearance.
+- Final solver-level shaping after the last review:
+  - switched CCRO mesh clearance from clamped distance to signed clearance;
+  - changed the CCRO risk objective from full-surface average hinge to top-k soft-min clearance hinge;
+  - cached the online-verified seed candidate and falls back to it if the optimized candidate loses feasibility.
 
 Passed component gate:
 
-- Critical-point gradient query: about 6.80 ms in the latest gate run.
-- CCRO mesh gradient query: about 9.19 ms in the latest gate run.
+- Critical-point gradient query: about 6.87 ms in the latest gate run.
+- CCRO mesh gradient query: about 10.07 ms in the latest gate run.
 - Critical-point count: 16.
 - Critical-point query is faster than CCRO mesh query.
 
 Blocked mechanism gate:
 
-- The latest automatic D1 mechanism gate ran 6 CCRO-NUBS trials.
+- The final automatic D1 mechanism gate ran 6 CCRO-NUBS trials after the solver-level shaping above.
 - `gate_pass=false`.
 - Task-safe success was 4/6, below the required 5/6.
 - Replan success was 0/6, below the required 4/6.
 - Deadline misses were 0, so the 6 s operating-domain budget is adequate for this implementation.
 - Continuity rejections occurred in 2 candidate events.
 - Online distance rejections occurred in 6 candidate events.
-- Planner P95 was about 5.48 s, within the 5.5 s planning budget but close to the limit.
+- Planner P95 was about 5.39 s, within the 5.5 s planning budget but close to the limit.
 - Safe-with-switch count was 0/6.
-- This means the final formal run should not be launched. The system can often remain safe by slowed execution, but it does not yet demonstrate stable asynchronous candidate switching.
+- This means the final formal run should not be launched. The system can often remain safe by slowed execution, but it does not demonstrate stable asynchronous candidate switching under the frozen 6.4 mechanism.
 
 Final stop-rule decision:
 
