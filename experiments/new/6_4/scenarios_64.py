@@ -87,7 +87,12 @@ def _make_crossing_instance(
     seed: int,
 ) -> dict[str, Any]:
     links = cfg.BODY_LINKS if scenario_type == "D1" else cfg.EE_LINKS
-    time_range = (0.82, 0.98) if scenario_type == "D1" else (0.76, 0.96)
+    if scenario_type == "D1":
+        time_range = (0.88, 0.99)
+    elif scenario_type == "D2M":
+        time_range = (0.84, 0.98)
+    else:
+        time_range = (0.58, 0.88)
     selected = _select_sweep_point(model, trajectory, links, time_range, [])
     best_item: dict[str, Any] | None = None
     for attempt in range(80):
@@ -125,10 +130,10 @@ def _make_crossing_instance(
         initial_distance = rows[0]["distance"]
         if scenario_type == "D1":
             min_low, min_high = 0.065, cfg.D_STOP - 0.002
-            min_time_ok = float(min_row["time"]) >= 6.0
+            min_time_ok = float(min_row["time"]) >= 7.0
         elif scenario_type == "D2M":
             min_low, min_high = 0.060, cfg.D_STOP - 0.002
-            min_time_ok = float(min_row["time"]) >= 5.8
+            min_time_ok = float(min_row["time"]) >= 7.0
         else:
             min_low, min_high = 0.065, 0.120
             min_time_ok = float(min_row["time"]) >= 2.6
@@ -272,11 +277,11 @@ def _make_high_instance(model, trajectory, index: int, seed: int) -> dict[str, A
     }
 
 
-def generate_instances(model, trajectory, output_dir: Path, *, smoke: bool = False) -> list[dict[str, Any]]:
+def generate_instances(model, trajectory, output_dir: Path, *, smoke: bool = False, gate: bool = False) -> list[dict[str, Any]]:
     output_dir.mkdir(parents=True, exist_ok=True)
     instances: list[dict[str, Any]] = []
-    d1_per_speed = 1 if smoke else cfg.D1_MAIN_INSTANCES_PER_SPEED
-    d2m_per_speed = 1 if smoke else cfg.D2_MAIN_INSTANCES_PER_SPEED
+    d1_per_speed = 1 if smoke else (2 if gate else cfg.D1_MAIN_INSTANCES_PER_SPEED)
+    d2m_per_speed = 1 if smoke else (2 if gate else cfg.D2_MAIN_INSTANCES_PER_SPEED)
     d2s_per_speed = 1 if smoke else cfg.D2_STRESS_INSTANCES_PER_SPEED
     calibration = 2 if smoke else cfg.CALIBRATION_TRIALS
     for scenario_type, per_speed, offset in [

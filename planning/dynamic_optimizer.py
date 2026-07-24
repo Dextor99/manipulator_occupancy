@@ -40,6 +40,12 @@ class DynamicRiskOptimizationResult:
     elapsed_ms: float
 
 
+class _OptimizationTimeout(RuntimeError):
+    def __init__(self, x: np.ndarray) -> None:
+        super().__init__("optimization time budget exceeded")
+        self.x = np.asarray(x, dtype=np.float64).copy()
+
+
 class DynamicRiskNUBSOptimizer(FixedTimeNUBSOptimizer):
     def __init__(
         self,
@@ -175,7 +181,12 @@ class DynamicRiskNUBSOptimizer(FixedTimeNUBSOptimizer):
             "numeric_norm": float(np.linalg.norm(numeric)),
         }
 
-    def optimize(self, p_inner_initial: np.ndarray | None = None) -> DynamicRiskOptimizationResult:
+    def optimize(
+        self,
+        p_inner_initial: np.ndarray | None = None,
+        *,
+        time_limit_s: float | None = None,
+    ) -> DynamicRiskOptimizationResult:
         if p_inner_initial is None:
             p_inner_initial = NUBSTrajectory6D.linear_inner_points(
                 self.head_state[:, 0], self.tail_state[:, 0], self.durations
@@ -198,34 +209,63 @@ class DynamicRiskNUBSOptimizer(FixedTimeNUBSOptimizer):
             for joint in range(DIMENSION)
         ]
         started = time.perf_counter()
-        result = minimize(
-            self.objective,
-            initial.ravel(),
-            method="L-BFGS-B",
-            jac=True,
-            bounds=bounds,
-            options={
-                "maxiter": self.max_iterations,
-                "gtol": self.gradient_tolerance,
-                "ftol": 1.0e-10,
-                "maxls": 40,
-            },
-        )
+        timed_out = False
+        best_x = initial.ravel().copy()
+
+        def _callback(xk: np.ndarray) -> None:
+            nonlocal best_x
+            best_x = np.asarray(xk, dtype=np.float64).copy()
+            if time_limit_s is not None and time.perf_counter() - started > float(time_limit_s):
+                raise _OptimizationTimeout(best_x)
+
+        try:
+            result = minimize(
+                self.objective,
+                initial.ravel(),
+                method="L-BFGS-B",
+                jac=True,
+                bounds=bounds,
+                callback=_callback,
+                options={
+                    "maxiter": self.max_iterations,
+                    "gtol": self.gradient_tolerance,
+                    "ftol": 1.0e-10,
+                    "maxls": 40,
+                },
+            )
+            final_flat = np.asarray(result.x, dtype=np.float64)
+            status = int(result.status)
+            message = str(result.message)
+            iterations = int(result.nit)
+            function_evaluations = int(result.nfev)
+            jac = np.asarray(result.jac, dtype=np.float64)
+            optimizer_success = bool(result.success) and np.isfinite(result.fun)
+            final_fun = float(result.fun)
+        except _OptimizationTimeout as exc:
+            timed_out = True
+            final_flat = exc.x
+            final_fun = self.cost_only(final_flat)
+            _, jac = self.objective(final_flat)
+            status = 9
+            message = "STOP: OPTIMIZATION TIME BUDGET EXCEEDED"
+            iterations = -1
+            function_evaluations = -1
+            optimizer_success = False
         elapsed_ms = (time.perf_counter() - started) * 1000.0
-        final_points = np.asarray(result.x, dtype=np.float64).reshape(self.inner_shape)
+        final_points = final_flat.reshape(self.inner_shape)
         final_trajectory = self._trajectory(final_points)
         final_risk = self.evaluate_risk(final_trajectory, with_gradient=False)
         final_energy = final_trajectory.energy()
         penalty, _, _, _ = self._violations(final_trajectory)
         return DynamicRiskOptimizationResult(
-            success=bool(result.success) and np.isfinite(result.fun),
-            status=int(result.status),
-            message=str(result.message),
+            success=optimizer_success and not timed_out,
+            status=status,
+            message=message,
             trajectory=final_trajectory,
             p_inner=final_points,
             durations=self.durations.copy(),
             initial_cost=float(initial_cost),
-            final_cost=float(result.fun),
+            final_cost=float(final_fun),
             initial_energy=float(initial_energy),
             final_energy=float(final_energy),
             initial_risk=float(initial_risk.cost),
@@ -233,8 +273,8 @@ class DynamicRiskNUBSOptimizer(FixedTimeNUBSOptimizer):
             initial_min_distance=float(initial_risk.min_distance),
             final_min_distance=float(final_risk.min_distance),
             penalty_cost=float(penalty),
-            iterations=int(result.nit),
-            function_evaluations=int(result.nfev),
-            gradient_norm=float(np.linalg.norm(np.asarray(result.jac))),
+            iterations=iterations,
+            function_evaluations=function_evaluations,
+            gradient_norm=float(np.linalg.norm(jac)),
             elapsed_ms=float(elapsed_ms),
         )

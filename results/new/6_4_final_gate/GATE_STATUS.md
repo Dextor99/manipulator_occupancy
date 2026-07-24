@@ -17,31 +17,35 @@ Completed mechanism changes:
 - Added reference-trajectory warm-start through `DynamicRiskNUBSOptimizer.optimize(p_inner_initial=...)`.
 - Added local candidate segment support and resume-to-reference-tail logic.
 - Extended `gate_64.py` with an automatic mechanism gate summary.
+- Finalized the main operating domain as a 6.0 s switch slot with a 5.5 s optimization budget.
+- Kept D2-stress as the strict 3.0 s switch-slot boundary case.
+- Increased the local candidate segment horizon to 4.0 s.
+- Added one deterministic clearance-guided warm-start seed and selected it against the reference warm-start by coarse predicted clearance.
 
 Passed component gate:
 
-- Critical-point gradient query: about 6.95 ms in the latest gate run.
-- CCRO mesh gradient query: about 9.32 ms in the latest gate run.
+- Critical-point gradient query: about 6.80 ms in the latest gate run.
+- CCRO mesh gradient query: about 9.19 ms in the latest gate run.
 - Critical-point count: 16.
 - Critical-point query is faster than CCRO mesh query.
 
-Passed mechanism sub-gate:
-
-- Pending switch-state consistency is now essentially fixed in the D1 mechanism gate.
-- Mean `tau_prediction_error_at_switch` is about `2.8e-4 s`.
-- There are no systematic continuity rejections.
-
 Blocked mechanism gate:
 
-- The latest automatic D1 mechanism gate ran 3 CCRO-NUBS smoke trials.
-- Task-safe success was 1/3.
-- Replan success was 0/3.
-- Deadline misses occurred in 4 candidate events.
-- Online distance rejections occurred in 2 candidate events.
-- Planner P95 was about 5.34 s.
-- This means the next formal run should not be launched yet. The current code now exposes the remaining local candidate optimization limitation instead of hiding it with near-stop behavior.
+- The latest automatic D1 mechanism gate ran 6 CCRO-NUBS trials.
+- `gate_pass=false`.
+- Task-safe success was 4/6, below the required 5/6.
+- Replan success was 0/6, below the required 4/6.
+- Deadline misses were 0, so the 6 s operating-domain budget is adequate for this implementation.
+- Continuity rejections occurred in 2 candidate events.
+- Online distance rejections occurred in 6 candidate events.
+- Planner P95 was about 5.48 s, within the 5.5 s planning budget but close to the limit.
+- Safe-with-switch count was 0/6.
+- This means the final formal run should not be launched. The system can often remain safe by slowed execution, but it does not yet demonstrate stable asynchronous candidate switching.
 
-Recommended next step:
+Final stop-rule decision:
 
-- Improve the local candidate segment itself: reduce variables further, add a collision-side detour initialization, or add a stronger geometric clearance objective so local candidates pass the medium Mesh distance gate within the 3 s slot.
-- After D1 reaches at least 5/6 task-safe and 4/6 accepted switches in the automatic mechanism gate, add D2-main to the 12-case mechanism gate before producing the final D1-main/D2-main/D2-stress formal dataset.
+- Do not continue adding more optimization modules inside 6.4.
+- Do not run the final D1-main/D2-main/D2-stress formal dataset.
+- Use the archived `results/new/6_4_async_v3_boundary` data only as a boundary/diagnostic result, not as final proof of stable asynchronous replanning.
+- Write 6.4 in the reduced form: dynamic risk trigger, safety slowdown/hold behavior, candidate-generation diagnostics, and current operating-domain boundary.
+- Keep the stronger asynchronous replanning claim for future work or for a later implementation with a faster/lower-level optimizer.

@@ -1,6 +1,6 @@
 | scenario | method | n | task safe | replan success | finish | violation | Dmin GT / m | bridge GT / m | bridge pred / m | replans | accepted | planner ms |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| body_crossing_main | CCRO-NUBS | 3 | 0.33 | 0.00 | 0.33 | 0.00 | 0.089 | 0.117 | 0.000 | 2.00 | 0.00 | 3484.1 |
+| body_crossing_main | CCRO-NUBS | 6 | 0.67 | 0.00 | 0.67 | 0.00 | 0.094 | 0.094 | 0.000 | 2.00 | 0.00 | 2109.1 |
 
 Notes:
 

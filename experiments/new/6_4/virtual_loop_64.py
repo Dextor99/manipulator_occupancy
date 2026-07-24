@@ -359,7 +359,12 @@ def run_trial(
                     first_replan = timestamp
                 last_replan = timestamp
                 replan_attempts += 1
-                planned_switch_delay = cfg.PLANNED_SWITCH_DELAY
+                planned_switch_delay = (
+                    cfg.STRESS_SWITCH_DELAY
+                    if instance["scenario_type"] == "ee_crossing_stress"
+                    else cfg.PLANNED_SWITCH_DELAY
+                )
+                optimization_budget_s = min(cfg.PLANNING_BUDGET, max(0.5, planned_switch_delay - 0.5))
                 deadline_timestamp = timestamp + planned_switch_delay
                 planned_switch_timestamp = deadline_timestamp
                 nominal_bridge = executed_bridge_min_distance(
@@ -412,6 +417,7 @@ def run_trial(
                     qdd_goal=qdd_candidate_goal,
                     warm_start_trajectory=active,
                     warm_start_tau=predicted_tau,
+                    optimization_budget_s=optimization_budget_s,
                 )
                 elapsed_s = float(candidate["optimization"]["elapsed_ms"]) / 1000.0
                 planning_control_cycles += int(math.ceil(elapsed_s / cfg.DT))
@@ -421,6 +427,8 @@ def run_trial(
                     "completed_timestamp": timestamp + elapsed_s,
                     "planned_switch_timestamp": planned_switch_timestamp,
                     "deadline_timestamp": deadline_timestamp,
+                    "planned_switch_delay": planned_switch_delay,
+                    "optimization_budget_s": optimization_budget_s,
                     "outcome": "pending",
                     "elapsed_ms": candidate["optimization"]["elapsed_ms"],
                     "optimizer_converged": candidate["optimization"]["success"],
@@ -431,6 +439,9 @@ def run_trial(
                     "optimizer_function_evaluations": candidate["optimization"]["function_evaluations"],
                     "optimizer_initial_cost": candidate["optimization"]["initial_cost"],
                     "optimizer_final_cost": candidate["optimization"]["final_cost"],
+                    "seed_strategy": candidate["optimization"].get("seed_strategy"),
+                    "reference_seed_min_distance": candidate["optimization"].get("reference_seed_min_distance"),
+                    "detour_seed_min_distance": candidate["optimization"].get("detour_seed_min_distance"),
                     "candidate_accepted": False,
                     "candidate_min_distance": candidate["verification"]["min_distance"],
                     "submission_validation": candidate["verification"],

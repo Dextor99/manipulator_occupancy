@@ -129,7 +129,7 @@ def run_mechanism_gate(output: Path, scenario: str, methods: tuple[str, ...]) ->
         "experiments.new.6_4.run_dynamic_replanning",
         "--output",
         str(run_dir),
-        "--smoke",
+        "--gate",
         "--scenario",
         scenario,
     ]
@@ -137,7 +137,26 @@ def run_mechanism_gate(output: Path, scenario: str, methods: tuple[str, ...]) ->
         # Run one method at a time so a method-specific failure is obvious.
         method_cmd = [*cmd, "--method", method]
         subprocess.run(method_cmd, cwd=Path(__file__).resolve().parents[3], check=True)
-    return _trial_summary(run_dir / "trials", methods)
+    summary = _trial_summary(run_dir / "trials", methods)
+    if scenario == "D1":
+        summary["gate_pass"] = bool(
+            int(summary["task_safe"]) >= 5
+            and int(summary["replan_success"]) >= 4
+            and int(summary["deadline_miss"]) <= 1
+            and int(summary["online_distance_rejections"]) <= 1
+            and int(summary["continuity_rejections"]) == 0
+            and (summary["planner_ms"]["p95"] is not None and float(summary["planner_ms"]["p95"]) <= 5500.0)
+            and int(summary["safe_with_switch"]) >= 4
+        )
+    elif scenario == "D2M":
+        summary["gate_pass"] = bool(
+            int(summary["task_safe"]) >= 4
+            and int(summary["replan_success"]) >= 3
+            and int(summary["deadline_miss"]) <= 1
+            and int(summary["continuity_rejections"]) == 0
+            and (summary["planner_ms"]["p95"] is not None and float(summary["planner_ms"]["p95"]) <= 5500.0)
+        )
+    return summary
 
 
 def parse_args() -> argparse.Namespace:

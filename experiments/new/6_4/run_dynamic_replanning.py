@@ -27,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=str(cfg.DEFAULT_OUTPUT))
     parser.add_argument("--config", default=str(cfg.STAGE4_CONFIG))
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--gate", action="store_true")
     parser.add_argument("--scenario", choices=["D1", "D2M", "D2S", "D2", "D3", "D4"], default=None)
     parser.add_argument("--method", choices=cfg.METHODS, default=None)
     parser.add_argument("--instance", default=None)
@@ -57,7 +58,7 @@ def main() -> None:
     reference, head, tail, durations = make_reference(config)
     evaluator, verifier, limits = make_risk_stack(config, model, None)
     critical_evaluator, critical_verifier = make_critical_risk_stack(config, model)
-    instances = generate_instances(model, reference, instances_dir, smoke=args.smoke)
+    instances = generate_instances(model, reference, instances_dir, smoke=args.smoke, gate=args.gate)
     if args.scenario:
         prefixes = ("D2S_",) if args.scenario == "D2" else (args.scenario + "_",)
         instances = [item for item in instances if item["instance_id"].startswith(prefixes)]

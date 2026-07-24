@@ -241,6 +241,74 @@ def constant_forecast(center: np.ndarray, velocity: np.ndarray, radius: float):
     )
 
 
+def _trajectory_min_distance(evaluator, trajectory: NUBSTrajectory6D, forecast, duration: float) -> float:
+    sample_count = max(5, int(np.ceil(float(duration) / cfg.DT)) + 1)
+    times = np.linspace(0.0, float(duration), sample_count)
+    risk = evaluator.trajectory(trajectory, forecast, times, density=cfg.SURFACE_DENSITY_LOOP, with_gradient=False)
+    return float(risk.min_distance)
+
+
+def _clearance_guided_seed(
+    evaluator,
+    head: np.ndarray,
+    tail: np.ndarray,
+    durations: np.ndarray,
+    base_seed: np.ndarray,
+    limits,
+    forecast,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    base_trajectory = NUBSTrajectory6D().generate(base_seed, head, tail, durations)
+    total_duration = float(np.sum(durations))
+    sample_times = np.linspace(0.0, total_duration, max(5, int(np.ceil(total_duration / cfg.DT)) + 1))
+    best_distance = math.inf
+    best_q = None
+    best_time = None
+    best_gradient = None
+    for sample_time in sample_times:
+        q = base_trajectory.evaluate(float(sample_time))
+        risk = evaluator.configuration(
+            q,
+            forecast,
+            float(sample_time),
+            density=cfg.SURFACE_DENSITY_LOOP,
+            with_gradient=True,
+        )
+        if risk.min_distance < best_distance:
+            best_distance = float(risk.min_distance)
+            best_q = q
+            best_time = float(sample_time)
+            best_gradient = None if risk.gradient_q is None else np.asarray(risk.gradient_q, dtype=np.float64)
+    if best_q is None or best_gradient is None or not np.any(np.isfinite(best_gradient)):
+        return base_seed, {"seed_strategy": "reference", "detour_reason": "no_gradient", "reference_seed_min_distance": best_distance}
+    direction = -best_gradient
+    norm = float(np.linalg.norm(direction))
+    if norm < 1.0e-12:
+        return base_seed, {"seed_strategy": "reference", "detour_reason": "zero_gradient", "reference_seed_min_distance": best_distance}
+    direction = direction / norm
+    local_times = np.cumsum(durations)[:-1]
+    if len(local_times) == 0:
+        return base_seed, {"seed_strategy": "reference", "detour_reason": "no_inner_points", "reference_seed_min_distance": best_distance}
+    weights = np.sin(np.pi * local_times / max(total_duration, 1.0e-9)) ** 2
+    detour_seed = base_seed + weights[:, None] * cfg.CLEARANCE_DETOUR_STEP * direction[None, :]
+    detour_seed = np.minimum(np.maximum(detour_seed, limits.q_min[None, :]), limits.q_max[None, :])
+    detour_trajectory = NUBSTrajectory6D().generate(detour_seed, head, tail, durations)
+    reference_distance = _trajectory_min_distance(evaluator, base_trajectory, forecast, total_duration)
+    detour_distance = _trajectory_min_distance(evaluator, detour_trajectory, forecast, total_duration)
+    if reference_distance < cfg.CLEARANCE_DETOUR_TRIGGER and detour_distance > reference_distance:
+        return detour_seed, {
+            "seed_strategy": "clearance_guided",
+            "reference_seed_min_distance": reference_distance,
+            "detour_seed_min_distance": detour_distance,
+            "detour_time": best_time,
+        }
+    return base_seed, {
+        "seed_strategy": "reference",
+        "reference_seed_min_distance": reference_distance,
+        "detour_seed_min_distance": detour_distance,
+        "detour_time": best_time,
+    }
+
+
 def optimize_candidate(
     config: dict[str, Any],
     evaluator: SpatioTemporalRiskEvaluator,
@@ -258,6 +326,7 @@ def optimize_candidate(
     risk_links: set[str] | None = None,
     warm_start_trajectory: NUBSTrajectory6D | None = None,
     warm_start_tau: float | None = None,
+    optimization_budget_s: float | None = None,
 ) -> dict[str, Any]:
     head = NUBSTrajectory6D.make_boundary_state(q_now, qd_now, qdd_now)
     tail = NUBSTrajectory6D.make_boundary_state(
@@ -298,7 +367,19 @@ def optimize_candidate(
                 for local_time in local_times
             ]
         )
-    result = optimizer.optimize(p_inner_initial=p_inner_initial)
+    seed_info: dict[str, Any] = {"seed_strategy": "linear", "warm_start_used": p_inner_initial is not None}
+    if p_inner_initial is not None:
+        p_inner_initial, seed_info = _clearance_guided_seed(
+            evaluator,
+            head,
+            tail,
+            durations,
+            p_inner_initial,
+            limits,
+            forecast,
+        )
+        seed_info["warm_start_used"] = True
+    result = optimizer.optimize(p_inner_initial=p_inner_initial, time_limit_s=optimization_budget_s)
     verification = verifier.verify(
         result.trajectory,
         forecast,
@@ -329,6 +410,7 @@ def optimize_candidate(
             "function_evaluations": result.function_evaluations,
             "gradient_norm": result.gradient_norm,
             "warm_start_used": p_inner_initial is not None,
+            **seed_info,
         },
         "verification": {
             "accepted": accepted,

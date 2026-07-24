@@ -11,8 +11,9 @@ safety:
   d_accept: 0.08
   d_online_accept: 0.09
 replanner:
-  planning_budget: 3.0
-  planned_switch_delay: 3.0
+  planning_budget: 5.5
+  planned_switch_delay: 6.0
+  stress_switch_delay: 3.0
   replan_interval: 0.5
   max_replan_attempts: 2
   evaluate_horizon: 6.0
@@ -22,7 +23,9 @@ replanner:
   pending_light_slow_scale: 0.65
   pending_min_slow_scale: 0.35
   use_local_candidate: true
-  local_replan_horizon: 2.5
+  local_replan_horizon: 4.0
+  clearance_detour_step: 0.25
+  clearance_detour_trigger: 0.11
 optimizer:
   density: coarse
   max_iterations: 35
