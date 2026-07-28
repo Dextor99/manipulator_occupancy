@@ -1,0 +1,90 @@
+virtual_loop:
+  dt: 0.04
+  observation_dt: 0.033333
+  max_trial_time: 20.0
+  finish_tolerance: 0.02
+safety:
+  d_replan_in: 0.35
+  d_replan_out: 0.38
+  d_slow: 0.12
+  d_stop: 0.08
+  d_accept: 0.08
+  d_online_accept: 0.09
+replanner:
+  planning_budget: 5.5
+  planned_switch_delay: 6.0
+  stress_switch_delay: 3.0
+  replan_interval: 0.5
+  max_replan_attempts: 2
+  evaluate_horizon: 6.0
+  evaluate_steps: 31
+  bridge_slow_in: 0.12
+  bridge_slow_out: 0.35
+  pending_light_slow_scale: 0.65
+  pending_min_slow_scale: 0.35
+  use_local_candidate: true
+  local_replan_horizon: 4.0
+  clearance_detour_step: 0.25
+  clearance_detour_trigger: 0.11
+  clearance_softmin_topk: 8
+  clearance_softmin_beta: 60.0
+boundary_design:
+  speed_groups: [0.15, 0.25, 0.35]
+  lead_time_groups:
+    Long: 7.5
+    Medium: 6.0
+    Short: 4.5
+  post_switch_conflict_time: 1.5
+  min_replay_motion_norm: 1.0e-3
+  main_methods: [ssm_apf, critical_point_nubs, ccro_nubs]
+  reference_only_role: pilot_or_counterfactual
+fast_local_repair:
+  local_horizon: 1.0
+  local_segments: 5
+  sample_dt: 0.10
+  repair_steps: 3
+  repair_step_size: 0.035
+  repair_step_sizes: [0.008, 0.015, 0.025, 0.035]
+  distance_gradient_epsilon: 2.0e-4
+  repair_topk_times: 4
+  repair_topk_points: 8
+  accept_ms: 150.0
+  hard_max_ms: 200.0
+  g1_conflict_time: 0.55
+  g1_endpoint_margin: 0.12
+  g1_min_active_a_norm: 0.02
+  g1_reference_dense_min_range: [0.04, 0.08]
+  g1_near_dense_min_range: [0.07, 0.08]
+  g2_medium_dense_min_range: [0.055, 0.07]
+  stress_dense_min_range: [0.04, 0.055]
+  v3:
+    max_iterations: 2
+    active_constraints: 8
+    trust_region: 0.030
+    relaxation: 0.85
+    sensitivity_epsilon: 1.0e-5
+    min_improvement: 1.0e-4
+    slack_weight: 1.0e5
+    clearance_gain: 5.0
+  v4:
+    max_iterations: 1
+    target_clearance: 0.095
+    acceptance_scales: [0.85, 0.65, 0.45, 0.30, 0.20, 0.10]
+    projection_sweeps: 8
+    drive_scale: 0.75
+  conflict_time_groups:
+    Long: 0.90
+    Medium: 0.60
+    Short: 0.35
+optimizer:
+  density: coarse
+  max_iterations: 35
+  risk_samples_per_segment: 4
+  samples_per_segment: 6
+validation:
+  density: medium
+  dense_time_step: 0.04
+  epsilon_goal: 0.01
+  epsilon_continuity_q: 5.0e-3
+  epsilon_continuity_qd: 3.0e-3
+  epsilon_continuity_qdd: 3.0e-3

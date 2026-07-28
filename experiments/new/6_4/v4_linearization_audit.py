@@ -122,7 +122,7 @@ def run_audit(output: Path, *, scenario: str, instance_index: int) -> dict[str, 
         sensitivity,
         limits,
         trust_region=cfg.FAST_V3_TRUST_REGION,
-        d_safe=cfg.D_ONLINE_ACCEPT,
+        d_safe=cfg.FAST_V4_TARGET_CLEARANCE,
     )
     delta_applied = cfg.FAST_V3_RELAXATION * qp.delta
     candidate_points = p_inner + delta_applied.reshape(p_inner.shape)

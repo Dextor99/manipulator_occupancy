@@ -213,3 +213,38 @@ Fast CCRO-NUBS v4 controllability audit and gated update:
   - usable candidate rate: 5/10;
   - mean dense clearance improvement: about 0.0125 m.
 - Interpretation: this is the first v4 result where the linearized active-set repair produces meaningful dense clearance gain within the realtime budget. However, it still does not justify launching a formal full 6.4 dataset: only 5/10 near-risk cases satisfy the stricter 0.09 m online acceptance margin, and the paper claim should remain at the G1 development/capability-boundary level until a larger gated validation set passes.
+
+G1 acceptance audit and Critical-point baseline:
+
+- Added the acceptance-audit funnel to `experiments/new/6_4/fast_local_repair_64.py`.
+- The fast repair output now records:
+  - `reference_online_min_distance`;
+  - `candidate_online_min_distance`;
+  - `candidate_medium_dense_gap`;
+  - `online_threshold_margin`;
+  - `dense_threshold_margin`;
+  - per-gate booleans for QP solved, dense repair success, online distance pass, acceleration pass, and time pass.
+- The generated audit table is `paper/table_6_4_fast_acceptance_audit.md`.
+- Fixed the Critical-fast-v4 baseline semantics:
+  - Critical-fast-v4 now uses the same v4 one-QP/backtracking solver settings;
+  - but its active constraints come from the fixed critical-point evaluator rather than the CCRO dense Mesh active set.
+- CCRO-fast-v4 G1-near acceptance audit:
+  - output: `results/new/6_4_fast_local_repair_g1_near_ccro_v4_acceptance_audit/paper/table_6_4_fast_acceptance_audit.md`;
+  - QP solved: 10/10;
+  - dense repair success: 10/10;
+  - online acceptance: 5/10;
+  - verified safety among online-accepted candidates: 5/5;
+  - time pass under 150 ms: 10/10;
+  - acceleration pass: 10/10;
+  - mean medium-minus-dense candidate distance gap: about 0.0004 m;
+  - all 5 CCRO online rejections were `dense_safe_but_online_margin_rejected`.
+- Critical-fast-v4 G1-near baseline:
+  - output: `results/new/6_4_fast_local_repair_g1_near_v4_acceptance_audit/paper/table_6_4_fast_acceptance_audit.md`;
+  - QP solved: 8/10;
+  - dense repair success: 6/10;
+  - online acceptance: 1/10;
+  - verified safety among online-accepted candidates: 1/1;
+  - time pass under 150 ms: 9/10;
+  - acceleration pass: 10/10;
+  - mean dense clearance improvement: about 0.0077 m.
+- Interpretation: the current CCRO result should no longer be described as "5/10 algorithm success." A more precise conclusion is that Fast CCRO-NUBS generated dense-safe candidates for all G1-near cases within the real-time budget, while the predefined conservative online margin accepted half of them. The Critical-point baseline supports the CCRO contribution: under the same solver shell and instances, the sparse critical-point active set repaired fewer dense GT cases and produced only 1/10 online-accepted candidates.

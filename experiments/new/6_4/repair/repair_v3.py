@@ -51,6 +51,7 @@ def run_repair_v3(
     durations: np.ndarray,
     *,
     dense_active: bool = False,
+    v4_mode: bool = False,
 ) -> RepairV3Result:
     sample_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
     motion_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.DT, cfg.DT)
@@ -63,7 +64,7 @@ def run_repair_v3(
     qp_successes = 0
     active_count = 0
     messages: list[str] = []
-    max_iterations = cfg.FAST_V4_MAX_ITERATIONS if dense_active else cfg.FAST_V3_MAX_ITERATIONS
+    max_iterations = cfg.FAST_V4_MAX_ITERATIONS if v4_mode else cfg.FAST_V3_MAX_ITERATIONS
     for iteration in range(max_iterations):
         t_scan = time.perf_counter()
         if dense_active:
@@ -104,7 +105,7 @@ def run_repair_v3(
             sensitivity,
             limits,
             trust_region=cfg.FAST_V3_TRUST_REGION,
-            d_safe=cfg.FAST_V4_TARGET_CLEARANCE if dense_active else cfg.D_ONLINE_ACCEPT,
+            d_safe=cfg.FAST_V4_TARGET_CLEARANCE if v4_mode else cfg.D_ONLINE_ACCEPT,
         )
         qp_ms += (time.perf_counter() - t_qp) * 1000.0
         messages.append(qp.message)
@@ -113,7 +114,7 @@ def run_repair_v3(
         qp_successes += 1
         current_min = min(item.distance for item in active)
         accepted_candidate = None
-        scales = cfg.FAST_V4_ACCEPTANCE_SCALES if dense_active else (cfg.FAST_V3_RELAXATION,)
+        scales = cfg.FAST_V4_ACCEPTANCE_SCALES if v4_mode else (cfg.FAST_V3_RELAXATION,)
         for scale in scales:
             candidate_points = points + float(scale) * qp.delta.reshape(points.shape)
             candidate = NUBSTrajectory6D().generate(candidate_points, head, tail, durations)

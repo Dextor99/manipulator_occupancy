@@ -423,6 +423,7 @@ def fast_repair_v3(
     instance: dict[str, Any],
     *,
     dense_active: bool = False,
+    v4_mode: bool = False,
 ) -> dict[str, Any]:
     local_ref, p_inner, head, tail = _make_local_reference(reference, float(instance["tau_start"]))
     durations = local_ref.durations
@@ -441,6 +442,7 @@ def fast_repair_v3(
         tail,
         durations,
         dense_active=dense_active,
+        v4_mode=v4_mode,
     )
     t_online = time.perf_counter()
     online = online_verifier.verify(
@@ -465,19 +467,35 @@ def fast_repair_v3(
         solver_success=True,
     )
     dense_recheck_ms = (time.perf_counter() - t_dense) * 1000.0
+    ref_online_min = _trajectory_min(online_verifier.risk_evaluator, local_ref, forecast, density=cfg.SURFACE_DENSITY_VERIFY)
     ref_dense_min = _trajectory_min(dense_verifier.risk_evaluator, local_ref, forecast, density="dense")
     cand_dense_min = float(dense.min_distance)
+    cand_online_min = float(online.min_distance)
+    time_pass = bool(online_ms <= cfg.FAST_REPAIR_ACCEPT_MS)
+    hard_time_pass = bool(online_ms <= cfg.FAST_REPAIR_HARD_MAX_MS)
+    online_distance_pass = bool("distance_ok" not in online.reasons)
+    acceleration_pass = bool("acceleration_ok" not in online.reasons)
+    dense_safe = bool(dense.accepted)
     return {
         "reference_trajectory": local_ref,
         "candidate_trajectory": repaired.trajectory,
         "metrics": {
             "reference_dense_min_distance": ref_dense_min,
+            "reference_online_min_distance": ref_online_min,
             "candidate_dense_min_distance": cand_dense_min,
+            "candidate_online_min_distance": cand_online_min,
             "delta_dense_min_distance": float(cand_dense_min - ref_dense_min),
+            "delta_online_min_distance": float(cand_online_min - ref_online_min),
+            "candidate_medium_dense_gap": float(cand_online_min - cand_dense_min),
+            "online_threshold_margin": float(cand_online_min - cfg.D_ONLINE_ACCEPT),
+            "dense_threshold_margin": float(cand_dense_min - cfg.D_STOP),
+            "online_distance_pass": online_distance_pass,
+            "acceleration_pass": acceleration_pass,
+            "time_pass": time_pass,
             "online_feasible": bool(online.accepted),
-            "dense_geometry_only_feasible": bool(dense.accepted),
-            "usable_candidate": bool(online_ms <= cfg.FAST_REPAIR_ACCEPT_MS and online.accepted and dense.accepted),
-            "hard_realtime_ok": bool(online_ms <= cfg.FAST_REPAIR_HARD_MAX_MS),
+            "dense_geometry_only_feasible": dense_safe,
+            "usable_candidate": bool(time_pass and online.accepted and dense_safe),
+            "hard_realtime_ok": hard_time_pass,
             "beneficial": bool(cand_dense_min >= ref_dense_min + cfg.SWITCH_IMPROVEMENT_MARGIN),
             "repair_steps": repaired.accepted_steps,
             "accepted_updates": repaired.accepted_steps,
@@ -512,6 +530,12 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         groups.setdefault(key, []).append(row)
     summary = []
     for (scenario, speed, lead, method), items in sorted(groups.items()):
+        online_accepted = [item for item in items if item["online_feasible"]]
+        verified_safety = (
+            float(np.mean([item["dense_geometry_only_feasible"] for item in online_accepted]))
+            if online_accepted
+            else None
+        )
         summary.append(
             {
                 "scenario_type": scenario,
@@ -519,11 +543,20 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "lead_label": lead,
                 "method": method,
                 "n": len(items),
+                "qp_solved": float(np.mean([item["qp_successes"] > 0 for item in items])),
+                "repair_success": float(np.mean([item["dense_geometry_only_feasible"] for item in items])),
+                "online_acceptance": float(np.mean([item["online_feasible"] for item in items])),
+                "verified_safety": verified_safety,
                 "usable": float(np.mean([item["usable_candidate"] for item in items])),
                 "dense_feasible": float(np.mean([item["dense_geometry_only_feasible"] for item in items])),
+                "online_distance_pass": float(np.mean([item.get("online_distance_pass", False) for item in items])),
+                "time_pass": float(np.mean([item.get("time_pass", False) for item in items])),
                 "beneficial": float(np.mean([item["beneficial"] for item in items])),
-                "acceleration_ok": float(np.mean(["acceleration_ok" not in item["online_reasons"] for item in items])),
+                "acceleration_ok": float(np.mean([item.get("acceleration_pass", "acceleration_ok" not in item["online_reasons"]) for item in items])),
                 "delta_dense": float(np.mean([item["delta_dense_min_distance"] for item in items])),
+                "medium_dense_gap_mean": float(np.mean([item.get("candidate_medium_dense_gap", 0.0) for item in items])),
+                "online_margin_min": float(np.min([item.get("online_threshold_margin", 0.0) for item in items])),
+                "dense_margin_min": float(np.min([item.get("dense_threshold_margin", 0.0) for item in items])),
                 "online_ms_mean": float(np.mean([item["online_ms"] for item in items])),
                 "online_ms_p95": float(np.percentile([item["online_ms"] for item in items], 95)),
                 "online_ms_max": float(np.max([item["online_ms"] for item in items])),
@@ -547,6 +580,64 @@ def write_table(summary: list[dict[str, Any]], path: Path) -> None:
             f"{_fmt(row['online_ms_max'], 1)} | {_fmt(row['dense_recheck_ms_p95'], 1)} |"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _trial_failure_reason(row: dict[str, Any]) -> str:
+    if row.get("usable_candidate", False):
+        return "usable"
+    if row.get("qp_successes", 0) <= 0:
+        return "qp_not_solved"
+    if not row.get("dense_geometry_only_feasible", False):
+        return "dense_not_safe"
+    if not row.get("time_pass", False):
+        return "online_timeout"
+    if not row.get("acceleration_pass", True):
+        return "motion_limit_rejected"
+    if not row.get("online_distance_pass", False):
+        return "dense_safe_but_online_margin_rejected"
+    if not row.get("online_feasible", False):
+        return "other_online_gate_rejected"
+    return "not_beneficial_only"
+
+
+def write_acceptance_audit(rows: list[dict[str, Any]], summary: list[dict[str, Any]], path: Path) -> None:
+    lines = [
+        "# 6.4 Fast Local Repair Acceptance Audit",
+        "",
+        "## Gate Funnel",
+        "",
+        "| scenario | speed | conflict | method | n | QP solved | repair success dense>0.08 | online acceptance | verified safety among accepted | time pass | online distance pass | accel pass | usable | mean medium-dense gap / m | min online margin / m | min dense margin / m |",
+        "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in summary:
+        lines.append(
+            f"| {row['scenario_type']} | {row['speed_group']} | {row['lead_label']} | {FAST_METHOD_NAMES.get(row['method'], row['method'])} | "
+            f"{row['n']} | {_fmt(row['qp_solved'], 2)} | {_fmt(row['repair_success'], 2)} | "
+            f"{_fmt(row['online_acceptance'], 2)} | {_fmt(row['verified_safety'], 2)} | "
+            f"{_fmt(row['time_pass'], 2)} | {_fmt(row['online_distance_pass'], 2)} | {_fmt(row['acceleration_ok'], 2)} | "
+            f"{_fmt(row['usable'], 2)} | {_fmt(row['medium_dense_gap_mean'], 4)} | "
+            f"{_fmt(row['online_margin_min'], 4)} | {_fmt(row['dense_margin_min'], 4)} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Trial-Level Audit",
+            "",
+            "| trial | method | ref dense | cand dense | cand online | medium-dense gap | online margin | dense margin | QP | dense safe | online accepted | time pass | accel pass | failure reason |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            f"| {row['instance_id']} | {FAST_METHOD_NAMES.get(row['method'], row['method'])} | "
+            f"{_fmt(row.get('reference_dense_min_distance'), 4)} | {_fmt(row.get('candidate_dense_min_distance'), 4)} | "
+            f"{_fmt(row.get('candidate_online_min_distance'), 4)} | {_fmt(row.get('candidate_medium_dense_gap'), 4)} | "
+            f"{_fmt(row.get('online_threshold_margin'), 4)} | {_fmt(row.get('dense_threshold_margin'), 4)} | "
+            f"{int(row.get('qp_successes', 0) > 0)} | {int(bool(row.get('dense_geometry_only_feasible', False)))} | "
+            f"{int(bool(row.get('online_feasible', False)))} | {int(bool(row.get('time_pass', False)))} | "
+            f"{int(bool(row.get('acceleration_pass', False)))} | {_trial_failure_reason(row)} |"
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -628,7 +719,8 @@ def main() -> None:
                     dense_verifier,
                     limits,
                     instance,
-                    dense_active=True,
+                    dense_active=not method.startswith("critical"),
+                    v4_mode=True,
                 )
             elif method.endswith("_v3"):
                 repaired = fast_repair_v3(reference, evaluator, online_verifier, dense_verifier, limits, instance)
@@ -664,8 +756,10 @@ def main() -> None:
     }
     write_json(output / "fast_local_repair_64.json", metrics)
     write_table(summary, paper_dir / "table_6_4_fast_local_repair.md")
+    write_acceptance_audit(rows, summary, paper_dir / "table_6_4_fast_acceptance_audit.md")
     print(f"[6.4 fast] saved {output / 'fast_local_repair_64.json'}")
     print(f"[6.4 fast] saved {paper_dir / 'table_6_4_fast_local_repair.md'}")
+    print(f"[6.4 fast] saved {paper_dir / 'table_6_4_fast_acceptance_audit.md'}")
 
 
 if __name__ == "__main__":
