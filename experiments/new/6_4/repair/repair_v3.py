@@ -28,6 +28,19 @@ class RepairV3Result:
     messages: list[str]
 
 
+def _motion_violations(trajectory: NUBSTrajectory6D, limits, sample_times: np.ndarray) -> dict[str, float]:
+    samples = trajectory.sample(sample_times)
+    q_low = np.maximum(limits.q_min[None, :] - samples.q, 0.0)
+    q_high = np.maximum(samples.q - limits.q_max[None, :], 0.0)
+    qd = np.maximum(np.abs(samples.qd) - limits.qd_max[None, :], 0.0)
+    qdd = np.maximum(np.abs(samples.qdd) - limits.qdd_max[None, :], 0.0)
+    return {
+        "q": float(np.max(np.maximum(q_low, q_high), initial=0.0)),
+        "qd": float(np.max(qd, initial=0.0)),
+        "qdd": float(np.max(qdd, initial=0.0)),
+    }
+
+
 def run_repair_v3(
     evaluator,
     forecast,
@@ -40,6 +53,7 @@ def run_repair_v3(
     dense_active: bool = False,
 ) -> RepairV3Result:
     sample_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
+    motion_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.DT, cfg.DT)
     points = np.asarray(p_inner, dtype=np.float64).copy()
     trajectory = NUBSTrajectory6D().generate(points, head, tail, durations)
     risk_scan_ms = 0.0
@@ -49,7 +63,8 @@ def run_repair_v3(
     qp_successes = 0
     active_count = 0
     messages: list[str] = []
-    for iteration in range(cfg.FAST_V3_MAX_ITERATIONS):
+    max_iterations = cfg.FAST_V4_MAX_ITERATIONS if dense_active else cfg.FAST_V3_MAX_ITERATIONS
+    for iteration in range(max_iterations):
         t_scan = time.perf_counter()
         if dense_active:
             active = extract_dense_nearest_distances(
@@ -89,39 +104,54 @@ def run_repair_v3(
             sensitivity,
             limits,
             trust_region=cfg.FAST_V3_TRUST_REGION,
-            d_safe=cfg.D_ONLINE_ACCEPT,
+            d_safe=cfg.FAST_V4_TARGET_CLEARANCE if dense_active else cfg.D_ONLINE_ACCEPT,
         )
         qp_ms += (time.perf_counter() - t_qp) * 1000.0
         messages.append(qp.message)
         if not qp.success:
             break
         qp_successes += 1
-        candidate_points = points + cfg.FAST_V3_RELAXATION * qp.delta.reshape(points.shape)
-        candidate = NUBSTrajectory6D().generate(candidate_points, head, tail, durations)
         current_min = min(item.distance for item in active)
-        if dense_active:
-            next_active = extract_dense_nearest_distances(
-                evaluator,
-                candidate,
-                forecast,
-                sample_times=sample_times,
-                top_k=1,
-            )
-        else:
-            next_active = extract_active_distances(
-                evaluator,
-                candidate,
-                forecast,
-                sample_times=sample_times,
-                top_k=1,
-                density=cfg.SURFACE_DENSITY_LOOP,
-            )
-        next_min = cfg.D_ONLINE_ACCEPT if not next_active else min(item.distance for item in next_active)
-        if next_min <= current_min + cfg.FAST_V3_MIN_IMPROVEMENT:
-            messages.append("rejected: no monotonic distance improvement")
+        accepted_candidate = None
+        scales = cfg.FAST_V4_ACCEPTANCE_SCALES if dense_active else (cfg.FAST_V3_RELAXATION,)
+        for scale in scales:
+            candidate_points = points + float(scale) * qp.delta.reshape(points.shape)
+            candidate = NUBSTrajectory6D().generate(candidate_points, head, tail, durations)
+            motion = _motion_violations(candidate, limits, motion_times)
+            if motion["q"] > 1.0e-8 or motion["qd"] > 1.0e-8 or motion["qdd"] > 1.0e-8:
+                messages.append(
+                    f"scale {float(scale):.2f} rejected: motion q={motion['q']:.3e} "
+                    f"qd={motion['qd']:.3e} qdd={motion['qdd']:.3e}"
+                )
+                continue
+            if dense_active:
+                next_active = extract_dense_nearest_distances(
+                    evaluator,
+                    candidate,
+                    forecast,
+                    sample_times=sample_times,
+                    top_k=1,
+                )
+            else:
+                next_active = extract_active_distances(
+                    evaluator,
+                    candidate,
+                    forecast,
+                    sample_times=sample_times,
+                    top_k=1,
+                    density=cfg.SURFACE_DENSITY_LOOP,
+                )
+            next_min = cfg.D_ONLINE_ACCEPT if not next_active else min(item.distance for item in next_active)
+            if next_min <= current_min + cfg.FAST_V3_MIN_IMPROVEMENT:
+                messages.append(f"scale {float(scale):.2f} rejected: no monotonic distance improvement")
+                continue
+            accepted_candidate = (candidate_points, candidate)
+            messages.append(f"accepted scale {float(scale):.2f}")
             break
-        points = candidate_points
-        trajectory = candidate
+        if accepted_candidate is None:
+            messages.append("rejected: no feasible monotonic step")
+            break
+        points, trajectory = accepted_candidate
         accepted += 1
     return RepairV3Result(
         trajectory=trajectory,

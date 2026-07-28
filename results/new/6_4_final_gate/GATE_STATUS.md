@@ -174,3 +174,42 @@ Fast CCRO-NUBS v4 active-set scaffold:
   - QP fallback median time: about 3.4 ms;
   - median dense clearance improvement: 0 m, max improvement about 0.00024 m.
 - Interpretation: v4 moves the implementation closer to the intended active-set CCRO-QP structure and removes SLSQP from the repair step, but it still does not pass G1-near. The QP fallback is fast, yet the accepted linearized updates do not translate into meaningful dense clearance recovery. The remaining blocker is the active-set/Jacobian/local-DOF effectiveness, not merely solver runtime.
+
+Fast CCRO-NUBS v4 controllability audit and gated update:
+
+- Added `experiments/new/6_4/v4_linearization_audit.py` for a single-instance audit of:
+  - dense active points;
+  - analytic point Jacobian versus finite difference;
+  - NUBS interpolation-point sensitivity;
+  - QP predicted clearance gain versus actual dense clearance gain;
+  - applied delta norm and online verifier outcome.
+- The first audit exposed an invalid G1-near design issue: the dominant dense risk lay at the fixed 1.0 s local tail, where local interpolation variables had zero effective sensitivity.
+- Updated G1/G1-near generation:
+  - G1 conflict time is now 0.55 s instead of the previous 0.90 s tail-adjacent conflict;
+  - generated G1 samples must pass a dense active-set controllability filter;
+  - endpoint-dominated risks and active rows with near-zero NUBS sensitivity are rejected;
+  - clearance candidates are selected by dense Mesh filtering rather than one-shot random clearance.
+- Controllable single-instance audit output:
+  - `results/new/6_4_v4_linearization_audit_d1_00_controllable/paper/table_6_4_v4_linearization_audit.md`;
+  - reference dense min: about 0.0774 m;
+  - candidate dense min: about 0.0853 m;
+  - actual dense gain: about 0.0080 m;
+  - QP predicted min distance: about 0.0867 m;
+  - dominant active row time: 0.4 s;
+  - dominant active-row norm: about 0.212;
+  - analytic point-Jacobian relative error was effectively zero.
+- Updated v4 online acceptance:
+  - v4 uses one QP iteration in the online path;
+  - accepted steps are backtracked against 0.04 s motion samples;
+  - v4 targets 0.095 m clearance while keeping the online acceptance threshold at 0.09 m and dense GT threshold at 0.08 m.
+- Current G1-near CCRO-fast-v4 gated output:
+  - `results/new/6_4_fast_local_repair_g1_near_ccro_v4_controllable_target095/paper/table_6_4_fast_local_repair.md`;
+  - valid near-risk scenarios: 10/10;
+  - dense geometry feasible: 10/10;
+  - acceleration gate pass: 10/10;
+  - hard real-time pass under 200 ms: 10/10;
+  - online P95: about 136.1 ms;
+  - online max: about 142.6 ms;
+  - usable candidate rate: 5/10;
+  - mean dense clearance improvement: about 0.0125 m.
+- Interpretation: this is the first v4 result where the linearized active-set repair produces meaningful dense clearance gain within the realtime budget. However, it still does not justify launching a formal full 6.4 dataset: only 5/10 near-risk cases satisfy the stricter 0.09 m online acceptance margin, and the paper claim should remain at the G1 development/capability-boundary level until a larger gated validation set passes.

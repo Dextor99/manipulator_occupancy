@@ -20,6 +20,8 @@ import numpy as np
 
 from planning.nubs_trajectory import NUBSTrajectory6D
 from planning.verifier import DynamicTrajectoryVerifier
+from .repair.active_distance import extract_dense_nearest_distances
+from .repair.nubs_linearization import build_local_sensitivity
 from .repair.repair_v3 import run_repair_v3
 
 from . import config_64 as cfg
@@ -92,13 +94,53 @@ def _surface_outward(model, q: np.ndarray, links: tuple[str, ...], rng: np.rando
     return link, point, outward
 
 
+def _has_controllable_reference_risk(
+    evaluator,
+    local_ref: NUBSTrajectory6D,
+    p_inner: np.ndarray,
+    head: np.ndarray,
+    tail: np.ndarray,
+    forecast,
+) -> bool:
+    sample_times = np.arange(0.0, local_ref.total_duration + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
+    active = extract_dense_nearest_distances(
+        evaluator,
+        local_ref,
+        forecast,
+        sample_times=sample_times,
+        top_k=cfg.FAST_V3_ACTIVE_CONSTRAINTS,
+    )
+    risky = [item for item in active if item.distance < cfg.D_ONLINE_ACCEPT]
+    if not risky:
+        return False
+    margin = float(cfg.FAST_G1_ENDPOINT_MARGIN)
+    if min(item.tau for item in risky) < margin:
+        return False
+    if max(item.tau for item in risky) > local_ref.total_duration - margin:
+        return False
+    sensitivity = build_local_sensitivity(
+        p_inner,
+        head,
+        tail,
+        local_ref.durations,
+        sample_times,
+        epsilon=cfg.FAST_V3_SENSITIVITY_EPS,
+    )
+    for item in risky:
+        time_index = int(np.argmin(np.abs(sensitivity.sample_times - item.tau)))
+        a_row = np.einsum("j,jv->v", item.gradient_q, sensitivity.sq[time_index], optimize=True)
+        if float(np.linalg.norm(a_row)) >= cfg.FAST_G1_MIN_ACTIVE_A_NORM:
+            return True
+    return False
+
+
 def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smoke: bool, g1: bool, g1_near: bool) -> list[dict[str, Any]]:
     rng = np.random.default_rng(cfg.RANDOM_SEED + (8100 if scenario == "D1" else 9100) + int(g1) * 1000)
     links = cfg.BODY_LINKS if scenario == "D1" else cfg.EE_LINKS
     scenario_type = "body_crossing_fast" if scenario == "D1" else "ee_crossing_fast"
     if g1 or g1_near:
         speeds = (0.15,)
-        conflict_groups = {"Long": cfg.FAST_CONFLICT_TIME_GROUPS["Long"]}
+        conflict_groups = {"G1": cfg.FAST_G1_CONFLICT_TIME}
         repeats = 10
     else:
         speeds = cfg.SPEED_GROUPS
@@ -118,26 +160,40 @@ def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smo
                 if attempts > 2400:
                     raise RuntimeError(f"failed to generate enough fast instances for {scenario} {speed} {lead_label}")
                 tau_start = float(rng.uniform(tau_low, tau_high))
-                local_ref, _, _, _ = _make_local_reference(reference, tau_start)
+                local_ref, p_inner, head, tail = _make_local_reference(reference, tau_start)
                 q_conflict = local_ref.evaluate(float(conflict_time))
                 link, surface_point, outward = _surface_outward(model, q_conflict, links, rng)
                 radius = float(rng.uniform(0.04, 0.055))
                 if g1_near:
-                    clearance = float(rng.uniform(0.18, 0.34))
+                    clearance_candidates = np.linspace(0.12, 0.34, 12, dtype=np.float64)
+                    rng.shuffle(clearance_candidates)
                 elif g1:
-                    clearance = float(rng.uniform(0.095, 0.220))
+                    clearance_candidates = np.linspace(0.08, 0.28, 11, dtype=np.float64)
+                    rng.shuffle(clearance_candidates)
                 else:
-                    clearance = float(rng.uniform(0.025, 0.065))
-                crossing_center = surface_point + (radius + clearance) * outward
+                    clearance_candidates = np.asarray([float(rng.uniform(0.025, 0.065))], dtype=np.float64)
                 direction = _tangent_direction(outward, rng)
                 velocity = float(speed) * direction
-                center_at_start = crossing_center - velocity * float(conflict_time)
-                forecast = constant_forecast(center_at_start, velocity, radius)
-                reference_dense_min = _trajectory_min(dense_evaluator, local_ref, forecast, density="dense")
-                if g1 or g1_near:
+                selected = None
+                for clearance_value in clearance_candidates:
+                    clearance = float(clearance_value)
+                    crossing_center = surface_point + (radius + clearance) * outward
+                    center_at_start = crossing_center - velocity * float(conflict_time)
+                    forecast = constant_forecast(center_at_start, velocity, radius)
+                    reference_dense_min = _trajectory_min(dense_evaluator, local_ref, forecast, density="dense")
+                    if not (g1 or g1_near):
+                        selected = (clearance, center_at_start, forecast, reference_dense_min)
+                        break
                     low, high = cfg.FAST_G1_NEAR_DENSE_MIN_RANGE if g1_near else cfg.FAST_G1_REFERENCE_DENSE_MIN_RANGE
                     if not (low <= reference_dense_min < high):
                         continue
+                    if not _has_controllable_reference_risk(dense_evaluator, local_ref, p_inner, head, tail, forecast):
+                        continue
+                    selected = (clearance, center_at_start, forecast, reference_dense_min)
+                    break
+                if selected is None:
+                    continue
+                clearance, center_at_start, forecast, reference_dense_min = selected
                 instances.append(
                     {
                         "instance_id": f"{scenario}F_{index:03d}",
