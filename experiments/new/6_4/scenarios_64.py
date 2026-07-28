@@ -113,7 +113,8 @@ def _make_crossing_instance(
         time_range = (0.58, 0.88)
     selected = _select_sweep_point(model, trajectory, links, time_range, [])
     best_item: dict[str, Any] | None = None
-    for attempt in range(80):
+    total_attempts = 80
+    for attempt in range(total_attempts):
         attempt_seed = seed + attempt * 7919
         rng = np.random.default_rng(attempt_seed)
         radius = float(rng.uniform(0.04, 0.06))
@@ -185,6 +186,8 @@ def _make_crossing_instance(
             "static_min_distance": float(static_min_row["distance"]),
             "initial_distance": initial_distance,
             "seed": attempt_seed,
+            "_valid": valid,
+            "_attempts": attempt + 1,
         }
         if valid:
             best_item = candidate
@@ -199,6 +202,19 @@ def _make_crossing_instance(
             best_item = candidate
     if best_item is None:
         raise RuntimeError(f"failed to generate crossing instance {scenario_type}_{instance_index:02d}")
+    generation_valid = bool(best_item.get("_valid", False))
+    generation_attempts = int(best_item.get("_attempts", 80))
+    generation_failure_reasons: list[str] = []
+    if not generation_valid:
+        if best_item.get("initial_distance", 0.0) <= cfg.D_INITIAL_SAFE:
+            generation_failure_reasons.append("initial_too_close")
+        if best_item.get("static_min_distance", math.inf) <= cfg.D_REPLAN_OUT + 0.10:
+            generation_failure_reasons.append("static_too_close")
+        md = float(best_item.get("min_row", {}).get("distance", 0.0))
+        if not (min_low <= md <= min_high):
+            generation_failure_reasons.append(f"min_distance_out_of_range({md:.3f})")
+        if not min_time_ok:
+            generation_failure_reasons.append("min_time_too_early")
     selected = best_item["selected"]
     center0 = best_item["center0"]
     velocity = best_item["velocity"]
@@ -212,6 +228,13 @@ def _make_crossing_instance(
     obs_center0, obs_velocity, obs_radius = _observed_from_gt(
         np.random.default_rng(frozen_seed + 100_000), pre_motion_center, np.zeros(3), radius
     )
+    # Determine conflict_time_source
+    if markers.get("first_accept_violation_time") is not None:
+        conflict_time_source = "first_accept_violation_time"
+    elif markers.get("reference_risk_time") is not None:
+        conflict_time_source = "time_of_min_distance"
+    else:
+        conflict_time_source = "not_determined"
     return {
         "instance_id": f"{scenario_type}_{instance_index:02d}",
         "scenario_type": {
@@ -236,6 +259,10 @@ def _make_crossing_instance(
         "observation_seed": int(frozen_seed + 100_000),
         "reference_initial_distance": float(initial_distance),
         "reference_min_distance": float(min_row["distance"]),
+        "conflict_time_source": conflict_time_source,
+        "generation_valid": generation_valid,
+        "generation_attempts": generation_attempts,
+        "generation_failure_reasons": generation_failure_reasons,
         **markers,
         "static_wait_min_distance": float(best_item["static_min_distance"]),
         "reference_risk_time": float(min_row["time"]),
@@ -273,6 +300,10 @@ def _make_far_instance(model, trajectory, index: int, seed: int) -> dict[str, An
         "reference_min_distance": float(min(row["distance"] for row in rows)),
         "reference_risk_time": None,
         "reference_nearest_link": None,
+        "conflict_time_source": "no_conflict",
+        "generation_valid": True,
+        "generation_attempts": 1,
+        "generation_failure_reasons": [],
     }
 
 
@@ -307,10 +338,30 @@ def _make_high_instance(model, trajectory, index: int, seed: int) -> dict[str, A
         "reference_min_distance": float(min(row["distance"] for row in rows)),
         "reference_risk_time": 0.0,
         "reference_nearest_link": link,
+        "conflict_time_source": "immediate_at_zero",
+        "generation_valid": True,
+        "generation_attempts": 1,
+        "generation_failure_reasons": [],
     }
 
 
-def generate_instances(model, trajectory, output_dir: Path, *, smoke: bool = False, gate: bool = False) -> list[dict[str, Any]]:
+def generate_instances(
+    model,
+    trajectory,
+    output_dir: Path,
+    *,
+    smoke: bool = False,
+    gate: bool = False,
+    formal: bool = False,
+) -> list[dict[str, Any]]:
+    """Generate replay instances.
+
+    Parameters
+    ----------
+    formal : bool
+        If True, instances that do not pass method-independent filters raise
+        ``RuntimeError`` instead of being silently included as fallback.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     instances: list[dict[str, Any]] = []
     d1_per_speed = 1 if smoke else (2 if gate else cfg.D1_MAIN_INSTANCES_PER_SPEED)
@@ -335,12 +386,19 @@ def generate_instances(model, trajectory, output_dir: Path, *, smoke: bool = Fal
                     repeat_index=repeat,
                     seed=seed,
                 )
+                if formal and not instance.get("generation_valid", True):
+                    raise RuntimeError(
+                        f"formal generation failed for {instance['instance_id']}: "
+                        f"{instance.get('generation_failure_reasons', [])}"
+                    )
                 instances.append(instance)
                 index += 1
     for index in range(calibration):
-        instances.append(_make_far_instance(model, trajectory, index, cfg.RANDOM_SEED + 3000 + index * 37))
+        instance = _make_far_instance(model, trajectory, index, cfg.RANDOM_SEED + 3000 + index * 37)
+        instances.append(instance)
     for index in range(calibration):
-        instances.append(_make_high_instance(model, trajectory, index, cfg.RANDOM_SEED + 4000 + index * 37))
+        instance = _make_high_instance(model, trajectory, index, cfg.RANDOM_SEED + 4000 + index * 37)
+        instances.append(instance)
     for item in instances:
         write_json(output_dir / f"{item['instance_id']}.json", item)
     return instances

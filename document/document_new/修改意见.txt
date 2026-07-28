@@ -1,41 +1,130 @@
-已按这份分析做了 P0 级修正，没有启动完整 D1/D2 Stage-A。
+这份分析的判断是对的，而且比上一轮更进一步：**当前瓶颈已经不是 D1 障碍物时刻调得不合适，而是 Stage-A 不能再依赖原 8 s 全局参考轨迹。**
 
-这轮重点改了：
+核心结论如下。
 
-- [candidate_replay_64.py](/home/hzy/Code/manipulator_occupancy/experiments/new/6_4/candidate_replay_64.py:105)
-  - `conflict_time` 改为优先使用 `first_accept_violation_time`。
-  - `switch delay` 改为 `min(6.0, lead_time - 1.0)`。
-  - `ShiftedForecast` 使用实际 switch delay，不再固定 6 s。
-  - 禁止末端裁剪伪样本：`resume_tau > T_ref` 标记为 `invalid_replay_window`。
-  - 禁止零运动窗口：`q_goal ≈ q_now` 标记 invalid。
-  - Critical 与 CCRO 只在优化风险表示上不同，在线 gate 共用 medium Mesh verifier。
-  - 新增 `usable`：必须 ready-before-switch、solver success、dense geometric feasible。
-  - 新增 common dense reference/candidate 净空与 `delta_min_distance_dense`。
-  - 汇总加入 `speed_group`，支持后续 speed × lead 能力图。
-- [g0_audit_64.py](/home/hzy/Code/manipulator_occupancy/experiments/new/6_4/g0_audit_64.py:91)
-  - 新增 switch outcome attribution：
-    - `State mismatch`
-    - `Forecast stale`
-    - `Slot invalidated`
-    - `Deadline failure`
-    - `No benefit`
-    - `Accepted`
-  - 明确事件数只用于机制诊断，正式成功率不能按 event 当独立样本统计。
-- [scenarios_64.py](/home/hzy/Code/manipulator_occupancy/experiments/new/6_4/scenarios_64.py:71)
-  - 新实例保存：
-    - `first_accept_violation_time`
-    - `first_stop_violation_time`
-    - `time_of_min_distance`
-    - `min_reference_distance`
-- 实施计划文档已标记旧方案 deprecated，避免继续按旧的 `0.06/0.09/0.12`、`Reference-only/SSM/CCRO`、110 次闭环方案执行。
+**1. smoke v2 全 invalid 是正确结果，不是坏结果**
 
-已验证：
-- `compileall` 通过。
-- 重新跑了 G0：
-  - [table_6_4_g0_consistency_audit.md](/home/hzy/Code/manipulator_occupancy/results/new/6_4_final_gate/mechanism_d1/paper/table_6_4_g0_consistency_audit.md:1)
-- 跑了 D1 smoke v2：
-  - [table_6_4_candidate_replay.md](/home/hzy/Code/manipulator_occupancy/results/new/6_4_candidate_replay_d1_smoke_v2/paper/table_6_4_candidate_replay.md:1)
+现在 `candidate_replay_64.py` 已经能拒绝三类伪样本：
 
-smoke v2 的关键结论：当前 D1 replay 样本全部被判为 `invalid_replay_window`，主要是 `clipped_local_horizon`。这不是 CCRO 或 Critical 的失败，而是旧 D1 场景/8s 参考轨迹与“switch slot + 4s local horizon”不兼容；上一版 smoke 的 Short 可行率确实包含终点静止伪现象。
+- switch/resume 被裁剪到参考轨迹末端；
+- Short 组退化成终点静止；
+- lead time 与实际 switch delay 不一致。
 
-因此现在正确下一步是建立 G1 简单可行开发集或新的方法无关 replay 实例生成器，而不是直接跑完整 D1/D2 Stage-A。
+所以 `valid=0, invalid=1` 说明上一版 smoke 的 Long/Medium/Short 可行率确实不可解释，尤其 Short 的可行率包含“障碍物过去后终点保持安全”的伪成功。
+
+**2. 8 s 参考轨迹数学上承载不了当前能力边界设计**
+
+当前约束是：
+
+- `T_ref = 8 s`
+- `H_local = 4 s`
+- `guard = 1 s`
+- Long lead = 7.5 s
+- Medium lead = 6.0 s
+- Short lead = 4.5 s
+
+要同时满足：
+
+```text
+trigger_time >= 0
+switch_time + H_local <= T_ref
+```
+
+Long 和 Medium 在 8 s 参考轨迹下无解；Short 只有非常窄的合法窗口。因此继续改 D1 风险时刻没有意义，除非改掉 Stage-A 的实验形式。
+
+**3. 下一步应该改为独立局部候选回放**
+
+Stage-A 的目标只是比较：
+
+```text
+Critical-point-NUBS vs CCRO-NUBS
+```
+
+在相同局部起点、局部终点、障碍预测、预算和 Mesh gate 下的候选生成能力。
+
+所以 Stage-A 应新增一个局部 replay 实例生成器，例如：
+
+```text
+experiments/new/6_4/replay_instances_64.py
+```
+
+每个实例直接保存：
+
+```text
+switch_q / switch_qd / switch_qdd
+local_goal_q / local_goal_qd / local_goal_qdd
+local_horizon = 4.0
+obstacle_center_at_trigger
+obstacle_velocity
+obstacle_radius
+lead_time
+switch_delay
+conflict_time_after_switch
+```
+
+这样不再受 8 s 全局参考末端限制。
+
+**4. G1 Easy 集应基于同一个局部生成器**
+
+不要手工挑“CCRO 容易成功”的 10 个例子。G1 和正式 Stage-A 应共享实例生成逻辑，只是随机种子和难度区间不同。
+
+G1 建议：
+
+```text
+v = 0.15 m/s
+lead = 7.5 s
+n = 10
+```
+
+Go 条件可固定为：
+
+- CCRO usable ≥ 8/10；
+- CCRO beneficial ≥ 6/10；
+- online pass / dense fail = 0；
+- wall-clock P95 小于 switch slot；
+- 不出现大规模 0-iteration 或终点保持。
+
+G1 不进入论文主统计，只验证优化-验收链路闭合。
+
+**5. Stage-B 闭环需要单独设计 12 s 任务**
+
+完整闭环确实需要更长参考任务，但不建议简单把 8 s 轨迹等比例拉到 12 s。更合理的是新增一个 12 s 两阶段 NUBS 任务，使路径长度增加，同时保持峰值速度/加速度与原任务相近。
+
+Stage-B 才使用这个长任务；Stage-A 则用独立 4 s 局部 replay。
+
+**6. 当前 G0 对闭环状态机还有明确要求**
+
+G0 attribution 里：
+
+- `state_mismatch = 9`
+- `slot_invalidated = 2`
+- `forecast_stale = 1`
+- `accepted = 0`
+
+说明 Stage-B 前必须加规则：
+
+```text
+safety hold during pending
+=> invalidate pending candidate
+=> 恢复后重新提交
+```
+
+否则候选起点状态会被 hold 打断后继续拿去切换，导致连续性失败。
+
+**建议执行顺序**
+
+```text
+1. 新增局部 replay 实例生成器
+2. 跑 G1 Easy 10 例
+3. 跑 Stage-A smoke v3
+4. 再跑完整 Stage-A
+5. 设计 12 s 闭环参考任务
+6. 再进入 Stage-B 闭环
+```
+
+当前不要做两件事：
+
+- 不要继续调 D1 障碍物时刻；
+- 不要直接把 8 s 轨迹拉长到 12 s 后重跑。
+
+现在最关键的修改对象是：**Stage-A 从“全局轨迹截取回放”改成“方法无关的 4 s 局部候选回放实例”。**

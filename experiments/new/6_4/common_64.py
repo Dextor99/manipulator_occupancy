@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -480,3 +482,44 @@ def git_commit_hash() -> str | None:
         ).strip()
     except Exception:
         return None
+
+
+def git_is_dirty() -> bool:
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--quiet"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode != 0
+    except Exception:
+        return True
+
+
+def file_sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except Exception:
+        return None
+
+
+def manifest_meta(extra_source_paths: list[Path] | None = None) -> dict[str, Any]:
+    meta: dict[str, Any] = {
+        "git_commit": git_commit_hash(),
+        "git_dirty": git_is_dirty(),
+        "run_timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    extra_source_paths = extra_source_paths or []
+    config_yaml = Path(__file__).resolve().parent / "config_64.yaml"
+    if config_yaml.exists():
+        meta["config_sha256"] = file_sha256(config_yaml)
+    source_shas: dict[str, str | None] = {}
+    for src_path in [Path(__file__)] + extra_source_paths:
+        try:
+            source_shas[src_path.name] = file_sha256(src_path)
+        except Exception:
+            pass
+    if source_shas:
+        meta["source_files_sha256"] = source_shas
+    return meta

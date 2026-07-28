@@ -88,16 +88,32 @@ def _slot_invalidated(event: dict[str, Any]) -> bool:
     )
 
 
-def switch_outcome_attribution(events: list[dict[str, Any]]) -> dict[str, int]:
+def _all_holds_invalidate(
+    event: dict[str, Any],
+    hold_times: list[float] | None,
+) -> bool:
+    """Check if ANY hold interval overlaps the pending window."""
+    if not hold_times:
+        return False
+    submit_ts = float(event.get("submitted_timestamp", math.inf))
+    planned_switch_ts = float(event.get("planned_switch_timestamp", -math.inf))
+    for hold in hold_times:
+        if submit_ts <= float(hold) <= planned_switch_ts:
+            return True
+    return False
+
+
+def switch_outcome_attribution(events: list[dict[str, Any]], hold_times_by_trial: dict[str, list[float]] | None = None) -> dict[str, int]:
     counts = {
         "accepted": 0,
         "deadline_failure": 0,
         "slot_invalidated": 0,
-        "state_mismatch": 0,
+        "candidate_unsafe_at_submission": 0,
         "forecast_stale": 0,
         "no_benefit": 0,
         "other_rejection": 0,
     }
+    hold_times_by_trial = hold_times_by_trial or {}
     for event in events:
         if bool(event.get("candidate_accepted")):
             counts["accepted"] += 1
@@ -105,16 +121,28 @@ def switch_outcome_attribution(events: list[dict[str, Any]]) -> dict[str, int]:
         if float(event.get("completed_timestamp", math.inf)) > float(event.get("deadline_timestamp", -math.inf)):
             counts["deadline_failure"] += 1
             continue
-        if _slot_invalidated(event):
+        trial_id = event.get("trial_id")
+        trial_hold_times = hold_times_by_trial.get(trial_id, [])
+        if _all_holds_invalidate(event, trial_hold_times) or _slot_invalidated(event):
             counts["slot_invalidated"] += 1
             continue
-        checks = (event.get("switch_validation") or {}).get("checks") or {}
-        continuity_ok = bool(checks.get("continuity_q_ok", False)) and bool(checks.get("continuity_qd_ok", False)) and bool(checks.get("continuity_qdd_ok", False))
-        distance_ok = bool(checks.get("distance_ok", False))
-        reference_gate_ok = bool(checks.get("reference_gate_ok", False))
-        if not continuity_ok:
+        submission_checks = (event.get("submission_validation") or {}).get("checks") or {}
+        submission_distance_ok = bool(submission_checks.get("distance_ok", False))
+        switch_checks = (event.get("switch_validation") or {}).get("checks") or {}
+        switch_continuity_ok = (
+            bool(switch_checks.get("continuity_q_ok", False))
+            and bool(switch_checks.get("continuity_qd_ok", False))
+            and bool(switch_checks.get("continuity_qdd_ok", False))
+        )
+        switch_distance_ok = bool(switch_checks.get("distance_ok", False))
+        reference_gate_ok = bool(switch_checks.get("reference_gate_ok", False))
+        if not switch_continuity_ok:
             counts["state_mismatch"] += 1
-        elif not distance_ok:
+        elif not submission_distance_ok:
+            # Candidate was already unsafe at submission time — not forecast staleness
+            counts["candidate_unsafe_at_submission"] += 1
+        elif not switch_distance_ok:
+            # Was safe at submission, became unsafe by switch → genuine forecast staleness
             counts["forecast_stale"] += 1
         elif not reference_gate_ok:
             counts["no_benefit"] += 1
@@ -153,6 +181,23 @@ def candidate_funnel(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def consistency_audit(trials: list[dict[str, Any]], dense: dict[str, Any]) -> dict[str, Any]:
     events = _events(trials)
+    # Build hold-times lookup: trial_id -> list of hold timestamps
+    hold_times_by_trial: dict[str, list[float]] = {}
+    for trial in trials:
+        trial_id = trial.get("trial_id")
+        if trial_id is None:
+            continue
+        hold_times: list[float] = []
+        # Include all safety hold events from the timeline
+        first_hold = trial.get("first_safety_hold_time")
+        if first_hold is not None:
+            hold_times.append(float(first_hold))
+        # Collect additional holds from events
+        for event in trial.get("events", []):
+            if event.get("safety_hold_triggered") and event.get("timestamp") is not None:
+                hold_times.append(float(event["timestamp"]))
+        if hold_times:
+            hold_times_by_trial[trial_id] = sorted(set(hold_times))
     accepted_events = [event for event in events if event.get("candidate_accepted")]
     online_pass_gt_violation = [
         event["trial_id"]
@@ -204,7 +249,7 @@ def consistency_audit(trials: list[dict[str, Any]], dense: dict[str, Any]) -> di
             "online_pass_gt_violation_trial_ids": online_pass_gt_violation,
         },
         "candidate_funnel": candidate_funnel(events),
-        "switch_outcome_attribution": switch_outcome_attribution(events),
+        "switch_outcome_attribution": switch_outcome_attribution(events, hold_times_by_trial),
         "go_no_go": {
             "formal_full_run": False,
             "reason": "Run candidate replay and a simple feasible validation set before any new closed-loop formal test.",
@@ -248,7 +293,8 @@ def write_g0_table(audit: dict[str, Any], path: Path) -> None:
             f"| Deadline failure | {outcome['deadline_failure']} | candidate completed after deadline |",
             f"| Slot invalidated | {outcome['slot_invalidated']} | safety hold occurred while candidate was pending |",
             f"| State mismatch | {outcome['state_mismatch']} | switch continuity gate failed |",
-            f"| Forecast stale | {outcome['forecast_stale']} | continuity passed but distance gate failed |",
+            f"| Candidate unsafe at submission | {outcome['candidate_unsafe_at_submission']} | submission distance gate failed — optimizer did not fix risk |",
+            f"| Forecast stale | {outcome['forecast_stale']} | safe at submission, unsafe at switch — prediction drifted |",
             f"| No benefit | {outcome['no_benefit']} | continuity and distance passed but reference-benefit gate failed |",
             f"| Other rejection | {outcome['other_rejection']} | remaining switch-gate failures |",
             "",

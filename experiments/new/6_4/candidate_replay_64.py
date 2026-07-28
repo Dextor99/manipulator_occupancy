@@ -4,6 +4,12 @@ This script isolates candidate generation from the closed-loop pending state
 machine.  It replays fixed trigger/switch states and compares Critical-NUBS
 and CCRO-NUBS under identical forecasts, budgets, continuity checks, and
 online/dense validation.
+
+Key design:
+  - Observed forecast  → optimizer + online verifier
+  - GT forecast        → dense GT verification (ground-truth obstacle motion)
+  - Multi-level funnel replaces single "usable" flag
+  - Uniform post-switch conflict time (POST_SWITCH_CONFLICT_TIME = 1.5 s)
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from .common_64 import (
     make_critical_risk_stack,
     make_reference,
     make_risk_stack,
+    manifest_meta,
     optimize_candidate,
     write_json,
 )
@@ -57,6 +64,7 @@ def _reference_local_min_distance(
     *,
     density: str,
 ) -> float:
+    """Evaluate reference trajectory min distance over the local horizon."""
     count = max(3, int(math.ceil(float(duration) / cfg.DT)) + 1)
     best = math.inf
     for delta in np.linspace(0.0, float(duration), count):
@@ -66,7 +74,14 @@ def _reference_local_min_distance(
     return float(best)
 
 
-def _observed_at_trigger(instance: dict[str, Any], trigger_time: float) -> tuple[np.ndarray, np.ndarray, float]:
+def _observed_and_gt_at_trigger(
+    instance: dict[str, Any],
+    trigger_time: float,
+) -> tuple[
+    tuple[np.ndarray, np.ndarray, float],  # observed (center, velocity, radius)
+    tuple[np.ndarray, np.ndarray, float],  # GT     (center, velocity, radius)
+]:
+    """Build both observed (noisy) and GT (truth) obstacle state at trigger time."""
     gt_center0 = np.asarray(instance["gt_center0"], dtype=np.float64)
     gt_velocity = np.asarray(instance["gt_velocity"], dtype=np.float64)
     gt_radius = float(instance["gt_radius"])
@@ -76,18 +91,136 @@ def _observed_at_trigger(instance: dict[str, Any], trigger_time: float) -> tuple
         if instance.get("pre_motion_center") is None
         else np.asarray(instance["pre_motion_center"], dtype=np.float64)
     )
-    center = obstacle_center_at(gt_center0, gt_velocity, trigger_time, motion_start_time, pre_motion_center)
-    velocity = obstacle_velocity_at(gt_velocity, trigger_time, motion_start_time)
-    rng = np.random.default_rng(int(instance["observation_seed"]) + int(round(100.0 * trigger_time)))
-    if float(np.linalg.norm(velocity)) < 1.0e-9:
-        measured_velocity = np.zeros(3, dtype=np.float64)
-    else:
-        measured_velocity = velocity + rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3)
-    return (
-        center + rng.normal(0.0, cfg.OBS_POS_SIGMA, size=3),
-        measured_velocity,
-        max(0.025, float(gt_radius + rng.normal(0.0, cfg.OBS_RADIUS_SIGMA))),
+
+    # GT obstacle position and velocity at trigger time
+    gt_center = obstacle_center_at(gt_center0, gt_velocity, trigger_time, motion_start_time, pre_motion_center)
+    gt_vel = obstacle_velocity_at(gt_velocity, trigger_time, motion_start_time)
+    gt_obs = (gt_center, gt_vel, gt_radius)
+
+    # Noisy observed version
+    obs_center0 = np.asarray(instance["observed_center0"], dtype=np.float64)
+    obs_velocity = np.asarray(instance["observed_velocity"], dtype=np.float64)
+    obs_radius = float(instance["observed_radius"])
+    obs_center = obstacle_center_at(obs_center0, obs_velocity, trigger_time, motion_start_time, pre_motion_center)
+    obs_vel = obstacle_velocity_at(obs_velocity, trigger_time, motion_start_time)
+    # Inject per-call noise for velocity (only when OBS_VEL_SIGMA > 0)
+    rng = np.random.default_rng(int(instance.get("observation_seed", 0)) + int(round(100.0 * trigger_time)))
+    if float(np.linalg.norm(obs_vel)) >= 1.0e-9 and cfg.OBS_VEL_SIGMA > 0.0:
+        obs_vel = obs_vel + rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3)
+    if cfg.OBS_POS_SIGMA > 0.0:
+        obs_center = obs_center + rng.normal(0.0, cfg.OBS_POS_SIGMA, size=3)
+    obs_radius = max(0.025, float(obs_radius))
+    obs_obs = (obs_center, obs_vel, obs_radius)
+
+    return obs_obs, gt_obs
+
+
+def _check_motion_norm(
+    q_now: np.ndarray,
+    q_goal: np.ndarray,
+    instance: dict[str, Any],
+    method: str,
+    lead_label: str,
+    lead_time: float,
+    trigger_time: float,
+    conflict_time: float,
+    actual_switch_delay: float,
+    switch_tau: float,
+    resume_tau: float,
+    invalid_reasons: list[str],
+) -> dict[str, Any] | None:
+    """Return early-exit row if motion is too small, else None."""
+    motion_norm = float(np.linalg.norm(q_goal - q_now))
+    if motion_norm < cfg.MIN_REPLAY_MOTION_NORM:
+        return {
+            "instance_id": instance["instance_id"],
+            "scenario_type": instance["scenario_type"],
+            "method": method,
+            "lead_label": lead_label,
+            "lead_time_requested": float(lead_time),
+            "lead_time_actual": float(conflict_time - trigger_time),
+            "speed_group": instance.get("speed_group"),
+            "trigger_time": float(trigger_time),
+            "conflict_time": float(conflict_time),
+            "planned_switch_delay": float(actual_switch_delay),
+            "switch_tau": float(switch_tau),
+            "resume_tau": float(resume_tau),
+            "valid_replay_window": False,
+            "invalid_reasons": invalid_reasons + ["zero_motion_window"],
+            "motion_norm": motion_norm,
+        }
+    return None
+
+
+def _early_invalid_row(
+    instance: dict[str, Any],
+    method: str,
+    lead_label: str,
+    lead_time: float,
+    trigger_time: float,
+    conflict_time: float,
+    actual_switch_delay: float,
+    switch_tau: float,
+    resume_tau: float,
+    invalid_reasons: list[str],
+) -> dict[str, Any]:
+    """Build a row for an invalid replay window."""
+    return {
+        "instance_id": instance["instance_id"],
+        "scenario_type": instance["scenario_type"],
+        "method": method,
+        "lead_label": lead_label,
+        "lead_time_requested": float(lead_time),
+        "lead_time_actual": None,
+        "speed_group": instance.get("speed_group"),
+        "trigger_time": float(trigger_time),
+        "conflict_time": float(conflict_time),
+        "conflict_time_source": instance.get("conflict_time_source", "unknown"),
+        "planned_switch_delay": float(actual_switch_delay),
+        "switch_tau": float(switch_tau),
+        "resume_tau": float(resume_tau),
+        "valid_replay_window": False,
+        "invalid_reasons": invalid_reasons,
+    }
+
+
+def _build_funnel_metrics(
+    wall_elapsed_ms: float,
+    actual_switch_delay: float,
+    optimizer_success: bool,
+    online_accepted: bool,
+    beneficial_online: bool,
+    dense_gt_accepted: bool,
+    dense_gt_candidate_min: float,
+    dense_gt_reference_min: float,
+) -> dict[str, Any]:
+    """Build multi-level funnel metrics.
+
+    Levels (strictly cumulative):
+      1. ready_before_switch    — planner finished before deadline
+      2. online_acceptable      — ready + optimizer success + online distance OK
+      3. switch_eligible        — online_acceptable + beneficial (beats reference via online forecast)
+      4. dense_gt_safe          — GT forecast verification passes
+      5. dense_gt_beneficial    — candidate GT min > reference GT min + margin
+      6. candidate_success      — switch_eligible AND dense_gt_safe
+    """
+    ready_before_switch = bool(wall_elapsed_ms <= 1000.0 * actual_switch_delay)
+    online_acceptable = bool(ready_before_switch and optimizer_success and online_accepted)
+    switch_eligible = bool(online_acceptable and beneficial_online)
+    dense_gt_safe = bool(dense_gt_accepted)
+    dense_gt_beneficial = bool(
+        dense_gt_safe
+        and dense_gt_candidate_min >= dense_gt_reference_min + cfg.SWITCH_IMPROVEMENT_MARGIN
     )
+    candidate_success = bool(switch_eligible and dense_gt_safe)
+    return {
+        "ready_before_switch": ready_before_switch,
+        "online_acceptable": online_acceptable,
+        "switch_eligible": switch_eligible,
+        "dense_gt_safe": dense_gt_safe,
+        "dense_gt_beneficial": dense_gt_beneficial,
+        "candidate_success": candidate_success,
+    }
 
 
 def replay_one(
@@ -101,17 +234,45 @@ def replay_one(
     method: str,
     lead_label: str,
     lead_time: float,
+    *,
+    formal: bool = False,
 ) -> dict[str, Any]:
+    """Run one candidate replay trial.
+
+    Parameters
+    ----------
+    formal : bool
+        If True, strict validation: missing ``first_accept_violation_time`` is an
+        error (not a fallback to ``reference_risk_time``).
+    """
+    # --- Conflict time with optional fallback ---
     conflict_time = instance.get("first_accept_violation_time")
+    conflict_time_source = "first_accept_violation_time"
     if conflict_time is None:
+        if formal:
+            return _early_invalid_row(
+                instance, method, lead_label, lead_time,
+                trigger_time=-1.0,
+                conflict_time=-1.0,
+                actual_switch_delay=0.0,
+                switch_tau=-1.0,
+                resume_tau=-1.0,
+                invalid_reasons=["missing_first_accept_violation"],
+            )
         conflict_time = instance.get("reference_risk_time")
+        conflict_time_source = "reference_risk_time_fallback"
     if conflict_time is None:
         raise ValueError("candidate replay requires first_accept_violation_time or reference_risk_time")
+
+    # --- Timing ---
     trigger_time = float(conflict_time) - float(lead_time)
-    actual_switch_delay = min(cfg.PLANNED_SWITCH_DELAY, float(lead_time) - cfg.LEAD_TIME_GUARD)
+    # Uniform post-switch conflict guard: all lead groups see same local conflict time
+    actual_switch_delay = min(cfg.PLANNED_SWITCH_DELAY, float(lead_time) - cfg.POST_SWITCH_CONFLICT_TIME)
     optimization_budget_s = min(cfg.PLANNING_BUDGET, max(0.0, actual_switch_delay - 0.5))
     switch_tau = trigger_time + actual_switch_delay
     resume_tau = switch_tau + cfg.LOCAL_REPLAN_HORIZON
+
+    # --- Early invalidation checks ---
     invalid_reasons = []
     if trigger_time < 0.0:
         invalid_reasons.append("negative_trigger_time")
@@ -120,22 +281,14 @@ def replay_one(
     if resume_tau > reference.total_duration + 1.0e-9:
         invalid_reasons.append("clipped_local_horizon")
     if invalid_reasons:
-        return {
-            "instance_id": instance["instance_id"],
-            "scenario_type": instance["scenario_type"],
-            "method": method,
-            "lead_label": lead_label,
-            "lead_time_requested": float(lead_time),
-            "lead_time_actual": None,
-            "speed_group": instance.get("speed_group"),
-            "trigger_time": float(trigger_time),
-            "conflict_time": float(conflict_time),
-            "planned_switch_delay": float(actual_switch_delay),
-            "switch_tau": float(switch_tau),
-            "resume_tau": float(resume_tau),
-            "valid_replay_window": False,
-            "invalid_reasons": invalid_reasons,
-        }
+        return _early_invalid_row(
+            instance, method, lead_label, lead_time,
+            trigger_time, conflict_time,
+            actual_switch_delay, switch_tau, resume_tau,
+            invalid_reasons,
+        )
+
+    # --- Local boundaries ---
     remaining_duration = cfg.LOCAL_REPLAN_HORIZON
     q_now = reference.evaluate(switch_tau)
     qd_now = reference.evaluate(switch_tau, derivative_order=1)
@@ -143,34 +296,33 @@ def replay_one(
     q_goal = reference.evaluate(resume_tau)
     qd_goal = reference.evaluate(resume_tau, derivative_order=1)
     qdd_goal = reference.evaluate(resume_tau, derivative_order=2)
-    motion_norm = float(np.linalg.norm(q_goal - q_now))
-    if motion_norm < cfg.MIN_REPLAY_MOTION_NORM:
-        return {
-            "instance_id": instance["instance_id"],
-            "scenario_type": instance["scenario_type"],
-            "method": method,
-            "lead_label": lead_label,
-            "lead_time_requested": float(lead_time),
-            "lead_time_actual": float(float(conflict_time) - trigger_time),
-            "speed_group": instance.get("speed_group"),
-            "trigger_time": float(trigger_time),
-            "conflict_time": float(conflict_time),
-            "planned_switch_delay": float(actual_switch_delay),
-            "switch_tau": float(switch_tau),
-            "resume_tau": float(resume_tau),
-            "valid_replay_window": False,
-            "invalid_reasons": ["zero_motion_window"],
-            "motion_norm": motion_norm,
-        }
-    obs_center, obs_velocity, obs_radius = _observed_at_trigger(instance, trigger_time)
-    forecast = constant_forecast(obs_center, obs_velocity, obs_radius)
-    local_forecast = ShiftedForecast(forecast, actual_switch_delay, remaining_duration)
+
+    early = _check_motion_norm(
+        q_now, q_goal,
+        instance, method, lead_label, lead_time,
+        trigger_time, conflict_time, actual_switch_delay,
+        switch_tau, resume_tau, invalid_reasons,
+    )
+    if early is not None:
+        return early
+
+    # --- Dual forecasts: observed (noisy) vs GT (truth) ---
+    (obs_center, obs_velocity, obs_radius), (gt_center, gt_velocity, gt_radius) = \
+        _observed_and_gt_at_trigger(instance, trigger_time)
+
+    observed_forecast = constant_forecast(obs_center, obs_velocity, obs_radius)
+    observed_local_forecast = ShiftedForecast(observed_forecast, actual_switch_delay, remaining_duration)
+
+    gt_forecast = constant_forecast(gt_center, gt_velocity, gt_radius)
+    gt_local_forecast = ShiftedForecast(gt_forecast, actual_switch_delay, remaining_duration)
+
+    # --- Optimizer (uses OBSERVED forecast) ---
     started = time.perf_counter()
     candidate = optimize_candidate(
         config,
         evaluator,
         limits,
-        local_forecast,
+        observed_local_forecast,
         q_now=q_now,
         qd_now=qd_now,
         qdd_now=qdd_now,
@@ -184,54 +336,77 @@ def replay_one(
         optimization_budget_s=optimization_budget_s,
     )
     wall_elapsed_ms = float((time.perf_counter() - started) * 1000.0)
-    dense = dense_verifier.verify(
+
+    # --- Online verification (uses OBSERVED forecast) ---
+    online_min = float(candidate["verification"]["min_distance"])
+    optimizer_success = bool(candidate["optimization"]["success"])
+    online_accepted = bool(candidate["verification"]["accepted"])
+
+    # --- Online reference min (OBSERVED forecast) ---
+    online_reference_min = _reference_local_min_distance(
+        dense_verifier.risk_evaluator,
+        reference,
+        observed_local_forecast,
+        switch_tau,
+        remaining_duration,
+        density=cfg.SURFACE_DENSITY_VERIFY,
+    )
+
+    # --- Dense GT verification (uses GT forecast) ---
+    dense_gt = dense_verifier.verify(
         candidate["trajectory"],
-        local_forecast,
+        gt_local_forecast,
         current_q=q_now,
         current_qd=qd_now,
         current_qdd=qdd_now,
         q_goal=q_goal,
         solver_success=True,
     )
-    planner_internal_reference_min = _reference_local_min_distance(
-        evaluator,
-        reference,
-        local_forecast,
-        switch_tau,
-        remaining_duration,
-        density=cfg.SURFACE_DENSITY_VERIFY,
-    )
-    common_medium_reference_min = _reference_local_min_distance(
+    dense_gt_accepted = bool(dense_gt.accepted)
+    dense_gt_candidate_min = float(dense_gt.min_distance)
+
+    # --- Dense GT reference min (GT forecast) ---
+    dense_gt_reference_min = _reference_local_min_distance(
         dense_verifier.risk_evaluator,
         reference,
-        local_forecast,
-        switch_tau,
-        remaining_duration,
-        density=cfg.SURFACE_DENSITY_VERIFY,
-    )
-    common_dense_reference_min = _reference_local_min_distance(
-        dense_verifier.risk_evaluator,
-        reference,
-        local_forecast,
+        gt_local_forecast,
         switch_tau,
         remaining_duration,
         density="dense",
     )
-    online_min = float(candidate["verification"]["min_distance"])
-    ready_before_switch = wall_elapsed_ms <= 1000.0 * actual_switch_delay
-    optimizer_success = bool(candidate["optimization"]["success"])
-    dense_geometric_feasible = bool(dense.accepted)
-    usable = bool(ready_before_switch and optimizer_success and dense_geometric_feasible)
+
+    # --- Benefit gate (online and GT versions) ---
+    beneficial_online = bool(online_min >= online_reference_min + cfg.SWITCH_IMPROVEMENT_MARGIN)
+    beneficial_dense_gt = bool(
+        dense_gt_candidate_min >= dense_gt_reference_min + cfg.SWITCH_IMPROVEMENT_MARGIN
+    )
+
+    # --- Multi-level funnel metrics ---
+    funnel = _build_funnel_metrics(
+        wall_elapsed_ms=wall_elapsed_ms,
+        actual_switch_delay=actual_switch_delay,
+        optimizer_success=optimizer_success,
+        online_accepted=online_accepted,
+        beneficial_online=beneficial_online,
+        dense_gt_accepted=dense_gt_accepted,
+        dense_gt_candidate_min=dense_gt_candidate_min,
+        dense_gt_reference_min=dense_gt_reference_min,
+    )
+
     return {
+        # --- Identification ---
         "instance_id": instance["instance_id"],
         "scenario_type": instance["scenario_type"],
         "method": method,
         "lead_label": lead_label,
         "lead_time_requested": float(lead_time),
-        "lead_time_actual": float(float(conflict_time) - trigger_time),
+        "lead_time_actual": float(conflict_time - trigger_time),
         "speed_group": instance.get("speed_group"),
+
+        # --- Timing ---
         "trigger_time": float(trigger_time),
         "conflict_time": float(conflict_time),
+        "conflict_time_source": conflict_time_source,
         "reference_risk_time": float(instance.get("reference_risk_time", conflict_time)),
         "planned_switch_delay": float(actual_switch_delay),
         "optimization_budget_s": float(optimization_budget_s),
@@ -239,34 +414,40 @@ def replay_one(
         "resume_tau": float(resume_tau),
         "valid_replay_window": True,
         "invalid_reasons": [],
-        "motion_norm": motion_norm,
-        "planner_finished": True,
-        "within_budget": float(candidate["optimization"]["elapsed_ms"]) <= 1000.0 * optimization_budget_s,
-        "ready_before_switch": ready_before_switch,
+        "motion_norm": float(np.linalg.norm(q_goal - q_now)),
+        "wall_elapsed_ms": wall_elapsed_ms,
         "deadline_slack_ms": float(1000.0 * actual_switch_delay - wall_elapsed_ms),
+
+        # --- Multi-level funnel ---
+        **funnel,
+
+        # --- Online verification (observed forecast) ---
+        "within_budget": float(candidate["optimization"]["elapsed_ms"]) <= 1000.0 * optimization_budget_s,
+        "planner_finished": True,
         "optimizer_converged": optimizer_success,
-        "online_feasible": bool(candidate["verification"]["accepted"]),
-        "dense_geometric_feasible": dense_geometric_feasible,
-        "usable": usable,
+        "online_feasible": online_accepted,
+        "online_min_distance": online_min,
+        "online_reference_min_distance": float(online_reference_min),
+        "online_beneficial": beneficial_online,
+        "delta_min_distance_online": float(online_min - online_reference_min),
         "continuity_pass": bool(candidate["verification"]["checks"].get("continuity_q_ok", False)),
         "online_distance_pass": bool(candidate["verification"]["checks"].get("distance_ok", False)),
-        "dense_distance_pass": bool(dense.checks.get("distance_ok", False)),
-        "planner_internal_reference_min": float(planner_internal_reference_min),
-        "planner_internal_candidate_min": online_min,
-        "common_medium_reference_min": float(common_medium_reference_min),
-        "common_medium_candidate_min": online_min,
-        "common_dense_reference_min": float(common_dense_reference_min),
-        "common_dense_candidate_min": float(dense.min_distance),
-        "delta_min_distance_online": float(online_min - common_medium_reference_min),
-        "delta_min_distance_dense": float(dense.min_distance - common_dense_reference_min),
-        "beneficial": bool(float(dense.min_distance) >= common_dense_reference_min + cfg.SWITCH_IMPROVEMENT_MARGIN),
-        "optimizer_core_ms": float(candidate["optimization"]["elapsed_ms"]),
-        "verification_ms": float(candidate["verification"]["validation_ms"] + dense.validation_ms),
-        "candidate_ready_wall_ms": wall_elapsed_ms,
-        "elapsed_ms": float(candidate["optimization"]["elapsed_ms"]),
-        "wall_elapsed_ms": wall_elapsed_ms,
         "reasons": candidate["verification"]["reasons"],
-        "dense_reasons": dense.reasons,
+
+        # --- Dense GT verification (GT forecast) ---
+        "dense_gt_feasible": dense_gt_accepted,
+        "dense_gt_distance_pass": bool(dense_gt.checks.get("distance_ok", False)),
+        "dense_gt_candidate_min": dense_gt_candidate_min,
+        "dense_gt_reference_min": dense_gt_reference_min,
+        "dense_gt_beneficial": beneficial_dense_gt,
+        "delta_min_distance_dense_gt": float(dense_gt_candidate_min - dense_gt_reference_min),
+        "dense_reasons": dense_gt.reasons,
+
+        # --- Resource ---
+        "optimizer_core_ms": float(candidate["optimization"]["elapsed_ms"]),
+        "online_verification_ms": float(candidate["verification"].get("validation_ms", 0.0)),
+        "dense_gt_verification_ms": float(dense_gt.validation_ms),
+        "candidate_ready_wall_ms": wall_elapsed_ms,
         "optimization": candidate["optimization"],
     }
 
@@ -289,14 +470,23 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "n": len(items),
                 "valid": len(valid),
                 "invalid": invalid,
-                "within_budget": float(np.mean([item["within_budget"] for item in valid])) if valid else None,
+                # Funnel metrics (multi-level)
                 "ready_before_switch": float(np.mean([item["ready_before_switch"] for item in valid])) if valid else None,
+                "online_acceptable": float(np.mean([item["online_acceptable"] for item in valid])) if valid else None,
+                "switch_eligible": float(np.mean([item["switch_eligible"] for item in valid])) if valid else None,
+                "dense_gt_safe": float(np.mean([item["dense_gt_safe"] for item in valid])) if valid else None,
+                "dense_gt_beneficial": float(np.mean([item["dense_gt_beneficial"] for item in valid])) if valid else None,
+                "candidate_success": float(np.mean([item["candidate_success"] for item in valid])) if valid else None,
+                # Legacy fields for backward compat
+                "within_budget": float(np.mean([item["within_budget"] for item in valid])) if valid else None,
                 "optimizer_converged": float(np.mean([item["optimizer_converged"] for item in valid])) if valid else None,
                 "online_feasible": float(np.mean([item["online_feasible"] for item in valid])) if valid else None,
-                "dense_geometric_feasible": float(np.mean([item["dense_geometric_feasible"] for item in valid])) if valid else None,
-                "usable": float(np.mean([item["usable"] for item in valid])) if valid else None,
-                "beneficial": float(np.mean([item["beneficial"] for item in valid])) if valid else None,
-                "delta_min_distance_dense": float(np.mean([item["delta_min_distance_dense"] for item in valid])) if valid else None,
+                "usable": float(np.mean([item["online_acceptable"]
+                                          and item["dense_gt_feasible"]
+                                          for item in valid])) if valid else None,
+                "beneficial": float(np.mean([item["online_beneficial"] for item in valid])) if valid else None,
+                "dense_gt_beneficial_agg": float(np.mean([item["dense_gt_beneficial"] for item in valid])) if valid else None,
+                "delta_min_distance_dense_gt": float(np.mean([item["delta_min_distance_dense_gt"] for item in valid])) if valid else None,
                 "candidate_ready_wall_ms_p95": float(np.percentile([item["candidate_ready_wall_ms"] for item in valid], 95)) if valid else None,
                 "optimizer_core_ms_p95": float(np.percentile([item["optimizer_core_ms"] for item in valid], 95)) if valid else None,
             }
@@ -306,18 +496,19 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def write_replay_table(summary: list[dict[str, Any]], path: Path) -> None:
     lines = [
-        "| scenario | speed | lead | method | n | valid | invalid | within budget | ready before switch | converged | online feasible | dense geom feasible | usable | beneficial | delta Dmin dense / m | ready wall p95 / ms | opt core p95 / ms |",
-        "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| scenario | speed | lead | method | n | valid | invalid | ready | online_accept | switch_elig | dense_gt_safe | gt_beneficial | candidate_success | delta Dmin GT / m | ready wall p95 / ms |",
+        "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in summary:
         lines.append(
-            f"| {row['scenario_type']} | {row['speed_group']} | {row['lead_label']} | {cfg.METHOD_NAMES.get(row['method'], row['method'])} | "
-            f"{row['n']} | {row['valid']} | {row['invalid']} | {_fmt(row['within_budget'], 2)} | "
-            f"{_fmt(row['ready_before_switch'], 2)} | {_fmt(row['optimizer_converged'], 2)} | "
-            f"{_fmt(row['online_feasible'], 2)} | {_fmt(row['dense_geometric_feasible'], 2)} | "
-            f"{_fmt(row['usable'], 2)} | {_fmt(row['beneficial'], 2)} | "
-            f"{_fmt(row['delta_min_distance_dense'])} | {_fmt(row['candidate_ready_wall_ms_p95'], 1)} | "
-            f"{_fmt(row['optimizer_core_ms_p95'], 1)} |"
+            f"| {row['scenario_type']} | {row['speed_group']} | {row['lead_label']} | "
+            f"{cfg.METHOD_NAMES.get(row['method'], row['method'])} | "
+            f"{row['n']} | {row['valid']} | {row['invalid']} | "
+            f"{_fmt(row['ready_before_switch'], 2)} | {_fmt(row['online_acceptable'], 2)} | "
+            f"{_fmt(row['switch_eligible'], 2)} | {_fmt(row['dense_gt_safe'], 2)} | "
+            f"{_fmt(row['dense_gt_beneficial'], 2)} | {_fmt(row['candidate_success'], 2)} | "
+            f"{_fmt(row['delta_min_distance_dense_gt'])} | "
+            f"{_fmt(row['candidate_ready_wall_ms_p95'], 1)} |"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -330,6 +521,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario", choices=["D1", "D2M"], default="D1")
     parser.add_argument("--method", choices=["critical_point_nubs", "ccro_nubs"], default=None)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--g1", action="store_true", help="G1 deterministic mode (zero noise)")
+    parser.add_argument("--formal", action="store_true", help="Formal Stage-A mode (strict validation)")
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
 
@@ -343,6 +536,14 @@ def main() -> None:
     trials_dir.mkdir(parents=True, exist_ok=True)
     paper_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(Path(__file__).with_name("config_64.yaml"), output / "config_64.yaml")
+
+    # --- Override observation noise for G1 deterministic mode ---
+    if args.g1:
+        import experiments.new  # noqa: F811
+        experiments.new._6_4.config_64.OBS_POS_SIGMA = 0.0
+        experiments.new._6_4.config_64.OBS_VEL_SIGMA = 0.0
+        experiments.new._6_4.config_64.OBS_RADIUS_SIGMA = 0.0
+
     config = load_stage4_config(Path(args.config))
     model = load_surface_model(config)
     reference, _, _, _ = make_reference(config)
@@ -360,7 +561,9 @@ def main() -> None:
         epsilon_continuity_qdd=3.0e-3,
         limit_tolerance=1.0e-8,
     )
-    instances = generate_instances(model, reference, output / "instances", smoke=args.smoke, gate=args.smoke)
+    instances = generate_instances(
+        model, reference, output / "instances", smoke=args.smoke, gate=args.smoke,
+    )
     instances = [item for item in instances if item["instance_id"].startswith(args.scenario + "_")]
     methods = (args.method,) if args.method else ("critical_point_nubs", "ccro_nubs")
     rows: list[dict[str, Any]] = []
@@ -384,28 +587,43 @@ def main() -> None:
                         method,
                         lead_label,
                         lead_time,
+                        formal=args.formal,
                     )
                     write_json(path, row)
                 rows.append(row)
                 if row.get("valid_replay_window", True):
                     print(
-                        f"[6.4 replay] {row['instance_id']} {row['lead_label']} {cfg.METHOD_NAMES.get(method, method)} "
-                        f"online={row['online_feasible']} dense={row['dense_geometric_feasible']} "
-                        f"usable={row['usable']} dD_dense={row['delta_min_distance_dense']:.3f}"
+                        f"[6.4 replay] {row['instance_id']} {row['lead_label']} "
+                        f"{cfg.METHOD_NAMES.get(method, method)} "
+                        f"success={row['candidate_success']} "
+                        f"eligible={row['switch_eligible']} "
+                        f"dense_gt_safe={row['dense_gt_safe']} "
+                        f"online={row['online_feasible']} "
+                        f"dD_gt={row['delta_min_distance_dense_gt']:.3f}"
                     )
                 else:
                     print(
-                        f"[6.4 replay] {row['instance_id']} {row['lead_label']} {cfg.METHOD_NAMES.get(method, method)} "
+                        f"[6.4 replay] {row['instance_id']} {row['lead_label']} "
+                        f"{cfg.METHOD_NAMES.get(method, method)} "
                         f"invalid={'+'.join(row.get('invalid_reasons', []))}"
                     )
     summary = _aggregate(rows)
+    meta = manifest_meta(extra_source_paths=[
+        Path(__file__),
+        Path(__file__).with_name("scenarios_64.py"),
+        Path(__file__).with_name("common_64.py"),
+        Path(__file__).with_name("config_64.py"),
+    ])
     metrics = {
         "experiment": "6.4 stage-A candidate replay",
         "scope": "candidate generation only; no closed-loop execution",
-        "git_commit": git_commit_hash(),
+        "g1_mode": bool(args.g1),
+        "formal_mode": bool(args.formal),
+        **meta,
         "scenario": args.scenario,
         "methods": list(methods),
         "lead_time_groups": cfg.LEAD_TIME_GROUPS,
+        "post_switch_conflict_time_s": cfg.POST_SWITCH_CONFLICT_TIME,
         "trial_count": len(rows),
         "summary": summary,
         "trials": rows,
