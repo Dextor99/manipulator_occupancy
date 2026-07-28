@@ -9,6 +9,7 @@ online/dense validation.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import shutil
 import time
@@ -47,12 +48,20 @@ def _fmt(value: Any, digits: int = 3) -> str:
     return f"{number:.{digits}f}"
 
 
-def _reference_local_min_distance(evaluator, reference, forecast, switch_tau: float, duration: float) -> float:
+def _reference_local_min_distance(
+    evaluator,
+    reference,
+    forecast,
+    switch_tau: float,
+    duration: float,
+    *,
+    density: str,
+) -> float:
     count = max(3, int(math.ceil(float(duration) / cfg.DT)) + 1)
     best = math.inf
     for delta in np.linspace(0.0, float(duration), count):
         q = reference.evaluate(min(reference.total_duration, float(switch_tau) + float(delta)))
-        risk = evaluator.configuration(q, forecast, float(delta), density=cfg.SURFACE_DENSITY_VERIFY, with_gradient=False)
+        risk = evaluator.configuration(q, forecast, float(delta), density=density, with_gradient=False)
         best = min(best, float(risk.min_distance))
     return float(best)
 
@@ -93,26 +102,69 @@ def replay_one(
     lead_label: str,
     lead_time: float,
 ) -> dict[str, Any]:
-    reference_risk_time = instance.get("reference_risk_time")
-    if reference_risk_time is None:
-        raise ValueError("candidate replay requires reference_risk_time")
-    trigger_time = max(0.0, float(reference_risk_time) - float(lead_time))
-    planned_switch_delay = cfg.PLANNED_SWITCH_DELAY
-    switch_tau = min(reference.total_duration, trigger_time + planned_switch_delay)
-    resume_tau = min(reference.total_duration, switch_tau + cfg.LOCAL_REPLAN_HORIZON)
-    remaining_duration = min(
-        max(float(resume_tau - switch_tau), 1.2),
-        max(1.0, cfg.FORECAST_HORIZON - planned_switch_delay),
-    )
+    conflict_time = instance.get("first_accept_violation_time")
+    if conflict_time is None:
+        conflict_time = instance.get("reference_risk_time")
+    if conflict_time is None:
+        raise ValueError("candidate replay requires first_accept_violation_time or reference_risk_time")
+    trigger_time = float(conflict_time) - float(lead_time)
+    actual_switch_delay = min(cfg.PLANNED_SWITCH_DELAY, float(lead_time) - cfg.LEAD_TIME_GUARD)
+    optimization_budget_s = min(cfg.PLANNING_BUDGET, max(0.0, actual_switch_delay - 0.5))
+    switch_tau = trigger_time + actual_switch_delay
+    resume_tau = switch_tau + cfg.LOCAL_REPLAN_HORIZON
+    invalid_reasons = []
+    if trigger_time < 0.0:
+        invalid_reasons.append("negative_trigger_time")
+    if actual_switch_delay <= 0.0 or optimization_budget_s <= 0.0:
+        invalid_reasons.append("nonpositive_switch_or_budget")
+    if resume_tau > reference.total_duration + 1.0e-9:
+        invalid_reasons.append("clipped_local_horizon")
+    if invalid_reasons:
+        return {
+            "instance_id": instance["instance_id"],
+            "scenario_type": instance["scenario_type"],
+            "method": method,
+            "lead_label": lead_label,
+            "lead_time_requested": float(lead_time),
+            "lead_time_actual": None,
+            "speed_group": instance.get("speed_group"),
+            "trigger_time": float(trigger_time),
+            "conflict_time": float(conflict_time),
+            "planned_switch_delay": float(actual_switch_delay),
+            "switch_tau": float(switch_tau),
+            "resume_tau": float(resume_tau),
+            "valid_replay_window": False,
+            "invalid_reasons": invalid_reasons,
+        }
+    remaining_duration = cfg.LOCAL_REPLAN_HORIZON
     q_now = reference.evaluate(switch_tau)
     qd_now = reference.evaluate(switch_tau, derivative_order=1)
     qdd_now = reference.evaluate(switch_tau, derivative_order=2)
     q_goal = reference.evaluate(resume_tau)
     qd_goal = reference.evaluate(resume_tau, derivative_order=1)
     qdd_goal = reference.evaluate(resume_tau, derivative_order=2)
+    motion_norm = float(np.linalg.norm(q_goal - q_now))
+    if motion_norm < cfg.MIN_REPLAY_MOTION_NORM:
+        return {
+            "instance_id": instance["instance_id"],
+            "scenario_type": instance["scenario_type"],
+            "method": method,
+            "lead_label": lead_label,
+            "lead_time_requested": float(lead_time),
+            "lead_time_actual": float(float(conflict_time) - trigger_time),
+            "speed_group": instance.get("speed_group"),
+            "trigger_time": float(trigger_time),
+            "conflict_time": float(conflict_time),
+            "planned_switch_delay": float(actual_switch_delay),
+            "switch_tau": float(switch_tau),
+            "resume_tau": float(resume_tau),
+            "valid_replay_window": False,
+            "invalid_reasons": ["zero_motion_window"],
+            "motion_norm": motion_norm,
+        }
     obs_center, obs_velocity, obs_radius = _observed_at_trigger(instance, trigger_time)
     forecast = constant_forecast(obs_center, obs_velocity, obs_radius)
-    local_forecast = ShiftedForecast(forecast, planned_switch_delay, remaining_duration)
+    local_forecast = ShiftedForecast(forecast, actual_switch_delay, remaining_duration)
     started = time.perf_counter()
     candidate = optimize_candidate(
         config,
@@ -129,8 +181,9 @@ def replay_one(
         verifier=verifier,
         warm_start_trajectory=reference,
         warm_start_tau=switch_tau,
-        optimization_budget_s=min(cfg.PLANNING_BUDGET, max(0.5, planned_switch_delay - 0.5)),
+        optimization_budget_s=optimization_budget_s,
     )
+    wall_elapsed_ms = float((time.perf_counter() - started) * 1000.0)
     dense = dense_verifier.verify(
         candidate["trajectory"],
         local_forecast,
@@ -140,36 +193,78 @@ def replay_one(
         q_goal=q_goal,
         solver_success=True,
     )
-    reference_min = _reference_local_min_distance(evaluator, reference, local_forecast, switch_tau, remaining_duration)
+    planner_internal_reference_min = _reference_local_min_distance(
+        evaluator,
+        reference,
+        local_forecast,
+        switch_tau,
+        remaining_duration,
+        density=cfg.SURFACE_DENSITY_VERIFY,
+    )
+    common_medium_reference_min = _reference_local_min_distance(
+        dense_verifier.risk_evaluator,
+        reference,
+        local_forecast,
+        switch_tau,
+        remaining_duration,
+        density=cfg.SURFACE_DENSITY_VERIFY,
+    )
+    common_dense_reference_min = _reference_local_min_distance(
+        dense_verifier.risk_evaluator,
+        reference,
+        local_forecast,
+        switch_tau,
+        remaining_duration,
+        density="dense",
+    )
     online_min = float(candidate["verification"]["min_distance"])
+    ready_before_switch = wall_elapsed_ms <= 1000.0 * actual_switch_delay
+    optimizer_success = bool(candidate["optimization"]["success"])
+    dense_geometric_feasible = bool(dense.accepted)
+    usable = bool(ready_before_switch and optimizer_success and dense_geometric_feasible)
     return {
         "instance_id": instance["instance_id"],
         "scenario_type": instance["scenario_type"],
         "method": method,
         "lead_label": lead_label,
         "lead_time_requested": float(lead_time),
-        "lead_time_actual": float(float(reference_risk_time) - trigger_time),
+        "lead_time_actual": float(float(conflict_time) - trigger_time),
         "speed_group": instance.get("speed_group"),
         "trigger_time": float(trigger_time),
-        "reference_risk_time": float(reference_risk_time),
-        "planned_switch_delay": float(planned_switch_delay),
+        "conflict_time": float(conflict_time),
+        "reference_risk_time": float(instance.get("reference_risk_time", conflict_time)),
+        "planned_switch_delay": float(actual_switch_delay),
+        "optimization_budget_s": float(optimization_budget_s),
         "switch_tau": float(switch_tau),
         "resume_tau": float(resume_tau),
+        "valid_replay_window": True,
+        "invalid_reasons": [],
+        "motion_norm": motion_norm,
         "planner_finished": True,
-        "within_budget": float(candidate["optimization"]["elapsed_ms"]) <= 1000.0 * cfg.PLANNING_BUDGET,
-        "optimizer_converged": bool(candidate["optimization"]["success"]),
+        "within_budget": float(candidate["optimization"]["elapsed_ms"]) <= 1000.0 * optimization_budget_s,
+        "ready_before_switch": ready_before_switch,
+        "deadline_slack_ms": float(1000.0 * actual_switch_delay - wall_elapsed_ms),
+        "optimizer_converged": optimizer_success,
         "online_feasible": bool(candidate["verification"]["accepted"]),
-        "dense_feasible": bool(dense.accepted),
+        "dense_geometric_feasible": dense_geometric_feasible,
+        "usable": usable,
         "continuity_pass": bool(candidate["verification"]["checks"].get("continuity_q_ok", False)),
         "online_distance_pass": bool(candidate["verification"]["checks"].get("distance_ok", False)),
         "dense_distance_pass": bool(dense.checks.get("distance_ok", False)),
-        "reference_min_distance_online": float(reference_min),
-        "candidate_min_distance_online": online_min,
-        "candidate_min_distance_dense": float(dense.min_distance),
-        "delta_min_distance_online": float(online_min - reference_min),
-        "beneficial": bool(online_min >= reference_min + cfg.SWITCH_IMPROVEMENT_MARGIN),
+        "planner_internal_reference_min": float(planner_internal_reference_min),
+        "planner_internal_candidate_min": online_min,
+        "common_medium_reference_min": float(common_medium_reference_min),
+        "common_medium_candidate_min": online_min,
+        "common_dense_reference_min": float(common_dense_reference_min),
+        "common_dense_candidate_min": float(dense.min_distance),
+        "delta_min_distance_online": float(online_min - common_medium_reference_min),
+        "delta_min_distance_dense": float(dense.min_distance - common_dense_reference_min),
+        "beneficial": bool(float(dense.min_distance) >= common_dense_reference_min + cfg.SWITCH_IMPROVEMENT_MARGIN),
+        "optimizer_core_ms": float(candidate["optimization"]["elapsed_ms"]),
+        "verification_ms": float(candidate["verification"]["validation_ms"] + dense.validation_ms),
+        "candidate_ready_wall_ms": wall_elapsed_ms,
         "elapsed_ms": float(candidate["optimization"]["elapsed_ms"]),
-        "wall_elapsed_ms": float((time.perf_counter() - started) * 1000.0),
+        "wall_elapsed_ms": wall_elapsed_ms,
         "reasons": candidate["verification"]["reasons"],
         "dense_reasons": dense.reasons,
         "optimization": candidate["optimization"],
@@ -177,24 +272,33 @@ def replay_one(
 
 
 def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
     for row in rows:
-        grouped.setdefault((row["scenario_type"], row["lead_label"], row["method"]), []).append(row)
+        speed = "-" if row.get("speed_group") is None else f"{float(row['speed_group']):.2f}"
+        grouped.setdefault((row["scenario_type"], speed, row["lead_label"], row["method"]), []).append(row)
     table = []
-    for (scenario_type, lead_label, method), items in sorted(grouped.items()):
+    for (scenario_type, speed_group, lead_label, method), items in sorted(grouped.items()):
+        valid = [item for item in items if item.get("valid_replay_window", True)]
+        invalid = len(items) - len(valid)
         table.append(
             {
                 "scenario_type": scenario_type,
+                "speed_group": speed_group,
                 "lead_label": lead_label,
                 "method": method,
                 "n": len(items),
-                "within_budget": float(np.mean([item["within_budget"] for item in items])),
-                "optimizer_converged": float(np.mean([item["optimizer_converged"] for item in items])),
-                "online_feasible": float(np.mean([item["online_feasible"] for item in items])),
-                "dense_feasible": float(np.mean([item["dense_feasible"] for item in items])),
-                "beneficial": float(np.mean([item["beneficial"] for item in items])),
-                "delta_min_distance_online": float(np.mean([item["delta_min_distance_online"] for item in items])),
-                "planner_ms_p95": float(np.percentile([item["elapsed_ms"] for item in items], 95)),
+                "valid": len(valid),
+                "invalid": invalid,
+                "within_budget": float(np.mean([item["within_budget"] for item in valid])) if valid else None,
+                "ready_before_switch": float(np.mean([item["ready_before_switch"] for item in valid])) if valid else None,
+                "optimizer_converged": float(np.mean([item["optimizer_converged"] for item in valid])) if valid else None,
+                "online_feasible": float(np.mean([item["online_feasible"] for item in valid])) if valid else None,
+                "dense_geometric_feasible": float(np.mean([item["dense_geometric_feasible"] for item in valid])) if valid else None,
+                "usable": float(np.mean([item["usable"] for item in valid])) if valid else None,
+                "beneficial": float(np.mean([item["beneficial"] for item in valid])) if valid else None,
+                "delta_min_distance_dense": float(np.mean([item["delta_min_distance_dense"] for item in valid])) if valid else None,
+                "candidate_ready_wall_ms_p95": float(np.percentile([item["candidate_ready_wall_ms"] for item in valid], 95)) if valid else None,
+                "optimizer_core_ms_p95": float(np.percentile([item["optimizer_core_ms"] for item in valid], 95)) if valid else None,
             }
         )
     return table
@@ -202,15 +306,18 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def write_replay_table(summary: list[dict[str, Any]], path: Path) -> None:
     lines = [
-        "| scenario | lead | method | n | within budget | converged | online feasible | dense feasible | beneficial | delta Dmin online / m | planner p95 / ms |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| scenario | speed | lead | method | n | valid | invalid | within budget | ready before switch | converged | online feasible | dense geom feasible | usable | beneficial | delta Dmin dense / m | ready wall p95 / ms | opt core p95 / ms |",
+        "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in summary:
         lines.append(
-            f"| {row['scenario_type']} | {row['lead_label']} | {cfg.METHOD_NAMES.get(row['method'], row['method'])} | "
-            f"{row['n']} | {_fmt(row['within_budget'], 2)} | {_fmt(row['optimizer_converged'], 2)} | "
-            f"{_fmt(row['online_feasible'], 2)} | {_fmt(row['dense_feasible'], 2)} | {_fmt(row['beneficial'], 2)} | "
-            f"{_fmt(row['delta_min_distance_online'])} | {_fmt(row['planner_ms_p95'], 1)} |"
+            f"| {row['scenario_type']} | {row['speed_group']} | {row['lead_label']} | {cfg.METHOD_NAMES.get(row['method'], row['method'])} | "
+            f"{row['n']} | {row['valid']} | {row['invalid']} | {_fmt(row['within_budget'], 2)} | "
+            f"{_fmt(row['ready_before_switch'], 2)} | {_fmt(row['optimizer_converged'], 2)} | "
+            f"{_fmt(row['online_feasible'], 2)} | {_fmt(row['dense_geometric_feasible'], 2)} | "
+            f"{_fmt(row['usable'], 2)} | {_fmt(row['beneficial'], 2)} | "
+            f"{_fmt(row['delta_min_distance_dense'])} | {_fmt(row['candidate_ready_wall_ms_p95'], 1)} | "
+            f"{_fmt(row['optimizer_core_ms_p95'], 1)} |"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -265,7 +372,7 @@ def main() -> None:
                     row = json.loads(path.read_text(encoding="utf-8"))
                 else:
                     method_evaluator = critical_evaluator if method == "critical_point_nubs" else evaluator
-                    method_verifier = critical_verifier if method == "critical_point_nubs" else verifier
+                    method_verifier = verifier
                     row = replay_one(
                         config,
                         reference,
@@ -280,11 +387,17 @@ def main() -> None:
                     )
                     write_json(path, row)
                 rows.append(row)
-                print(
-                    f"[6.4 replay] {row['instance_id']} {row['lead_label']} {cfg.METHOD_NAMES.get(method, method)} "
-                    f"online={row['online_feasible']} dense={row['dense_feasible']} "
-                    f"dD={row['delta_min_distance_online']:.3f}"
-                )
+                if row.get("valid_replay_window", True):
+                    print(
+                        f"[6.4 replay] {row['instance_id']} {row['lead_label']} {cfg.METHOD_NAMES.get(method, method)} "
+                        f"online={row['online_feasible']} dense={row['dense_geometric_feasible']} "
+                        f"usable={row['usable']} dD_dense={row['delta_min_distance_dense']:.3f}"
+                    )
+                else:
+                    print(
+                        f"[6.4 replay] {row['instance_id']} {row['lead_label']} {cfg.METHOD_NAMES.get(method, method)} "
+                        f"invalid={'+'.join(row.get('invalid_reasons', []))}"
+                    )
     summary = _aggregate(rows)
     metrics = {
         "experiment": "6.4 stage-A candidate replay",

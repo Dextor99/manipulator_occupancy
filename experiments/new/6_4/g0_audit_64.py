@@ -72,9 +72,55 @@ def _events(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "method": trial.get("method"),
                     "trial_task_safe": bool(trial.get("task_safe_success", trial.get("success", False))),
                     "trial_gt_violation": float(trial.get("safety_violation_time_s", 0.0)) > 0.0,
+                    "trial_first_safety_hold_time": trial.get("first_safety_hold_time"),
                 }
             )
     return rows
+
+
+def _slot_invalidated(event: dict[str, Any]) -> bool:
+    hold = event.get("trial_first_safety_hold_time")
+    if hold is None:
+        return False
+    return (
+        float(event.get("submitted_timestamp", math.inf)) <= float(hold)
+        <= float(event.get("planned_switch_timestamp", -math.inf))
+    )
+
+
+def switch_outcome_attribution(events: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {
+        "accepted": 0,
+        "deadline_failure": 0,
+        "slot_invalidated": 0,
+        "state_mismatch": 0,
+        "forecast_stale": 0,
+        "no_benefit": 0,
+        "other_rejection": 0,
+    }
+    for event in events:
+        if bool(event.get("candidate_accepted")):
+            counts["accepted"] += 1
+            continue
+        if float(event.get("completed_timestamp", math.inf)) > float(event.get("deadline_timestamp", -math.inf)):
+            counts["deadline_failure"] += 1
+            continue
+        if _slot_invalidated(event):
+            counts["slot_invalidated"] += 1
+            continue
+        checks = (event.get("switch_validation") or {}).get("checks") or {}
+        continuity_ok = bool(checks.get("continuity_q_ok", False)) and bool(checks.get("continuity_qd_ok", False)) and bool(checks.get("continuity_qdd_ok", False))
+        distance_ok = bool(checks.get("distance_ok", False))
+        reference_gate_ok = bool(checks.get("reference_gate_ok", False))
+        if not continuity_ok:
+            counts["state_mismatch"] += 1
+        elif not distance_ok:
+            counts["forecast_stale"] += 1
+        elif not reference_gate_ok:
+            counts["no_benefit"] += 1
+        else:
+            counts["other_rejection"] += 1
+    return counts
 
 
 def candidate_funnel(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -158,6 +204,7 @@ def consistency_audit(trials: list[dict[str, Any]], dense: dict[str, Any]) -> di
             "online_pass_gt_violation_trial_ids": online_pass_gt_violation,
         },
         "candidate_funnel": candidate_funnel(events),
+        "switch_outcome_attribution": switch_outcome_attribution(events),
         "go_no_go": {
             "formal_full_run": False,
             "reason": "Run candidate replay and a simple feasible validation set before any new closed-loop formal test.",
@@ -173,6 +220,8 @@ def write_g0_table(audit: dict[str, Any], path: Path) -> None:
         "",
         "## Candidate Funnel",
         "",
+        "Event counts below are mechanism diagnostics. Formal method success rates must be reported by trial or paired instance, not by candidate event.",
+        "",
         "| scenario | method | triggers | finished | within budget | converged | submit continuous | submit online-safe | switch continuous | switch online-safe | beneficial | switched | switched+GT safe |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
@@ -187,8 +236,21 @@ def write_g0_table(audit: dict[str, Any], path: Path) -> None:
     t = audit["time_alignment"]
     b = audit["bridge_vs_candidate"]
     e = audit["medium_dense_trial_error"]
+    outcome = audit["switch_outcome_attribution"]
     lines.extend(
         [
+            "",
+            "## Switch Outcome Attribution",
+            "",
+            "| outcome | events | interpretation |",
+            "|---|---:|---|",
+            f"| Accepted | {outcome['accepted']} | all switch gates passed |",
+            f"| Deadline failure | {outcome['deadline_failure']} | candidate completed after deadline |",
+            f"| Slot invalidated | {outcome['slot_invalidated']} | safety hold occurred while candidate was pending |",
+            f"| State mismatch | {outcome['state_mismatch']} | switch continuity gate failed |",
+            f"| Forecast stale | {outcome['forecast_stale']} | continuity passed but distance gate failed |",
+            f"| No benefit | {outcome['no_benefit']} | continuity and distance passed but reference-benefit gate failed |",
+            f"| Other rejection | {outcome['other_rejection']} | remaining switch-gate failures |",
             "",
             "## G0 Checks",
             "",

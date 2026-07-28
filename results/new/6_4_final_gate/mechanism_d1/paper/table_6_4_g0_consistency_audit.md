@@ -4,9 +4,23 @@ This audit is a pre-formal implementation check. It must not be used to tune ind
 
 ## Candidate Funnel
 
+Event counts below are mechanism diagnostics. Formal method success rates must be reported by trial or paired instance, not by candidate event.
+
 | scenario | method | triggers | finished | within budget | converged | submit continuous | submit online-safe | switch continuous | switch online-safe | beneficial | switched | switched+GT safe |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | body_crossing_main | CCRO-NUBS | 12 | 12 | 11 | 7 | 12 | 7 | 1 | 2 | 0 | 0 | 0 |
+
+## Switch Outcome Attribution
+
+| outcome | events | interpretation |
+|---|---:|---|
+| Accepted | 0 | all switch gates passed |
+| Deadline failure | 0 | candidate completed after deadline |
+| Slot invalidated | 2 | safety hold occurred while candidate was pending |
+| State mismatch | 9 | switch continuity gate failed |
+| Forecast stale | 1 | continuity passed but distance gate failed |
+| No benefit | 0 | continuity and distance passed but reference-benefit gate failed |
+| Other rejection | 0 | remaining switch-gate failures |
 
 ## G0 Checks
 

@@ -68,6 +68,24 @@ def _reference_distance_rows(
     return rows
 
 
+def _reference_time_markers(rows: list[dict[str, Any]]) -> dict[str, float | None]:
+    first_accept = next(
+        (float(row["time"]) for row in rows if float(row["distance"]) < cfg.D_ONLINE_ACCEPT),
+        None,
+    )
+    first_stop = next(
+        (float(row["time"]) for row in rows if float(row["distance"]) < cfg.D_STOP),
+        None,
+    )
+    min_row = min(rows, key=lambda item: item["distance"])
+    return {
+        "first_accept_violation_time": first_accept,
+        "first_stop_violation_time": first_stop,
+        "time_of_min_distance": float(min_row["time"]),
+        "min_reference_distance": float(min_row["distance"]),
+    }
+
+
 def _observed_from_gt(rng: np.random.Generator, center0: np.ndarray, velocity: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray, float]:
     return (
         center0 + rng.normal(0.0, cfg.OBS_POS_SIGMA, size=3),
@@ -124,6 +142,18 @@ def _make_crossing_instance(
             pre_motion_center,
             sample_count=81,
         )
+        marker_rows = _reference_distance_rows(
+            model,
+            trajectory,
+            center0,
+            velocity,
+            radius,
+            motion_start_time,
+            pre_motion_center,
+            sample_count=161,
+            density=cfg.SURFACE_DENSITY_VERIFY,
+        )
+        markers = _reference_time_markers(marker_rows)
         static_rows = _reference_distance_rows(model, trajectory, pre_motion_center, np.zeros(3), radius, 0.0)
         min_row = min(rows, key=lambda item: item["distance"])
         static_min_row = min(static_rows, key=lambda item: item["distance"])
@@ -151,6 +181,7 @@ def _make_crossing_instance(
             "pre_motion_center": pre_motion_center,
             "center0": center0,
             "min_row": min_row,
+            "markers": markers,
             "static_min_distance": float(static_min_row["distance"]),
             "initial_distance": initial_distance,
             "seed": attempt_seed,
@@ -175,6 +206,7 @@ def _make_crossing_instance(
     pre_motion_center = best_item["pre_motion_center"]
     radius = best_item["radius"]
     min_row = best_item["min_row"]
+    markers = best_item["markers"]
     initial_distance = best_item["initial_distance"]
     frozen_seed = int(best_item["seed"])
     obs_center0, obs_velocity, obs_radius = _observed_from_gt(
@@ -204,6 +236,7 @@ def _make_crossing_instance(
         "observation_seed": int(frozen_seed + 100_000),
         "reference_initial_distance": float(initial_distance),
         "reference_min_distance": float(min_row["distance"]),
+        **markers,
         "static_wait_min_distance": float(best_item["static_min_distance"]),
         "reference_risk_time": float(min_row["time"]),
         "reference_nearest_link": min_row["nearest_link"],

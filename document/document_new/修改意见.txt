@@ -1,0 +1,41 @@
+已按这份分析做了 P0 级修正，没有启动完整 D1/D2 Stage-A。
+
+这轮重点改了：
+
+- [candidate_replay_64.py](/home/hzy/Code/manipulator_occupancy/experiments/new/6_4/candidate_replay_64.py:105)
+  - `conflict_time` 改为优先使用 `first_accept_violation_time`。
+  - `switch delay` 改为 `min(6.0, lead_time - 1.0)`。
+  - `ShiftedForecast` 使用实际 switch delay，不再固定 6 s。
+  - 禁止末端裁剪伪样本：`resume_tau > T_ref` 标记为 `invalid_replay_window`。
+  - 禁止零运动窗口：`q_goal ≈ q_now` 标记 invalid。
+  - Critical 与 CCRO 只在优化风险表示上不同，在线 gate 共用 medium Mesh verifier。
+  - 新增 `usable`：必须 ready-before-switch、solver success、dense geometric feasible。
+  - 新增 common dense reference/candidate 净空与 `delta_min_distance_dense`。
+  - 汇总加入 `speed_group`，支持后续 speed × lead 能力图。
+- [g0_audit_64.py](/home/hzy/Code/manipulator_occupancy/experiments/new/6_4/g0_audit_64.py:91)
+  - 新增 switch outcome attribution：
+    - `State mismatch`
+    - `Forecast stale`
+    - `Slot invalidated`
+    - `Deadline failure`
+    - `No benefit`
+    - `Accepted`
+  - 明确事件数只用于机制诊断，正式成功率不能按 event 当独立样本统计。
+- [scenarios_64.py](/home/hzy/Code/manipulator_occupancy/experiments/new/6_4/scenarios_64.py:71)
+  - 新实例保存：
+    - `first_accept_violation_time`
+    - `first_stop_violation_time`
+    - `time_of_min_distance`
+    - `min_reference_distance`
+- 实施计划文档已标记旧方案 deprecated，避免继续按旧的 `0.06/0.09/0.12`、`Reference-only/SSM/CCRO`、110 次闭环方案执行。
+
+已验证：
+- `compileall` 通过。
+- 重新跑了 G0：
+  - [table_6_4_g0_consistency_audit.md](/home/hzy/Code/manipulator_occupancy/results/new/6_4_final_gate/mechanism_d1/paper/table_6_4_g0_consistency_audit.md:1)
+- 跑了 D1 smoke v2：
+  - [table_6_4_candidate_replay.md](/home/hzy/Code/manipulator_occupancy/results/new/6_4_candidate_replay_d1_smoke_v2/paper/table_6_4_candidate_replay.md:1)
+
+smoke v2 的关键结论：当前 D1 replay 样本全部被判为 `invalid_replay_window`，主要是 `clipped_local_horizon`。这不是 CCRO 或 Critical 的失败，而是旧 D1 场景/8s 参考轨迹与“switch slot + 4s local horizon”不兼容；上一版 smoke 的 Short 可行率确实包含终点静止伪现象。
+
+因此现在正确下一步是建立 G1 简单可行开发集或新的方法无关 replay 实例生成器，而不是直接跑完整 D1/D2 Stage-A。

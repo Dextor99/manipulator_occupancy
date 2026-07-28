@@ -63,6 +63,20 @@ Stage-A candidate replay scaffold:
 - Smoke output: `results/new/6_4_candidate_replay_d1_smoke/paper/table_6_4_candidate_replay.md`.
 - The smoke run is an entry-point validation only, not formal evidence; it confirms that fixed-state candidate replay can produce Critical-NUBS vs CCRO-NUBS funnel rows across Long/Medium/Short lead-time groups.
 
+Stage-A smoke v2 after P0 replay fixes:
+
+- Updated replay semantics:
+  - conflict time uses `first_accept_violation_time` when available;
+  - switch delay uses `min(6.0, lead_time - 1.0)` instead of a fixed 6.0 s for every lead group;
+  - local forecasts use the actual switch delay;
+  - replay samples with clipped local horizon or zero motion are marked `invalid_replay_window`;
+  - Critical-NUBS and CCRO-NUBS use different planning risk evaluators but the same medium-density Mesh online gate;
+  - dense feasibility is separated from solver success, and `usable` requires ready-before-switch, solver success, and dense geometric feasibility;
+  - candidate benefit uses common dense Mesh reference/candidate distances.
+- Smoke v2 output: `results/new/6_4_candidate_replay_d1_smoke_v2/paper/table_6_4_candidate_replay.md`.
+- All current D1 smoke replay windows are invalid under the non-clipped 4.0 s local horizon rule.
+- Interpretation: the previous Long/Medium/Short smoke result was not a valid capability boundary. It included terminal clipping and endpoint-hold artifacts. The next step is not full D1/D2 Stage-A, but a G1/simple-feasible development set or a method-independent replay-instance generator whose reference trajectory leaves a valid 4.0 s local segment after the planned switch point.
+
 Final stop-rule decision:
 
 - Do not continue adjusting individual failed D1 pilot cases.
@@ -70,3 +84,4 @@ Final stop-rule decision:
 - Do not run a new formal closed-loop dataset until G0 plus a simple feasible validation set and Stage-A candidate replay show acceptable candidate feasibility.
 - Reframe 6.4 as an asynchronous local replanning effectiveness and capability-boundary experiment.
 - Use the archived `results/new/6_4_async_v3_boundary` and current final-gate data only as pilot/diagnostic material, not as final proof of stable asynchronous replanning.
+- Do not treat invalid replay windows as failures of CCRO-NUBS or Critical-NUBS. They are experiment-design exclusions that must be reported separately.
