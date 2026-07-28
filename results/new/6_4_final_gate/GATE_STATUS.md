@@ -77,6 +77,29 @@ Stage-A smoke v2 after P0 replay fixes:
 - All current D1 smoke replay windows are invalid under the non-clipped 4.0 s local horizon rule.
 - Interpretation: the previous Long/Medium/Short smoke result was not a valid capability boundary. It included terminal clipping and endpoint-hold artifacts. The next step is not full D1/D2 Stage-A, but a G1/simple-feasible development set or a method-independent replay-instance generator whose reference trajectory leaves a valid 4.0 s local segment after the planned switch point.
 
+Realtime redesign decision:
+
+- The seconds-level CCRO-NUBS candidate optimizer is no longer treated as a valid online dynamic-obstacle replanner.
+- Dynamic realtime claims require a fast local repair layer with an end-to-end P95 target of roughly 100--150 ms and a hard maximum below 200 ms.
+- Added `experiments/new/6_4/fast_local_repair_64.py` as the new 1 s local-repair experiment scaffold.
+- Fast local repair uses:
+  - 1.0 s local horizon;
+  - fixed time allocation;
+  - 5 local NUBS segments;
+  - at most 3 repair steps;
+  - one worst-risk gradient query per repair step;
+  - shared medium Mesh online gate and dense Mesh geometric recheck.
+- D1 fast smoke output: `results/new/6_4_fast_local_repair_d1_smoke/paper/table_6_4_fast_local_repair.md`.
+- D1 fast smoke timing:
+  - Critical-fast-repair total time was about 82--97 ms across smoke cases.
+  - CCRO-fast-repair total time was about 104--119 ms across smoke cases.
+  - Validation P95 was about 40--52 ms depending on case.
+- D1 fast smoke feasibility:
+  - dense feasible was 0 for both methods;
+  - usable candidate rate was 0 for both methods;
+  - CCRO often improved dense clearance by a few millimeters but did not restore the 0.08 m dense safety threshold.
+- Interpretation: the time scale is now compatible with online local repair, but the current one-shot gradient-bump repair is not yet a valid dynamic avoidance algorithm. The next algorithmic work should improve the fast repair law, not revive the seconds-level optimizer.
+
 Final stop-rule decision:
 
 - Do not continue adjusting individual failed D1 pilot cases.
@@ -85,3 +108,6 @@ Final stop-rule decision:
 - Reframe 6.4 as an asynchronous local replanning effectiveness and capability-boundary experiment.
 - Use the archived `results/new/6_4_async_v3_boundary` and current final-gate data only as pilot/diagnostic material, not as final proof of stable asynchronous replanning.
 - Do not treat invalid replay windows as failures of CCRO-NUBS or Critical-NUBS. They are experiment-design exclusions that must be reported separately.
+- Do not claim realtime trajectory replanning from any 2--5 s candidate-generation result.
+- Keep seconds-level CCRO-NUBS in 6.3/static benchmark or 6.4 diagnostic discussion only.
+- Use Fast CCRO-NUBS local repair as the only path toward realtime 6.4 claims; it must pass G1 before any formal dynamic closed-loop claim.
