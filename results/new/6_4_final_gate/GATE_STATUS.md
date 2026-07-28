@@ -100,6 +100,28 @@ Realtime redesign decision:
   - CCRO often improved dense clearance by a few millimeters but did not restore the 0.08 m dense safety threshold.
 - Interpretation: the time scale is now compatible with online local repair, but the current one-shot gradient-bump repair is not yet a valid dynamic avoidance algorithm. The next algorithmic work should improve the fast repair law, not revive the seconds-level optimizer.
 
+Fast repair v2 and G1 check:
+
+- Added a constrained-acceptance repair update:
+  - repair direction is based on finite-difference minimum-clearance gradient rather than risk-cost gradient;
+  - candidate step sizes are searched over `[0.008, 0.015, 0.025, 0.035]` rad;
+  - an update is accepted only if medium clearance improves and position/velocity/acceleration limits remain satisfied;
+  - online medium-gate latency is separated from offline dense GT recheck latency;
+  - `usable_candidate` now requires online accepted, dense GT safe, and online latency under 150 ms.
+- Added method-independent G1 generation by dense Mesh filtering:
+  - reference dense minimum is constrained to `[0.04, 0.08)` m;
+  - generated G1 instances are shallow-risk rather than deep-penetration smoke cases.
+- G1 CCRO v2 output: `results/new/6_4_fast_local_repair_g1_ccro_v2/paper/table_6_4_fast_local_repair.md`.
+- G1 CCRO v2 result:
+  - valid shallow-risk scenarios: 10/10;
+  - online P95: about 141 ms;
+  - hard max: about 142 ms;
+  - acceleration gate pass: 9/10;
+  - dense feasible: 0/10;
+  - usable candidate: 0/10;
+  - median dense clearance improvement: 0 m, max improvement about 0.005 m.
+- Interpretation: v2 fixed the worst dynamic-feasibility issue but still does not produce enough clearance recovery. Do not run full fast Stage-A. The next algorithmic step is a stronger constrained local repair law, likely a small QP/SQP over local interpolation points or an analytic nearest-point Jacobian, not parameter tuning or larger fixed steps.
+
 Final stop-rule decision:
 
 - Do not continue adjusting individual failed D1 pilot cases.
@@ -111,3 +133,4 @@ Final stop-rule decision:
 - Do not claim realtime trajectory replanning from any 2--5 s candidate-generation result.
 - Keep seconds-level CCRO-NUBS in 6.3/static benchmark or 6.4 diagnostic discussion only.
 - Use Fast CCRO-NUBS local repair as the only path toward realtime 6.4 claims; it must pass G1 before any formal dynamic closed-loop claim.
+- Current fast repair v2 has not passed G1; it may be reported only as a development diagnostic showing that latency is feasible while geometric repair remains unsolved.

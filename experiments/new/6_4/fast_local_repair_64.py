@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import math
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -86,7 +87,7 @@ def _surface_outward(model, q: np.ndarray, links: tuple[str, ...], rng: np.rando
     return link, point, outward
 
 
-def make_fast_instances(model, reference, *, scenario: str, smoke: bool, g1: bool) -> list[dict[str, Any]]:
+def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smoke: bool, g1: bool) -> list[dict[str, Any]]:
     rng = np.random.default_rng(cfg.RANDOM_SEED + (8100 if scenario == "D1" else 9100) + int(g1) * 1000)
     links = cfg.BODY_LINKS if scenario == "D1" else cfg.EE_LINKS
     scenario_type = "body_crossing_fast" if scenario == "D1" else "ee_crossing_fast"
@@ -102,19 +103,31 @@ def make_fast_instances(model, reference, *, scenario: str, smoke: bool, g1: boo
     index = 0
     tau_low, tau_high = cfg.FAST_TAU_START_RANGE
     tau_high = min(tau_high, reference.total_duration - cfg.FAST_LOCAL_HORIZON - 0.05)
+    desired_per_cell = repeats
     for speed in speeds:
         for lead_label, conflict_time in conflict_groups.items():
-            for repeat in range(repeats):
+            repeat = 0
+            attempts = 0
+            while repeat < desired_per_cell:
+                attempts += 1
+                if attempts > 600:
+                    raise RuntimeError(f"failed to generate enough fast instances for {scenario} {speed} {lead_label}")
                 tau_start = float(rng.uniform(tau_low, tau_high))
                 local_ref, _, _, _ = _make_local_reference(reference, tau_start)
                 q_conflict = local_ref.evaluate(float(conflict_time))
                 link, surface_point, outward = _surface_outward(model, q_conflict, links, rng)
                 radius = float(rng.uniform(0.04, 0.055))
-                clearance = float(rng.uniform(0.025, 0.065) if not g1 else rng.uniform(0.035, 0.060))
+                clearance = float(rng.uniform(0.025, 0.065) if not g1 else rng.uniform(0.095, 0.165))
                 crossing_center = surface_point + (radius + clearance) * outward
                 direction = _tangent_direction(outward, rng)
                 velocity = float(speed) * direction
                 center_at_start = crossing_center - velocity * float(conflict_time)
+                forecast = constant_forecast(center_at_start, velocity, radius)
+                reference_dense_min = _trajectory_min(dense_evaluator, local_ref, forecast, density="dense")
+                if g1:
+                    low, high = cfg.FAST_G1_REFERENCE_DENSE_MIN_RANGE
+                    if not (low <= reference_dense_min < high):
+                        continue
                 instances.append(
                     {
                         "instance_id": f"{scenario}F_{index:03d}",
@@ -130,11 +143,13 @@ def make_fast_instances(model, reference, *, scenario: str, smoke: bool, g1: boo
                         "obstacle_velocity": velocity.tolist(),
                         "obstacle_radius": radius,
                         "reference_clearance_at_conflict": clearance,
+                        "reference_dense_min_distance": float(reference_dense_min),
                         "seed": int(cfg.RANDOM_SEED + index),
                         "repeat_index": int(repeat),
                     }
                 )
                 index += 1
+                repeat += 1
     return instances
 
 
@@ -167,6 +182,60 @@ def _repair_points(points: np.ndarray, direction: np.ndarray, tau: float, durati
     return np.minimum(np.maximum(repaired, limits.q_min[None, :]), limits.q_max[None, :])
 
 
+def _motion_violations(trajectory: NUBSTrajectory6D, limits) -> dict[str, float]:
+    times = np.arange(0.0, trajectory.total_duration + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
+    samples = trajectory.sample(times)
+    q_low = np.maximum(limits.q_min[None, :] - samples.q, 0.0)
+    q_high = np.maximum(samples.q - limits.q_max[None, :], 0.0)
+    qd = np.maximum(np.abs(samples.qd) - limits.qd_max[None, :], 0.0)
+    qdd = np.maximum(np.abs(samples.qdd) - limits.qdd_max[None, :], 0.0)
+    return {
+        "q": float(np.max(np.maximum(q_low, q_high), initial=0.0)),
+        "qd": float(np.max(qd, initial=0.0)),
+        "qdd": float(np.max(qdd, initial=0.0)),
+    }
+
+
+def _distance_gradient(evaluator, q: np.ndarray, forecast, tau: float) -> np.ndarray:
+    eps = cfg.FAST_DISTANCE_GRAD_EPS
+    gradient = np.zeros(6, dtype=np.float64)
+    for joint in range(6):
+        plus = np.asarray(q, dtype=np.float64).copy()
+        minus = np.asarray(q, dtype=np.float64).copy()
+        plus[joint] += eps
+        minus[joint] -= eps
+        d_plus = evaluator.configuration(
+            plus,
+            forecast,
+            float(tau),
+            density=cfg.SURFACE_DENSITY_LOOP,
+            with_gradient=False,
+        ).min_distance
+        d_minus = evaluator.configuration(
+            minus,
+            forecast,
+            float(tau),
+            density=cfg.SURFACE_DENSITY_LOOP,
+            with_gradient=False,
+        ).min_distance
+        gradient[joint] = (float(d_plus) - float(d_minus)) / (2.0 * eps)
+    return gradient
+
+
+def _git_dirty() -> bool | None:
+    try:
+        return bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=cfg.ROOT,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        )
+    except Exception:
+        return None
+
+
 def fast_repair(
     reference,
     model,
@@ -186,9 +255,13 @@ def fast_repair(
     started = time.perf_counter()
     risk_scan_ms = 0.0
     repair_ms = 0.0
+    medium_gate_ms = 0.0
     points = p_inner.copy()
     trajectory = local_ref
     repair_steps = 0
+    accepted_updates = 0
+    rejected_updates = 0
+    best_medium_min = _trajectory_min(evaluator, trajectory, forecast, density=cfg.SURFACE_DENSITY_VERIFY)
     for step_index in range(cfg.FAST_REPAIR_STEPS + 1):
         t0 = time.perf_counter()
         worst = _worst_risk(evaluator, trajectory, forecast)
@@ -196,23 +269,33 @@ def fast_repair(
         if worst is None or worst["min_distance"] >= cfg.D_ONLINE_ACCEPT or step_index == cfg.FAST_REPAIR_STEPS:
             break
         t1 = time.perf_counter()
-        gradient_risk = evaluator.configuration(
-            worst["q"],
-            forecast,
-            worst["tau"],
-            density=cfg.SURFACE_DENSITY_LOOP,
-            with_gradient=True,
-        )
-        gradient = np.zeros(6) if gradient_risk.gradient_q is None else np.asarray(gradient_risk.gradient_q, dtype=np.float64)
-        direction = -gradient
+        direction = _distance_gradient(evaluator, worst["q"], forecast, worst["tau"])
         norm = float(np.linalg.norm(direction))
         if norm < 1.0e-10 or not np.all(np.isfinite(direction)):
             break
-        points = _repair_points(points, direction / norm, worst["tau"], durations, cfg.FAST_REPAIR_STEP_SIZE, limits)
-        trajectory = NUBSTrajectory6D().generate(points, head, tail, durations)
+        unit = direction / norm
+        accepted = None
+        for step_size in cfg.FAST_REPAIR_STEP_SIZES:
+            trial_points = _repair_points(points, unit, worst["tau"], durations, float(step_size), limits)
+            trial_trajectory = NUBSTrajectory6D().generate(trial_points, head, tail, durations)
+            motion = _motion_violations(trial_trajectory, limits)
+            if motion["q"] > 1.0e-8 or motion["qd"] > 1.0e-8 or motion["qdd"] > 1.0e-8:
+                rejected_updates += 1
+                continue
+            trial_min = _trajectory_min(evaluator, trial_trajectory, forecast, density=cfg.SURFACE_DENSITY_VERIFY)
+            if trial_min <= best_medium_min + 1.0e-5:
+                rejected_updates += 1
+                continue
+            accepted = (trial_points, trial_trajectory, float(trial_min), float(step_size))
+            break
+        if accepted is None:
+            repair_ms += (time.perf_counter() - t1) * 1000.0
+            break
+        points, trajectory, best_medium_min, _ = accepted
         repair_ms += (time.perf_counter() - t1) * 1000.0
         repair_steps += 1
-    t_val = time.perf_counter()
+        accepted_updates += 1
+    t_online = time.perf_counter()
     online = online_verifier.verify(
         trajectory,
         forecast,
@@ -222,6 +305,9 @@ def fast_repair(
         q_goal=tail[:, 0],
         solver_success=True,
     )
+    medium_gate_ms = (time.perf_counter() - t_online) * 1000.0
+    online_ms = (time.perf_counter() - started) * 1000.0
+    t_dense = time.perf_counter()
     dense = dense_verifier.verify(
         trajectory,
         forecast,
@@ -231,8 +317,7 @@ def fast_repair(
         q_goal=tail[:, 0],
         solver_success=True,
     )
-    validation_ms = (time.perf_counter() - t_val) * 1000.0
-    total_ms = (time.perf_counter() - started) * 1000.0
+    dense_recheck_ms = (time.perf_counter() - t_dense) * 1000.0
     ref_dense_min = _trajectory_min(dense_verifier.risk_evaluator, local_ref, forecast, density="dense")
     cand_dense_min = float(dense.min_distance)
     return {
@@ -244,14 +329,19 @@ def fast_repair(
             "delta_dense_min_distance": float(cand_dense_min - ref_dense_min),
             "online_feasible": bool(online.accepted),
             "dense_geometry_only_feasible": bool(dense.accepted),
-            "usable_candidate": bool(total_ms <= cfg.FAST_REPAIR_ACCEPT_MS and dense.accepted),
-            "hard_realtime_ok": bool(total_ms <= cfg.FAST_REPAIR_HARD_MAX_MS),
+            "usable_candidate": bool(online_ms <= cfg.FAST_REPAIR_ACCEPT_MS and online.accepted and dense.accepted),
+            "hard_realtime_ok": bool(online_ms <= cfg.FAST_REPAIR_HARD_MAX_MS),
             "beneficial": bool(cand_dense_min >= ref_dense_min + cfg.SWITCH_IMPROVEMENT_MARGIN),
             "repair_steps": repair_steps,
+            "accepted_updates": accepted_updates,
+            "rejected_updates": rejected_updates,
             "risk_scan_ms": float(risk_scan_ms),
             "repair_ms": float(repair_ms),
-            "validation_ms": float(validation_ms),
-            "total_ms": float(total_ms),
+            "medium_gate_ms": float(medium_gate_ms),
+            "online_ms": float(online_ms),
+            "dense_recheck_ms": float(dense_recheck_ms),
+            "validation_ms": float(medium_gate_ms + dense_recheck_ms),
+            "total_ms": float(online_ms + dense_recheck_ms),
             "online_reasons": online.reasons,
             "dense_reasons": dense.reasons,
         },
@@ -280,11 +370,12 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "usable": float(np.mean([item["usable_candidate"] for item in items])),
                 "dense_feasible": float(np.mean([item["dense_geometry_only_feasible"] for item in items])),
                 "beneficial": float(np.mean([item["beneficial"] for item in items])),
+                "acceleration_ok": float(np.mean(["acceleration_ok" not in item["online_reasons"] for item in items])),
                 "delta_dense": float(np.mean([item["delta_dense_min_distance"] for item in items])),
-                "total_ms_mean": float(np.mean([item["total_ms"] for item in items])),
-                "total_ms_p95": float(np.percentile([item["total_ms"] for item in items], 95)),
-                "total_ms_max": float(np.max([item["total_ms"] for item in items])),
-                "validation_ms_p95": float(np.percentile([item["validation_ms"] for item in items], 95)),
+                "online_ms_mean": float(np.mean([item["online_ms"] for item in items])),
+                "online_ms_p95": float(np.percentile([item["online_ms"] for item in items], 95)),
+                "online_ms_max": float(np.max([item["online_ms"] for item in items])),
+                "dense_recheck_ms_p95": float(np.percentile([item["dense_recheck_ms"] for item in items], 95)),
             }
         )
     return summary
@@ -292,15 +383,16 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def write_table(summary: list[dict[str, Any]], path: Path) -> None:
     lines = [
-        "| scenario | speed | conflict | method | n | usable | dense feasible | beneficial | delta Dmin dense / m | total mean / ms | total p95 / ms | total max / ms | validation p95 / ms |",
-        "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| scenario | speed | conflict | method | n | usable | dense feasible | accel ok | beneficial | delta Dmin dense / m | online mean / ms | online p95 / ms | online max / ms | dense recheck p95 / ms |",
+        "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in summary:
         lines.append(
             f"| {row['scenario_type']} | {row['speed_group']} | {row['lead_label']} | {FAST_METHOD_NAMES.get(row['method'], row['method'])} | "
-            f"{row['n']} | {_fmt(row['usable'], 2)} | {_fmt(row['dense_feasible'], 2)} | {_fmt(row['beneficial'], 2)} | "
-            f"{_fmt(row['delta_dense'])} | {_fmt(row['total_ms_mean'], 1)} | {_fmt(row['total_ms_p95'], 1)} | "
-            f"{_fmt(row['total_ms_max'], 1)} | {_fmt(row['validation_ms_p95'], 1)} |"
+            f"{row['n']} | {_fmt(row['usable'], 2)} | {_fmt(row['dense_feasible'], 2)} | "
+            f"{_fmt(row['acceleration_ok'], 2)} | {_fmt(row['beneficial'], 2)} | "
+            f"{_fmt(row['delta_dense'])} | {_fmt(row['online_ms_mean'], 1)} | {_fmt(row['online_ms_p95'], 1)} | "
+            f"{_fmt(row['online_ms_max'], 1)} | {_fmt(row['dense_recheck_ms_p95'], 1)} |"
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -343,7 +435,7 @@ def main() -> None:
         epsilon_continuity_qdd=3.0e-3,
         limit_tolerance=1.0e-8,
     )
-    instances = make_fast_instances(model, reference, scenario=args.scenario, smoke=args.smoke, g1=args.g1)
+    instances = make_fast_instances(model, reference, ccro_evaluator, scenario=args.scenario, smoke=args.smoke, g1=args.g1)
     methods = (args.method,) if args.method else ("critical_fast_repair", "ccro_fast_repair")
     rows: list[dict[str, Any]] = []
     for instance in instances:
@@ -360,17 +452,18 @@ def main() -> None:
             print(
                 f"[6.4 fast] {instance['instance_id']} {instance['lead_label']} {FAST_METHOD_NAMES[method]} "
                 f"usable={row['usable_candidate']} dense={row['dense_geometry_only_feasible']} "
-                f"dD={row['delta_dense_min_distance']:.3f} total={row['total_ms']:.1f} ms"
+                f"dD={row['delta_dense_min_distance']:.3f} online={row['online_ms']:.1f} ms"
             )
     summary = _aggregate(rows)
     metrics = {
         "experiment": "6.4 Fast CCRO-NUBS local repair",
         "scope": "1 s local repair; no seconds-level trajectory optimization",
         "git_commit": git_commit_hash(),
+        "git_dirty": _git_dirty(),
         "scenario": args.scenario,
         "mode": "g1" if args.g1 else ("smoke" if args.smoke else "formal_stage_a_fast"),
         "timing_targets_ms": {
-            "p95_total": cfg.FAST_REPAIR_ACCEPT_MS,
+            "p95_online": cfg.FAST_REPAIR_ACCEPT_MS,
             "hard_max": cfg.FAST_REPAIR_HARD_MAX_MS,
         },
         "trial_count": len(rows),
