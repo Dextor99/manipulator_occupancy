@@ -134,3 +134,23 @@ Final stop-rule decision:
 - Keep seconds-level CCRO-NUBS in 6.3/static benchmark or 6.4 diagnostic discussion only.
 - Use Fast CCRO-NUBS local repair as the only path toward realtime 6.4 claims; it must pass G1 before any formal dynamic closed-loop claim.
 - Current fast repair v2 has not passed G1; it may be reported only as a development diagnostic showing that latency is feasible while geometric repair remains unsolved.
+
+Fast CCRO-NUBS v3 scaffold:
+
+- Added modular v3 repair code under `experiments/new/6_4/repair/`:
+  - `active_distance.py`: active distance extraction and finite-difference distance gradient;
+  - `nubs_linearization.py`: local NUBS interpolation-point sensitivity;
+  - `local_qp_solver.py`: small SLSQP-backed linearized repair step with safety slack;
+  - `repair_v3.py`: sequential convex repair loop.
+- Added `ccro_fast_v3` and `critical_fast_v3` methods to `fast_local_repair_64.py`.
+- Added G1-near generation with method-independent dense Mesh filtering: `0.07 <= Dmin_reference_dense < 0.08`.
+- G1-near CCRO v3 slack output: `results/new/6_4_fast_local_repair_g1_near_ccro_v3_slack/paper/table_6_4_fast_local_repair.md`.
+- G1-near CCRO v3 slack result:
+  - valid near-risk scenarios: 10/10;
+  - dense feasible: 0/10;
+  - usable candidate: 0/10;
+  - acceleration gate pass: 9/10;
+  - online mean: about 123.5 ms;
+  - online P95: about 245.4 ms, above the 150 ms target;
+  - median dense clearance improvement: 0 m, max improvement about 0.001 m.
+- Interpretation: the v3 modular structure is in place, but the temporary finite-difference/SLSQP scaffold is not yet the desired Fast CCRO-NUBS solver. It should be treated as an implementation scaffold. The next real implementation step is OSQP-style QP with analytic nearest-point Jacobians and a better active-set model.

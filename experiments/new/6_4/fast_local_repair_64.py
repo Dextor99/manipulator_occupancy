@@ -20,6 +20,7 @@ import numpy as np
 
 from planning.nubs_trajectory import NUBSTrajectory6D
 from planning.verifier import DynamicTrajectoryVerifier
+from .repair.repair_v3 import run_repair_v3
 
 from . import config_64 as cfg
 from .common_64 import (
@@ -38,6 +39,8 @@ from .scenarios_64 import _tangent_direction
 FAST_METHOD_NAMES = {
     "critical_fast_repair": "Critical-fast-repair",
     "ccro_fast_repair": "CCRO-fast-repair",
+    "critical_fast_v3": "Critical-fast-v3",
+    "ccro_fast_v3": "CCRO-fast-v3",
 }
 
 
@@ -87,11 +90,11 @@ def _surface_outward(model, q: np.ndarray, links: tuple[str, ...], rng: np.rando
     return link, point, outward
 
 
-def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smoke: bool, g1: bool) -> list[dict[str, Any]]:
+def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smoke: bool, g1: bool, g1_near: bool) -> list[dict[str, Any]]:
     rng = np.random.default_rng(cfg.RANDOM_SEED + (8100 if scenario == "D1" else 9100) + int(g1) * 1000)
     links = cfg.BODY_LINKS if scenario == "D1" else cfg.EE_LINKS
     scenario_type = "body_crossing_fast" if scenario == "D1" else "ee_crossing_fast"
-    if g1:
+    if g1 or g1_near:
         speeds = (0.15,)
         conflict_groups = {"Long": cfg.FAST_CONFLICT_TIME_GROUPS["Long"]}
         repeats = 10
@@ -110,22 +113,27 @@ def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smo
             attempts = 0
             while repeat < desired_per_cell:
                 attempts += 1
-                if attempts > 600:
+                if attempts > 2400:
                     raise RuntimeError(f"failed to generate enough fast instances for {scenario} {speed} {lead_label}")
                 tau_start = float(rng.uniform(tau_low, tau_high))
                 local_ref, _, _, _ = _make_local_reference(reference, tau_start)
                 q_conflict = local_ref.evaluate(float(conflict_time))
                 link, surface_point, outward = _surface_outward(model, q_conflict, links, rng)
                 radius = float(rng.uniform(0.04, 0.055))
-                clearance = float(rng.uniform(0.025, 0.065) if not g1 else rng.uniform(0.095, 0.165))
+                if g1_near:
+                    clearance = float(rng.uniform(0.18, 0.34))
+                elif g1:
+                    clearance = float(rng.uniform(0.095, 0.220))
+                else:
+                    clearance = float(rng.uniform(0.025, 0.065))
                 crossing_center = surface_point + (radius + clearance) * outward
                 direction = _tangent_direction(outward, rng)
                 velocity = float(speed) * direction
                 center_at_start = crossing_center - velocity * float(conflict_time)
                 forecast = constant_forecast(center_at_start, velocity, radius)
                 reference_dense_min = _trajectory_min(dense_evaluator, local_ref, forecast, density="dense")
-                if g1:
-                    low, high = cfg.FAST_G1_REFERENCE_DENSE_MIN_RANGE
+                if g1 or g1_near:
+                    low, high = cfg.FAST_G1_NEAR_DENSE_MIN_RANGE if g1_near else cfg.FAST_G1_REFERENCE_DENSE_MIN_RANGE
                     if not (low <= reference_dense_min < high):
                         continue
                 instances.append(
@@ -348,6 +356,81 @@ def fast_repair(
     }
 
 
+def fast_repair_v3(
+    reference,
+    evaluator,
+    online_verifier,
+    dense_verifier,
+    limits,
+    instance: dict[str, Any],
+) -> dict[str, Any]:
+    local_ref, p_inner, head, tail = _make_local_reference(reference, float(instance["tau_start"]))
+    durations = local_ref.durations
+    forecast = constant_forecast(
+        np.asarray(instance["obstacle_center0"], dtype=np.float64),
+        np.asarray(instance["obstacle_velocity"], dtype=np.float64),
+        float(instance["obstacle_radius"]),
+    )
+    started = time.perf_counter()
+    repaired = run_repair_v3(evaluator, forecast, limits, p_inner, head, tail, durations)
+    t_online = time.perf_counter()
+    online = online_verifier.verify(
+        repaired.trajectory,
+        forecast,
+        current_q=head[:, 0],
+        current_qd=head[:, 1],
+        current_qdd=head[:, 2],
+        q_goal=tail[:, 0],
+        solver_success=True,
+    )
+    medium_gate_ms = (time.perf_counter() - t_online) * 1000.0
+    online_ms = (time.perf_counter() - started) * 1000.0
+    t_dense = time.perf_counter()
+    dense = dense_verifier.verify(
+        repaired.trajectory,
+        forecast,
+        current_q=head[:, 0],
+        current_qd=head[:, 1],
+        current_qdd=head[:, 2],
+        q_goal=tail[:, 0],
+        solver_success=True,
+    )
+    dense_recheck_ms = (time.perf_counter() - t_dense) * 1000.0
+    ref_dense_min = _trajectory_min(dense_verifier.risk_evaluator, local_ref, forecast, density="dense")
+    cand_dense_min = float(dense.min_distance)
+    return {
+        "reference_trajectory": local_ref,
+        "candidate_trajectory": repaired.trajectory,
+        "metrics": {
+            "reference_dense_min_distance": ref_dense_min,
+            "candidate_dense_min_distance": cand_dense_min,
+            "delta_dense_min_distance": float(cand_dense_min - ref_dense_min),
+            "online_feasible": bool(online.accepted),
+            "dense_geometry_only_feasible": bool(dense.accepted),
+            "usable_candidate": bool(online_ms <= cfg.FAST_REPAIR_ACCEPT_MS and online.accepted and dense.accepted),
+            "hard_realtime_ok": bool(online_ms <= cfg.FAST_REPAIR_HARD_MAX_MS),
+            "beneficial": bool(cand_dense_min >= ref_dense_min + cfg.SWITCH_IMPROVEMENT_MARGIN),
+            "repair_steps": repaired.accepted_steps,
+            "accepted_updates": repaired.accepted_steps,
+            "rejected_updates": max(0, repaired.iterations - repaired.accepted_steps),
+            "risk_scan_ms": repaired.risk_scan_ms,
+            "repair_ms": float(repaired.linearization_ms + repaired.qp_ms),
+            "linearization_ms": repaired.linearization_ms,
+            "qp_ms": repaired.qp_ms,
+            "medium_gate_ms": float(medium_gate_ms),
+            "online_ms": float(online_ms),
+            "dense_recheck_ms": float(dense_recheck_ms),
+            "validation_ms": float(medium_gate_ms + dense_recheck_ms),
+            "total_ms": float(online_ms + dense_recheck_ms),
+            "active_constraints": repaired.active_constraints,
+            "qp_successes": repaired.qp_successes,
+            "repair_messages": repaired.messages,
+            "online_reasons": online.reasons,
+            "dense_reasons": dense.reasons,
+        },
+    }
+
+
 def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
     for row in rows:
@@ -403,9 +486,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=str(Path("results/new/6_4_fast_local_repair")))
     parser.add_argument("--config", default=str(cfg.STAGE4_CONFIG))
     parser.add_argument("--scenario", choices=["D1", "D2M"], default="D1")
-    parser.add_argument("--method", choices=["critical_fast_repair", "ccro_fast_repair"], default=None)
+    parser.add_argument(
+        "--method",
+        choices=["critical_fast_repair", "ccro_fast_repair", "critical_fast_v3", "ccro_fast_v3"],
+        default=None,
+    )
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--g1", action="store_true")
+    parser.add_argument("--g1-near", action="store_true")
     return parser.parse_args()
 
 
@@ -435,13 +523,24 @@ def main() -> None:
         epsilon_continuity_qdd=3.0e-3,
         limit_tolerance=1.0e-8,
     )
-    instances = make_fast_instances(model, reference, ccro_evaluator, scenario=args.scenario, smoke=args.smoke, g1=args.g1)
-    methods = (args.method,) if args.method else ("critical_fast_repair", "ccro_fast_repair")
+    instances = make_fast_instances(
+        model,
+        reference,
+        ccro_evaluator,
+        scenario=args.scenario,
+        smoke=args.smoke,
+        g1=args.g1,
+        g1_near=args.g1_near,
+    )
+    methods = (args.method,) if args.method else ("critical_fast_repair", "ccro_fast_repair", "critical_fast_v3", "ccro_fast_v3")
     rows: list[dict[str, Any]] = []
     for instance in instances:
         for method in methods:
-            evaluator = critical_evaluator if method == "critical_fast_repair" else ccro_evaluator
-            repaired = fast_repair(reference, model, evaluator, online_verifier, dense_verifier, limits, instance)
+            evaluator = critical_evaluator if method.startswith("critical") else ccro_evaluator
+            if method.endswith("_v3"):
+                repaired = fast_repair_v3(reference, evaluator, online_verifier, dense_verifier, limits, instance)
+            else:
+                repaired = fast_repair(reference, model, evaluator, online_verifier, dense_verifier, limits, instance)
             row = {
                 **{key: value for key, value in instance.items() if key not in {"obstacle_center0", "obstacle_velocity"}},
                 "method": method,
@@ -461,7 +560,7 @@ def main() -> None:
         "git_commit": git_commit_hash(),
         "git_dirty": _git_dirty(),
         "scenario": args.scenario,
-        "mode": "g1" if args.g1 else ("smoke" if args.smoke else "formal_stage_a_fast"),
+        "mode": "g1_near" if args.g1_near else ("g1" if args.g1 else ("smoke" if args.smoke else "formal_stage_a_fast")),
         "timing_targets_ms": {
             "p95_online": cfg.FAST_REPAIR_ACCEPT_MS,
             "hard_max": cfg.FAST_REPAIR_HARD_MAX_MS,
