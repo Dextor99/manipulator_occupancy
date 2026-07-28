@@ -107,9 +107,9 @@ def aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
         )
     lead_rows = []
     for label, low, high in [
-        ("short", -math.inf, 1.5),
-        ("medium", 1.5, 3.0),
-        ("long", 3.0, math.inf),
+        ("Short", -math.inf, 5.25),
+        ("Medium", 5.25, 6.75),
+        ("Long", 6.75, math.inf),
     ]:
         items = [
             trial for trial in trials

@@ -46,10 +46,27 @@ Blocked mechanism gate:
 - Safe-with-switch count was 0/6.
 - This means the final formal run should not be launched. The system can often remain safe by slowed execution, but it does not demonstrate stable asynchronous candidate switching under the frozen 6.4 mechanism.
 
+G0 consistency audit after replanning review:
+
+- Added `experiments/new/6_4/g0_audit_64.py` as the pre-formal implementation audit.
+- Latest G0 output: `results/new/6_4_final_gate/mechanism_d1/paper/table_6_4_g0_consistency_audit.md`.
+- The current 6-trial pilot contains 12 CCRO-NUBS trigger events.
+- Submission-time online safety passed in 7/12 candidate events.
+- Switch-time online safety passed in 2/12 candidate events.
+- No deadline misses were observed.
+- Trial-level medium-vs-dense GT recheck error was small: p95 medium-minus-dense about 0.001 m.
+- Interpretation: the pilot failure should not be treated as simple optimizer failure or threshold tuning target. The main unresolved issue is candidate validity at the planned switch state/time, so formal work must proceed through candidate replay and capability-boundary testing.
+
+Stage-A candidate replay scaffold:
+
+- Added `experiments/new/6_4/candidate_replay_64.py`.
+- Smoke output: `results/new/6_4_candidate_replay_d1_smoke/paper/table_6_4_candidate_replay.md`.
+- The smoke run is an entry-point validation only, not formal evidence; it confirms that fixed-state candidate replay can produce Critical-NUBS vs CCRO-NUBS funnel rows across Long/Medium/Short lead-time groups.
+
 Final stop-rule decision:
 
-- Do not continue adding more optimization modules inside 6.4.
-- Do not run the final D1-main/D2-main/D2-stress formal dataset.
-- Use the archived `results/new/6_4_async_v3_boundary` data only as a boundary/diagnostic result, not as final proof of stable asynchronous replanning.
-- Write 6.4 in the reduced form: dynamic risk trigger, safety slowdown/hold behavior, candidate-generation diagnostics, and current operating-domain boundary.
-- Keep the stronger asynchronous replanning claim for future work or for a later implementation with a faster/lower-level optimizer.
+- Do not continue adjusting individual failed D1 pilot cases.
+- Do not lower `D_ONLINE_ACCEPT`, retune weights, or reshape obstacle trajectories to make the pilot pass.
+- Do not run a new formal closed-loop dataset until G0 plus a simple feasible validation set and Stage-A candidate replay show acceptable candidate feasibility.
+- Reframe 6.4 as an asynchronous local replanning effectiveness and capability-boundary experiment.
+- Use the archived `results/new/6_4_async_v3_boundary` and current final-gate data only as pilot/diagnostic material, not as final proof of stable asynchronous replanning.

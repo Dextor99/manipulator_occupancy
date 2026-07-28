@@ -1,0 +1,100 @@
+{
+  "scope": "G0 pre-formal consistency audit on existing pilot/gate trials",
+  "notes": [
+    "candidate trajectories are not serialized in pilot trial files, so candidate dense recheck is not recomputed here",
+    "submission_validation audits the candidate at optimization completion; switch_validation audits the same candidate at the planned switch state/time"
+  ],
+  "distance_definition": {
+    "ccro_mesh_distance": "signed robot-surface to inflated obstacle-sphere clearance",
+    "online_candidate_acceptance": "medium mesh verifier, d_stop=0.09",
+    "gt_recheck": "dense mesh replay, d_stop=0.08",
+    "status": "consistent at module level; candidate-level dense artifacts require replay serialization"
+  },
+  "time_alignment": {
+    "tau_prediction_error_s": {
+      "n": 8,
+      "mean": 0.5205287528876705,
+      "min": 2.042810365310288e-14,
+      "p50": 2.398081733190338e-14,
+      "p95": 2.0992776966430573,
+      "max": 2.13932396185876
+    },
+    "deadline_miss": 0,
+    "candidate_time_ok": 3,
+    "events": 12
+  },
+  "bridge_vs_candidate": {
+    "bridge_min_distance_obs_predicted": {
+      "n": 12,
+      "mean": -0.06283374450377271,
+      "min": -0.14903126299936142,
+      "p50": -0.0628179946784855,
+      "p95": 0.010431723667355945,
+      "max": 0.0189551876771437
+    },
+    "bridge_min_distance_gt_executed": {
+      "n": 12,
+      "mean": 0.14871990109680985,
+      "min": 0.08688267904697672,
+      "p50": 0.12275440271622089,
+      "p95": 0.250883783759899,
+      "max": 0.25516183180824276
+    },
+    "candidate_min_distance_at_submission": {
+      "n": 12,
+      "mean": 0.15677417441813102,
+      "min": -0.11142431356569579,
+      "p50": 0.1523533981005914,
+      "p95": 0.46657190792806336,
+      "max": 0.53507587874164
+    },
+    "candidate_min_distance_at_switch": {
+      "n": 3,
+      "mean": 0.2055712391984612,
+      "min": 0.03900999545983862,
+      "p50": 0.25899424300789264,
+      "p95": 0.3127379555156764,
+      "max": 0.3187094791276524
+    },
+    "reference_min_distance_at_switch": {
+      "n": 3,
+      "mean": 0.21006279502102243,
+      "min": 0.032764062323102305,
+      "p50": 0.20277515804005003,
+      "p95": 0.37546176403392845,
+      "max": 0.39464916469991496
+    }
+  },
+  "medium_dense_trial_error": {
+    "medium_minus_dense_min_distance_m": {
+      "n": 6,
+      "mean": 0.0007452066510005434,
+      "min": 6.078531732864323e-05,
+      "p50": 0.0007569660961855157,
+      "p95": 0.0014102032990119875,
+      "max": 0.0014581498814492944
+    },
+    "online_pass_gt_violation_trial_ids": []
+  },
+  "candidate_funnel": [
+    {
+      "scenario_type": "body_crossing_main",
+      "method": "ccro_nubs",
+      "n_trigger": 12,
+      "planner_finished": 12,
+      "within_budget": 11,
+      "optimizer_converged": 7,
+      "submission_continuity": 12,
+      "submission_online_safe": 7,
+      "switch_continuity": 1,
+      "switch_online_safe": 2,
+      "beneficial": 0,
+      "switched": 0,
+      "switched_and_gt_safe": 0
+    }
+  ],
+  "go_no_go": {
+    "formal_full_run": false,
+    "reason": "Run candidate replay and a simple feasible validation set before any new closed-loop formal test."
+  }
+}

@@ -10,7 +10,12 @@ DEFAULT_OUTPUT = ROOT / "results" / "new" / "6_4"
 STAGE4_CONFIG = ROOT / "config" / "ccro_stage4.yaml"
 
 RANDOM_SEED = 20260723
-SPEED_GROUPS = (0.06, 0.09, 0.12)
+SPEED_GROUPS = (0.15, 0.25, 0.35)
+LEAD_TIME_GROUPS = {
+    "Long": 7.5,
+    "Medium": 6.0,
+    "Short": 4.5,
+}
 D1_MAIN_INSTANCES_PER_SPEED = 10
 D2_MAIN_INSTANCES_PER_SPEED = 10
 D2_STRESS_INSTANCES_PER_SPEED = 5
@@ -18,7 +23,8 @@ INSTANCES_PER_SPEED = 5
 CALIBRATION_TRIALS = 10
 
 METHODS = ("reference_only", "ssm", "ssm_apf", "critical_point_nubs", "ccro_nubs")
-MAIN_METHODS = ("reference_only", "ssm_apf", "critical_point_nubs", "ccro_nubs")
+MAIN_METHODS = ("ssm_apf", "critical_point_nubs", "ccro_nubs")
+PILOT_METHODS = ("reference_only", "ssm_apf", "critical_point_nubs", "ccro_nubs")
 METHOD_NAMES = {
     "reference_only": "Reference-only",
     "ssm": "SSM",
