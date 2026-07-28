@@ -9,7 +9,7 @@ import numpy as np
 
 from planning.nubs_trajectory import NUBSTrajectory6D
 from .. import config_64 as cfg
-from .active_distance import extract_active_distances
+from .active_distance import extract_active_distances, extract_dense_nearest_distances
 from .local_qp_solver import solve_local_qp
 from .nubs_linearization import build_local_sensitivity
 
@@ -28,7 +28,17 @@ class RepairV3Result:
     messages: list[str]
 
 
-def run_repair_v3(evaluator, forecast, limits, p_inner: np.ndarray, head: np.ndarray, tail: np.ndarray, durations: np.ndarray) -> RepairV3Result:
+def run_repair_v3(
+    evaluator,
+    forecast,
+    limits,
+    p_inner: np.ndarray,
+    head: np.ndarray,
+    tail: np.ndarray,
+    durations: np.ndarray,
+    *,
+    dense_active: bool = False,
+) -> RepairV3Result:
     sample_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
     points = np.asarray(p_inner, dtype=np.float64).copy()
     trajectory = NUBSTrajectory6D().generate(points, head, tail, durations)
@@ -41,14 +51,23 @@ def run_repair_v3(evaluator, forecast, limits, p_inner: np.ndarray, head: np.nda
     messages: list[str] = []
     for iteration in range(cfg.FAST_V3_MAX_ITERATIONS):
         t_scan = time.perf_counter()
-        active = extract_active_distances(
-            evaluator,
-            trajectory,
-            forecast,
-            sample_times=sample_times,
-            top_k=cfg.FAST_V3_ACTIVE_CONSTRAINTS,
-            density=cfg.SURFACE_DENSITY_LOOP,
-        )
+        if dense_active:
+            active = extract_dense_nearest_distances(
+                evaluator,
+                trajectory,
+                forecast,
+                sample_times=sample_times,
+                top_k=cfg.FAST_V3_ACTIVE_CONSTRAINTS,
+            )
+        else:
+            active = extract_active_distances(
+                evaluator,
+                trajectory,
+                forecast,
+                sample_times=sample_times,
+                top_k=cfg.FAST_V3_ACTIVE_CONSTRAINTS,
+                density=cfg.SURFACE_DENSITY_LOOP,
+            )
         risk_scan_ms += (time.perf_counter() - t_scan) * 1000.0
         active_count += len(active)
         if not active:
@@ -80,14 +99,23 @@ def run_repair_v3(evaluator, forecast, limits, p_inner: np.ndarray, head: np.nda
         candidate_points = points + cfg.FAST_V3_RELAXATION * qp.delta.reshape(points.shape)
         candidate = NUBSTrajectory6D().generate(candidate_points, head, tail, durations)
         current_min = min(item.distance for item in active)
-        next_active = extract_active_distances(
-            evaluator,
-            candidate,
-            forecast,
-            sample_times=sample_times,
-            top_k=1,
-            density=cfg.SURFACE_DENSITY_LOOP,
-        )
+        if dense_active:
+            next_active = extract_dense_nearest_distances(
+                evaluator,
+                candidate,
+                forecast,
+                sample_times=sample_times,
+                top_k=1,
+            )
+        else:
+            next_active = extract_active_distances(
+                evaluator,
+                candidate,
+                forecast,
+                sample_times=sample_times,
+                top_k=1,
+                density=cfg.SURFACE_DENSITY_LOOP,
+            )
         next_min = cfg.D_ONLINE_ACCEPT if not next_active else min(item.distance for item in next_active)
         if next_min <= current_min + cfg.FAST_V3_MIN_IMPROVEMENT:
             messages.append("rejected: no monotonic distance improvement")

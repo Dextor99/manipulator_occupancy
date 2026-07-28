@@ -1,15 +1,20 @@
-"""Small SLSQP-backed convex local repair step for 6.4 fast experiments."""
+"""Small linear-constraint QP fallback for 6.4 fast v4 repair.
+
+OSQP is the intended production solver.  The current environment does not ship
+with OSQP, so this module implements a deterministic projected half-space
+solver with the same linearized-constraint inputs.  It avoids SLSQP and keeps
+the online path explicitly convex and small.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.optimize import minimize
 
-from .. import config_64 as cfg
 from .active_distance import ActiveDistance
 from .nubs_linearization import LocalSensitivity
+from .. import config_64 as cfg
 
 
 @dataclass(frozen=True)
@@ -23,52 +28,18 @@ class LocalQPResult:
     min_predicted_distance: float
 
 
-def solve_local_qp(
-    active: list[ActiveDistance],
-    sensitivity: LocalSensitivity,
-    limits,
-    *,
-    trust_region: float,
-    d_safe: float,
-) -> LocalQPResult:
-    n_delta = sensitivity.variable_count
-    m = len(active)
-    n = n_delta + m
-    if n_delta == 0 or not active:
-        return LocalQPResult(False, np.zeros(n_delta), 0.0, -1, "empty local QP", 0, float("inf"))
+def _project_halfspace(x: np.ndarray, row: np.ndarray, bound: float) -> np.ndarray:
+    value = float(np.dot(row, x))
+    if value >= bound:
+        return x
+    denom = float(np.dot(row, row))
+    if denom < 1.0e-16:
+        return x
+    return x + ((bound - value) / denom) * row
 
-    def objective(delta: np.ndarray) -> float:
-        dp = np.asarray(delta[:n_delta], dtype=np.float64)
-        slack = np.asarray(delta[n_delta:], dtype=np.float64)
-        drive = 0.0
-        for deficit, row in clearance_drive:
-            drive += deficit * float(np.dot(row, dp))
-        return 0.5 * float(np.dot(dp, dp)) + cfg.FAST_V3_SLACK_WEIGHT * float(np.dot(slack, slack)) - cfg.FAST_V3_CLEARANCE_GAIN * drive
 
-    def gradient(delta: np.ndarray) -> np.ndarray:
-        grad = np.zeros(n, dtype=np.float64)
-        grad[:n_delta] = delta[:n_delta]
-        for deficit, row in clearance_drive:
-            grad[:n_delta] -= cfg.FAST_V3_CLEARANCE_GAIN * deficit * row
-        grad[n_delta:] = 2.0 * cfg.FAST_V3_SLACK_WEIGHT * delta[n_delta:]
-        return grad
-
-    constraints = []
-    predicted_rows: list[tuple[float, np.ndarray]] = []
-    clearance_drive: list[tuple[float, np.ndarray]] = []
-    for active_index, item in enumerate(active):
-        index = int(np.argmin(np.abs(sensitivity.sample_times - item.tau)))
-        row = np.einsum("j,jv->v", item.gradient_q, sensitivity.sq[index], optimize=True)
-        predicted_rows.append((float(item.distance), row.copy()))
-        clearance_drive.append((max(0.0, d_safe - float(item.distance)), row.copy()))
-        constraints.append(
-            {
-                "type": "ineq",
-                "fun": lambda delta, distance=float(item.distance), row=row, idx=active_index: distance + float(np.dot(row, delta[:n_delta])) + float(delta[n_delta + idx]) - d_safe,
-                "jac": lambda delta, row=row, idx=active_index: np.r_[row, np.eye(m)[idx]],
-            }
-        )
-
+def _motion_halfspaces(sensitivity: LocalSensitivity, limits) -> list[tuple[np.ndarray, float]]:
+    rows: list[tuple[np.ndarray, float]] = []
     for time_index in range(len(sensitivity.sample_times)):
         for joint in range(6):
             sq = sensitivity.sq[time_index, joint]
@@ -77,37 +48,77 @@ def solve_local_qp(
             q0 = float(sensitivity.q[time_index, joint])
             qd0 = float(sensitivity.qd[time_index, joint])
             qdd0 = float(sensitivity.qdd[time_index, joint])
-            constraints.extend(
+            rows.extend(
                 [
-                    {"type": "ineq", "fun": lambda d, row=sq, base=q0, lo=float(limits.q_min[joint]): base + float(np.dot(row, d[:n_delta])) - lo, "jac": lambda d, row=sq: np.r_[row, np.zeros(m)]},
-                    {"type": "ineq", "fun": lambda d, row=sq, base=q0, hi=float(limits.q_max[joint]): hi - base - float(np.dot(row, d[:n_delta])), "jac": lambda d, row=sq: np.r_[-row, np.zeros(m)]},
-                    {"type": "ineq", "fun": lambda d, row=sqd, base=qd0, hi=float(limits.qd_max[joint]): hi - base - float(np.dot(row, d[:n_delta])), "jac": lambda d, row=sqd: np.r_[-row, np.zeros(m)]},
-                    {"type": "ineq", "fun": lambda d, row=sqd, base=qd0, hi=float(limits.qd_max[joint]): hi + base + float(np.dot(row, d[:n_delta])), "jac": lambda d, row=sqd: np.r_[row, np.zeros(m)]},
-                    {"type": "ineq", "fun": lambda d, row=sqdd, base=qdd0, hi=float(limits.qdd_max[joint]): hi - base - float(np.dot(row, d[:n_delta])), "jac": lambda d, row=sqdd: np.r_[-row, np.zeros(m)]},
-                    {"type": "ineq", "fun": lambda d, row=sqdd, base=qdd0, hi=float(limits.qdd_max[joint]): hi + base + float(np.dot(row, d[:n_delta])), "jac": lambda d, row=sqdd: np.r_[row, np.zeros(m)]},
+                    (sq, float(limits.q_min[joint]) - q0),
+                    (-sq, q0 - float(limits.q_max[joint])),
+                    (sqd, -float(limits.qd_max[joint]) - qd0),
+                    (-sqd, qd0 - float(limits.qd_max[joint])),
+                    (sqdd, -float(limits.qdd_max[joint]) - qdd0),
+                    (-sqdd, qdd0 - float(limits.qdd_max[joint])),
                 ]
             )
+    return rows
 
-    bounds = [(-float(trust_region), float(trust_region)) for _ in range(n_delta)]
-    bounds += [(0.0, float(d_safe)) for _ in range(m)]
-    result = minimize(
-        objective,
-        np.zeros(n, dtype=np.float64),
-        method="SLSQP",
-        jac=gradient,
-        bounds=bounds,
-        constraints=constraints,
-        options={"maxiter": 40, "ftol": 1.0e-8, "disp": False},
-    )
-    full = np.asarray(result.x, dtype=np.float64)
-    delta = full[:n_delta]
-    predicted = [distance + float(np.dot(row, delta)) for distance, row in predicted_rows]
+
+def solve_local_qp(
+    active: list[ActiveDistance],
+    sensitivity: LocalSensitivity,
+    limits,
+    *,
+    trust_region: float,
+    d_safe: float,
+) -> LocalQPResult:
+    n = sensitivity.variable_count
+    if n == 0 or not active:
+        return LocalQPResult(False, np.zeros(n), 0.0, -1, "empty local QP", 0, float("inf"))
+
+    distance_rows: list[tuple[float, np.ndarray, float]] = []
+    drive = np.zeros(n, dtype=np.float64)
+    for item in active:
+        index = int(np.argmin(np.abs(sensitivity.sample_times - item.tau)))
+        row = np.einsum("j,jv->v", item.gradient_q, sensitivity.sq[index], optimize=True)
+        deficit = max(0.0, float(d_safe) - float(item.distance))
+        if np.linalg.norm(row) < 1.0e-12:
+            continue
+        distance_rows.append((float(item.distance), row.copy(), deficit))
+        drive += deficit * row / max(float(np.linalg.norm(row)), 1.0e-12)
+    if not distance_rows:
+        return LocalQPResult(False, np.zeros(n), 0.0, -2, "no usable active rows", 0, float("inf"))
+
+    norm = float(np.linalg.norm(drive))
+    if norm > 1.0e-12:
+        x = cfg.FAST_V4_DRIVE_SCALE * float(trust_region) * drive / norm
+    else:
+        x = np.zeros(n, dtype=np.float64)
+    x = np.clip(x, -float(trust_region), float(trust_region))
+
+    halfspaces: list[tuple[np.ndarray, float]] = []
+    for distance, row, _ in distance_rows:
+        halfspaces.append((row, float(d_safe) - distance))
+    halfspaces.extend(_motion_halfspaces(sensitivity, limits))
+
+    changed = 0
+    for iteration in range(cfg.FAST_V4_PROJECTION_SWEEPS):
+        before = x.copy()
+        for row, bound in halfspaces:
+            x = _project_halfspace(x, row, bound)
+            x = np.clip(x, -float(trust_region), float(trust_region))
+        if float(np.linalg.norm(x - before)) < 1.0e-7:
+            break
+        changed += 1
+
+    predicted = [distance + float(np.dot(row, x)) for distance, row, _ in distance_rows]
+    min_predicted = float(np.min(predicted)) if predicted else float("inf")
+    violations = [max(0.0, bound - float(np.dot(row, x))) for row, bound in halfspaces]
+    max_violation = float(np.max(violations)) if violations else 0.0
+    objective = 0.5 * float(np.dot(x, x)) + cfg.FAST_V3_SLACK_WEIGHT * max_violation * max_violation
     return LocalQPResult(
-        success=bool(result.success) and np.all(np.isfinite(delta)),
-        delta=delta,
-        objective=float(result.fun) if np.isfinite(result.fun) else float("inf"),
-        status=int(result.status),
-        message=str(result.message),
-        iterations=int(result.nit),
-        min_predicted_distance=float(np.min(predicted)) if predicted else float("inf"),
+        success=bool(np.all(np.isfinite(x))),
+        delta=x,
+        objective=objective,
+        status=0 if max_violation < 1.0e-5 else 1,
+        message=f"projected_qp max_violation={max_violation:.3e}",
+        iterations=changed,
+        min_predicted_distance=min_predicted,
     )

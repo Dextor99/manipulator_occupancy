@@ -159,6 +159,36 @@ class URDFModel:
             T[j.child] = T[j.parent] @ j._fixed @ j.variable(v)
         return T
 
+    def link_transforms_with_joint_frames(
+        self, angles: dict[str, float]
+    ) -> tuple[dict[str, np.ndarray], dict[str, tuple[np.ndarray, np.ndarray]]]:
+        """Return link transforms and world-frame joint origins/axes."""
+        T = {self.root_link: np.eye(4)}
+        frames: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        for jname in self._order:
+            j = self.joints[jname]
+            v = angles.get(jname, 0.0)
+            joint_frame = T[j.parent] @ j._fixed
+            axis_world = joint_frame[:3, :3] @ j._axis
+            norm = float(np.linalg.norm(axis_world))
+            if norm > 1.0e-12:
+                axis_world = axis_world / norm
+            frames[jname] = (joint_frame[:3, 3].copy(), axis_world.copy())
+            T[j.child] = joint_frame @ j.variable(v)
+        return T, frames
+
+    def joint_chain_to_link(self, link_name: str) -> list[str]:
+        """Return joints on the root-to-link path."""
+        parent_by_child = {joint.child: name for name, joint in self.joints.items()}
+        chain: list[str] = []
+        cursor = link_name
+        while cursor in parent_by_child:
+            joint_name = parent_by_child[cursor]
+            chain.append(joint_name)
+            cursor = self.joints[joint_name].parent
+        chain.reverse()
+        return chain
+
     _PREFERRED = ('.obj', '.STL', '.stl', '.ply')  # open3d-readable
 
     def resolve_mesh(self, link_name: str) -> str | None:

@@ -154,3 +154,23 @@ Fast CCRO-NUBS v3 scaffold:
   - online P95: about 245.4 ms, above the 150 ms target;
   - median dense clearance improvement: 0 m, max improvement about 0.001 m.
 - Interpretation: the v3 modular structure is in place, but the temporary finite-difference/SLSQP scaffold is not yet the desired Fast CCRO-NUBS solver. It should be treated as an implementation scaffold. The next real implementation step is OSQP-style QP with analytic nearest-point Jacobians and a better active-set model.
+
+Fast CCRO-NUBS v4 active-set scaffold:
+
+- Added analytic point-Jacobian support:
+  - `robot/urdf_model.py` now exposes world-frame joint origins/axes;
+  - `planning/robot_surface_model.py` now exposes a link-local surface-point translational Jacobian.
+- Replaced risk-sample active constraints with dense nearest Mesh active constraints in `repair/active_distance.py`.
+- Removed SLSQP from the v4 path. The current environment does not include OSQP, so `repair/local_qp_solver.py` now uses a deterministic projected half-space QP fallback with the same linearized constraint interface.
+- Added `ccro_fast_v4` and `critical_fast_v4` method entries.
+- G1-near CCRO v4 output: `results/new/6_4_fast_local_repair_g1_near_ccro_v4/paper/table_6_4_fast_local_repair.md`.
+- G1-near CCRO v4 result:
+  - valid near-risk scenarios: 10/10;
+  - dense feasible: 0/10;
+  - usable candidate: 0/10;
+  - acceleration gate pass: 10/10;
+  - online mean: about 128.4 ms;
+  - online P95: about 183.2 ms, above the 150 ms target;
+  - QP fallback median time: about 3.4 ms;
+  - median dense clearance improvement: 0 m, max improvement about 0.00024 m.
+- Interpretation: v4 moves the implementation closer to the intended active-set CCRO-QP structure and removes SLSQP from the repair step, but it still does not pass G1-near. The QP fallback is fast, yet the accepted linearized updates do not translate into meaningful dense clearance recovery. The remaining blocker is the active-set/Jacobian/local-DOF effectiveness, not merely solver runtime.

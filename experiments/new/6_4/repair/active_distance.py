@@ -16,6 +16,8 @@ class ActiveDistance:
     distance: float
     gradient_q: np.ndarray
     nearest_link: str | None
+    local_point: np.ndarray | None = None
+    world_point: np.ndarray | None = None
 
 
 def distance_gradient(evaluator, q: np.ndarray, forecast, tau: float, *, density: str) -> np.ndarray:
@@ -64,3 +66,56 @@ def extract_active_distances(
             )
         )
     return active
+
+
+def extract_dense_nearest_distances(
+    evaluator,
+    trajectory,
+    forecast,
+    *,
+    sample_times: np.ndarray,
+    top_k: int,
+    links: set[str] | None = None,
+) -> list[ActiveDistance]:
+    """Extract active constraints from dense Mesh nearest surface vertices."""
+    model = evaluator.surface_model
+    rows = []
+    for tau in np.asarray(sample_times, dtype=np.float64):
+        q = trajectory.evaluate(float(tau))
+        occupancy = forecast.occupancy_at(float(tau))
+        if not occupancy.spheres:
+            continue
+        fk = model.urdf.link_transforms(model._joint_dict(q))
+        selected = set(model.link_names) if links is None else set(links)
+        for link in model.link_names:
+            if link not in selected:
+                continue
+            transform = fk.get(link)
+            if transform is None:
+                continue
+            local_points = model.local_samples(link, density="dense")
+            world_points = local_points @ transform[:3, :3].T + transform[:3, 3]
+            for sphere in occupancy.spheres:
+                vectors = world_points - sphere.center[None, :]
+                radial = np.linalg.norm(vectors, axis=1)
+                point_index = int(np.argmin(radial - sphere.radius))
+                norm = float(radial[point_index])
+                direction = np.array([1.0, 0.0, 0.0]) if norm < 1.0e-12 else vectors[point_index] / norm
+                distance = float(norm - sphere.radius)
+                jac_point = model.point_jacobian(q, link, local_points[point_index])
+                gradient = direction @ jac_point
+                if np.linalg.norm(gradient) < 1.0e-12 or not np.all(np.isfinite(gradient)):
+                    continue
+                rows.append(
+                    ActiveDistance(
+                        tau=float(tau),
+                        q=q,
+                        distance=distance,
+                        gradient_q=np.asarray(gradient, dtype=np.float64),
+                        nearest_link=link,
+                        local_point=local_points[point_index].copy(),
+                        world_point=world_points[point_index].copy(),
+                    )
+                )
+    rows.sort(key=lambda item: item.distance)
+    return rows[: max(1, int(top_k))]

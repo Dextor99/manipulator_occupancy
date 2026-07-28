@@ -260,6 +260,26 @@ class RobotSurfaceModel:
         by_link = self.surface_by_link(q, density=density, links=links)
         return np.vstack(list(by_link.values())) if by_link else np.empty((0, 3))
 
+    def point_jacobian(self, q: np.ndarray, link: str, local_point: np.ndarray) -> np.ndarray:
+        """Analytic translational Jacobian of a link-local surface point."""
+        values = np.asarray(q, dtype=np.float64)
+        local = np.asarray(local_point, dtype=np.float64)
+        fk, frames = self.urdf.link_transforms_with_joint_frames(self._joint_dict(values))
+        transform = fk[link]
+        point_world = local @ transform[:3, :3].T + transform[:3, 3]
+        chain = set(self.urdf.joint_chain_to_link(link))
+        jacobian = np.zeros((3, len(self.joint_names)), dtype=np.float64)
+        for col, joint_name in enumerate(self.joint_names):
+            if joint_name not in chain:
+                continue
+            joint = self.urdf.joints[joint_name]
+            origin, axis = frames[joint_name]
+            if joint.type == "revolute":
+                jacobian[:, col] = np.cross(axis, point_world - origin)
+            elif joint.type == "prismatic":
+                jacobian[:, col] = axis
+        return jacobian
+
     def sample_counts(self) -> dict[str, dict[str, int]]:
         return {
             link: {level: len(points) for level, points in levels.items()}

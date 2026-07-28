@@ -41,6 +41,8 @@ FAST_METHOD_NAMES = {
     "ccro_fast_repair": "CCRO-fast-repair",
     "critical_fast_v3": "Critical-fast-v3",
     "ccro_fast_v3": "CCRO-fast-v3",
+    "critical_fast_v4": "Critical-fast-v4",
+    "ccro_fast_v4": "CCRO-fast-v4",
 }
 
 
@@ -363,6 +365,8 @@ def fast_repair_v3(
     dense_verifier,
     limits,
     instance: dict[str, Any],
+    *,
+    dense_active: bool = False,
 ) -> dict[str, Any]:
     local_ref, p_inner, head, tail = _make_local_reference(reference, float(instance["tau_start"]))
     durations = local_ref.durations
@@ -372,7 +376,16 @@ def fast_repair_v3(
         float(instance["obstacle_radius"]),
     )
     started = time.perf_counter()
-    repaired = run_repair_v3(evaluator, forecast, limits, p_inner, head, tail, durations)
+    repaired = run_repair_v3(
+        evaluator,
+        forecast,
+        limits,
+        p_inner,
+        head,
+        tail,
+        durations,
+        dense_active=dense_active,
+    )
     t_online = time.perf_counter()
     online = online_verifier.verify(
         repaired.trajectory,
@@ -488,7 +501,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario", choices=["D1", "D2M"], default="D1")
     parser.add_argument(
         "--method",
-        choices=["critical_fast_repair", "ccro_fast_repair", "critical_fast_v3", "ccro_fast_v3"],
+        choices=[
+            "critical_fast_repair",
+            "ccro_fast_repair",
+            "critical_fast_v3",
+            "ccro_fast_v3",
+            "critical_fast_v4",
+            "ccro_fast_v4",
+        ],
         default=None,
     )
     parser.add_argument("--smoke", action="store_true")
@@ -532,12 +552,29 @@ def main() -> None:
         g1=args.g1,
         g1_near=args.g1_near,
     )
-    methods = (args.method,) if args.method else ("critical_fast_repair", "ccro_fast_repair", "critical_fast_v3", "ccro_fast_v3")
+    methods = (args.method,) if args.method else (
+        "critical_fast_repair",
+        "ccro_fast_repair",
+        "critical_fast_v3",
+        "ccro_fast_v3",
+        "critical_fast_v4",
+        "ccro_fast_v4",
+    )
     rows: list[dict[str, Any]] = []
     for instance in instances:
         for method in methods:
             evaluator = critical_evaluator if method.startswith("critical") else ccro_evaluator
-            if method.endswith("_v3"):
+            if method.endswith("_v4"):
+                repaired = fast_repair_v3(
+                    reference,
+                    evaluator,
+                    online_verifier,
+                    dense_verifier,
+                    limits,
+                    instance,
+                    dense_active=True,
+                )
+            elif method.endswith("_v3"):
                 repaired = fast_repair_v3(reference, evaluator, online_verifier, dense_verifier, limits, instance)
             else:
                 repaired = fast_repair(reference, model, evaluator, online_verifier, dense_verifier, limits, instance)
