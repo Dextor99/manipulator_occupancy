@@ -169,9 +169,9 @@ def run_trial(
     gt_velocity = np.asarray(instance["gt_velocity"], dtype=np.float64)
     gt_radius = float(instance["gt_radius"])
     obs = ObservationFilter(
-        center=np.asarray(instance["observed_center0"], dtype=np.float64),
-        velocity=np.asarray(instance["observed_velocity"], dtype=np.float64),
-        radius=float(instance["observed_radius"]),
+        center=np.asarray(instance["gt_center0"], dtype=np.float64) + np.asarray(instance["obs_pos_error"], dtype=np.float64),
+        velocity=np.asarray(instance["gt_velocity"], dtype=np.float64) + np.asarray(instance["obs_vel_error"], dtype=np.float64),
+        radius=max(0.025, float(instance["gt_radius"]) + float(instance.get("obs_radius_error", 0.0))),
         next_update=0.0,
         rng=np.random.default_rng(int(instance["observation_seed"])),
     )

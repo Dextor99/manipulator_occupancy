@@ -247,6 +247,21 @@ def constant_forecast(center: np.ndarray, velocity: np.ndarray, radius: float):
     )
 
 
+def ground_truth_forecast(center: np.ndarray, velocity: np.ndarray, radius: float):
+    """Pure geometric GT forecast — no uncertainty inflation or margin."""
+    return ConstantVelocitySphereForecast(
+        np.asarray(center, dtype=np.float64),
+        np.asarray(velocity, dtype=np.float64),
+        float(radius),
+        cfg.FORECAST_HORIZON,
+        margin=0.0,
+        uncertainty=0.0,
+        uncertainty_growth=0.0,
+        velocity_radius_scale=0.0,
+        beyond_horizon="hold_inflate",
+    )
+
+
 def _trajectory_min_distance(evaluator, trajectory: NUBSTrajectory6D, forecast, duration: float) -> float:
     sample_count = max(5, int(np.ceil(float(duration) / cfg.DT)) + 1)
     times = np.linspace(0.0, float(duration), sample_count)
@@ -333,6 +348,7 @@ def optimize_candidate(
     warm_start_trajectory: NUBSTrajectory6D | None = None,
     warm_start_tau: float | None = None,
     optimization_budget_s: float | None = None,
+    force_inner_initial: np.ndarray | None = None,
 ) -> dict[str, Any]:
     head = NUBSTrajectory6D.make_boundary_state(q_now, qd_now, qdd_now)
     tail = NUBSTrajectory6D.make_boundary_state(
@@ -363,7 +379,9 @@ def optimize_candidate(
         gradient_tolerance=float(config["optimizer"]["gradient_tolerance"]),
     )
     p_inner_initial = None
-    if warm_start_trajectory is not None and warm_start_tau is not None and len(durations) > 1:
+    if force_inner_initial is not None:
+        p_inner_initial = np.asarray(force_inner_initial, dtype=np.float64)
+    elif warm_start_trajectory is not None and warm_start_tau is not None and len(durations) > 1:
         local_times = np.cumsum(durations)[:-1]
         p_inner_initial = np.vstack(
             [
@@ -485,14 +503,15 @@ def git_commit_hash() -> str | None:
 
 
 def git_is_dirty() -> bool:
+    """Check if working tree has tracked or untracked changes."""
     try:
         result = subprocess.run(
-            ["git", "diff", "--quiet"],
+            ["git", "status", "--porcelain"],
             cwd=ROOT,
             capture_output=True,
             text=True,
         )
-        return result.returncode != 0
+        return len(result.stdout.strip()) > 0
     except Exception:
         return True
 
@@ -504,7 +523,10 @@ def file_sha256(path: Path) -> str | None:
         return None
 
 
-def manifest_meta(extra_source_paths: list[Path] | None = None) -> dict[str, Any]:
+def manifest_meta(
+    extra_source_paths: list[Path] | None = None,
+    stage4_config_path: Path | None = None,
+) -> dict[str, Any]:
     meta: dict[str, Any] = {
         "git_commit": git_commit_hash(),
         "git_dirty": git_is_dirty(),
@@ -514,6 +536,11 @@ def manifest_meta(extra_source_paths: list[Path] | None = None) -> dict[str, Any
     config_yaml = Path(__file__).resolve().parent / "config_64.yaml"
     if config_yaml.exists():
         meta["config_sha256"] = file_sha256(config_yaml)
+    # Stage4 config hash (the actual loaded config)
+    if stage4_config_path is not None and stage4_config_path.exists():
+        meta["stage4_config_sha256"] = file_sha256(stage4_config_path)
+    elif cfg.STAGE4_CONFIG.exists():
+        meta["stage4_config_sha256"] = file_sha256(cfg.STAGE4_CONFIG)
     source_shas: dict[str, str | None] = {}
     for src_path in [Path(__file__)] + extra_source_paths:
         try:

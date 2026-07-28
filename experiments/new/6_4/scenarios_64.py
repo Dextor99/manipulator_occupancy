@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from experiments.exp_ccro_stage3 import _select_sweep_point
+from planning.nubs_trajectory import NUBSTrajectory6D
 
 from . import config_64 as cfg
 from .common_64 import min_distance_to_sphere, write_json
@@ -86,11 +87,17 @@ def _reference_time_markers(rows: list[dict[str, Any]]) -> dict[str, float | Non
     }
 
 
-def _observed_from_gt(rng: np.random.Generator, center0: np.ndarray, velocity: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray, float]:
+def _frozen_observation_errors(rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray, float]:
+    """Sample one-time frozen observation errors.
+
+    Returns (pos_error, vel_error, radius_error) that are added to the GT
+    state at trigger time during replay.  The same frozen errors are used
+    across all three lead-time variants for the same instance.
+    """
     return (
-        center0 + rng.normal(0.0, cfg.OBS_POS_SIGMA, size=3),
-        np.asarray(velocity, dtype=np.float64) + rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3),
-        max(0.025, float(radius + rng.normal(0.0, cfg.OBS_RADIUS_SIGMA))),
+        rng.normal(0.0, cfg.OBS_POS_SIGMA, size=3),
+        rng.normal(0.0, cfg.OBS_VEL_SIGMA, size=3),
+        float(rng.normal(0.0, cfg.OBS_RADIUS_SIGMA)),
     )
 
 
@@ -225,16 +232,50 @@ def _make_crossing_instance(
     markers = best_item["markers"]
     initial_distance = best_item["initial_distance"]
     frozen_seed = int(best_item["seed"])
-    obs_center0, obs_velocity, obs_radius = _observed_from_gt(
-        np.random.default_rng(frozen_seed + 100_000), pre_motion_center, np.zeros(3), radius
-    )
-    # Determine conflict_time_source
+
+    # --- Frozen observation errors (one-time, same across lead variants) ---
+    obs_rng = np.random.default_rng(frozen_seed + 100_000)
+    obs_pos_error, obs_vel_error, obs_radius_error = _frozen_observation_errors(obs_rng)
+
+    # --- Determine conflict_time_source ---
     if markers.get("first_accept_violation_time") is not None:
         conflict_time_source = "first_accept_violation_time"
-    elif markers.get("reference_risk_time") is not None:
+    elif markers.get("time_of_min_distance") is not None:
         conflict_time_source = "time_of_min_distance"
     else:
         conflict_time_source = "not_determined"
+    conflict_time_global = float(markers.get("first_accept_violation_time") or markers.get("time_of_min_distance") or min_row["time"])
+
+    # --- Independent 4 s local trajectory segment ---
+    # The switch point is always POST_SWITCH_CONFLICT_TIME before conflict,
+    # so all three lead variants share the same local segment.
+    switch_tau_global = conflict_time_global - cfg.POST_SWITCH_CONFLICT_TIME
+    resume_tau_global = switch_tau_global + cfg.LOCAL_REPLAN_HORIZON
+    local_horizon = cfg.LOCAL_REPLAN_HORIZON
+    local_conflict_time = cfg.POST_SWITCH_CONFLICT_TIME
+
+    # Boundary states (q, qd, qdd) at local start and end
+    local_head = np.column_stack([
+        trajectory.evaluate(min(switch_tau_global, trajectory.total_duration), derivative_order=d)
+        for d in range(3)
+    ])  # (6, 3)
+    local_tail = np.column_stack([
+        trajectory.evaluate(min(resume_tau_global, trajectory.total_duration), derivative_order=d)
+        for d in range(3)
+    ])  # (6, 3)
+
+    # Reference inner points for warm-start, computed at the reference's own
+    # knot spacing.  We determine the number of segments that fit in the
+    # local horizon by scaling from the full trajectory.
+    full_segments = len(trajectory.durations)
+    full_duration = float(trajectory.total_duration)
+    local_segments = max(3, int(round(local_horizon * full_segments / max(full_duration, 1.0))))
+    local_durations = np.full(local_segments, local_horizon / local_segments)
+    local_cum_times = np.cumsum(local_durations)[:-1]  # (local_segments - 1,) inner knot times
+    local_reference_inner = np.vstack([
+        trajectory.evaluate(min(switch_tau_global + float(t), trajectory.total_duration))
+        for t in local_cum_times
+    ])  # (local_segments - 1, 6)
     return {
         "instance_id": f"{scenario_type}_{instance_index:02d}",
         "scenario_type": {
@@ -248,18 +289,22 @@ def _make_crossing_instance(
         "seed": frozen_seed,
         "target_region": selected["link"],
         "target_time": float(selected["time"]),
+        # --- GT obstacle motion (same for all lead variants) ---
         "gt_center0": center0.tolist(),
         "gt_velocity": velocity.tolist(),
         "motion_start_time": motion_start_time,
         "pre_motion_center": pre_motion_center.tolist(),
         "gt_radius": radius,
-        "observed_center0": obs_center0.tolist(),
-        "observed_velocity": obs_velocity.tolist(),
-        "observed_radius": obs_radius,
+        # --- Frozen observation errors (applied at trigger time once) ---
+        "obs_pos_error": obs_pos_error.tolist(),
+        "obs_vel_error": obs_vel_error.tolist(),
+        "obs_radius_error": obs_radius_error,
         "observation_seed": int(frozen_seed + 100_000),
+        # --- Reference distance markers (method-independent) ---
         "reference_initial_distance": float(initial_distance),
         "reference_min_distance": float(min_row["distance"]),
         "conflict_time_source": conflict_time_source,
+        "conflict_time_global": conflict_time_global,
         "generation_valid": generation_valid,
         "generation_attempts": generation_attempts,
         "generation_failure_reasons": generation_failure_reasons,
@@ -267,6 +312,14 @@ def _make_crossing_instance(
         "static_wait_min_distance": float(best_item["static_min_distance"]),
         "reference_risk_time": float(min_row["time"]),
         "reference_nearest_link": min_row["nearest_link"],
+        # --- Independent 4 s local trajectory segment ---
+        "local_horizon": local_horizon,
+        "local_conflict_time": local_conflict_time,
+        "local_switch_tau_global": switch_tau_global,
+        "local_head_state": local_head.tolist(),      # (6, 3) [q, qd, qdd] x 6DOF
+        "local_tail_state": local_tail.tolist(),       # (6, 3)
+        "local_durations": local_durations.tolist(),   # (local_segments,)
+        "local_reference_inner": local_reference_inner.tolist(),  # (N-1, 6)
     }
 
 
@@ -278,9 +331,8 @@ def _make_far_instance(model, trajectory, index: int, seed: int) -> dict[str, An
     velocity = rng.uniform(-0.01, 0.01, size=3)
     radius = float(rng.uniform(0.04, 0.06))
     rows = _reference_distance_rows(model, trajectory, center, velocity, radius)
-    obs_center0, obs_velocity, obs_radius = _observed_from_gt(
-        np.random.default_rng(seed + 100_000), center, velocity, radius
-    )
+    obs_rng = np.random.default_rng(seed + 100_000)
+    obs_pos_error, obs_vel_error, obs_radius_error = _frozen_observation_errors(obs_rng)
     return {
         "instance_id": f"D3_{index:02d}",
         "scenario_type": "far_safe",
@@ -292,15 +344,16 @@ def _make_far_instance(model, trajectory, index: int, seed: int) -> dict[str, An
         "gt_velocity": velocity.tolist(),
         "motion_start_time": 0.0,
         "gt_radius": radius,
-        "observed_center0": obs_center0.tolist(),
-        "observed_velocity": obs_velocity.tolist(),
-        "observed_radius": obs_radius,
+        "obs_pos_error": obs_pos_error.tolist(),
+        "obs_vel_error": obs_vel_error.tolist(),
+        "obs_radius_error": obs_radius_error,
         "observation_seed": int(seed + 100_000),
         "reference_initial_distance": float(rows[0]["distance"]),
         "reference_min_distance": float(min(row["distance"] for row in rows)),
         "reference_risk_time": None,
         "reference_nearest_link": None,
         "conflict_time_source": "no_conflict",
+        "conflict_time_global": None,
         "generation_valid": True,
         "generation_attempts": 1,
         "generation_failure_reasons": [],
@@ -316,9 +369,8 @@ def _make_high_instance(model, trajectory, index: int, seed: int) -> dict[str, A
     velocity = rng.uniform(-0.005, 0.005, size=3)
     radius = float(rng.uniform(0.045, 0.055))
     rows = _reference_distance_rows(model, trajectory, center, velocity, radius)
-    obs_center0, obs_velocity, obs_radius = _observed_from_gt(
-        np.random.default_rng(seed + 100_000), center, velocity, radius
-    )
+    obs_rng = np.random.default_rng(seed + 100_000)
+    obs_pos_error, obs_vel_error, obs_radius_error = _frozen_observation_errors(obs_rng)
     return {
         "instance_id": f"D4_{index:02d}",
         "scenario_type": "initial_high_risk",
@@ -330,15 +382,16 @@ def _make_high_instance(model, trajectory, index: int, seed: int) -> dict[str, A
         "gt_velocity": velocity.tolist(),
         "motion_start_time": 0.0,
         "gt_radius": radius,
-        "observed_center0": obs_center0.tolist(),
-        "observed_velocity": obs_velocity.tolist(),
-        "observed_radius": obs_radius,
+        "obs_pos_error": obs_pos_error.tolist(),
+        "obs_vel_error": obs_vel_error.tolist(),
+        "obs_radius_error": obs_radius_error,
         "observation_seed": int(seed + 100_000),
         "reference_initial_distance": float(rows[0]["distance"]),
         "reference_min_distance": float(min(row["distance"] for row in rows)),
         "reference_risk_time": 0.0,
         "reference_nearest_link": link,
         "conflict_time_source": "immediate_at_zero",
+        "conflict_time_global": 0.0,
         "generation_valid": True,
         "generation_attempts": 1,
         "generation_failure_reasons": [],
