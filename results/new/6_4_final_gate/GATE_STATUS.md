@@ -287,3 +287,31 @@ Margin-stability sweep and calibration:
   - keep `clearance_reward=0.0`;
   - keep online and dense thresholds unchanged.
 - Interpretation: the attempted margin maximization and sequential refinement are useful negative controls. They improve neither online acceptance nor paper credibility on the current G1-near development set. The next credibility step should be scenario stratification and reporting the three-rate funnel (`repair success`, `online acceptance`, `verified safety`) rather than further local solver tuning.
+
+G1-band capability boundary after parameter freeze:
+
+- Added `experiments/new/6_4/fast_v4_band_study_64.py`.
+- Frozen Fast CCRO-NUBS v4 parameters:
+  - `target_clearance=0.095`;
+  - one online QP iteration;
+  - `clearance_reward=0.0`;
+  - online threshold remains 0.09 m;
+  - dense GT threshold remains 0.08 m.
+- Output:
+  - `results/new/6_4_fast_v4_g1_band_study/paper/table_6_4_fast_v4_g1_band_study.md`.
+- D1 G1-band results:
+  - Easy band `[0.075, 0.080)`:
+    - Critical-fast-v4: repair success 9/10, online acceptance 4/10, verified safety 4/4, P95 about 113.1 ms;
+    - CCRO-fast-v4: repair success 10/10, online acceptance 8/10, verified safety 8/8, P95 about 129.4 ms.
+  - Main band `[0.065, 0.075)`:
+    - Critical-fast-v4: repair success 8/10, online acceptance 3/10, verified safety 3/3, P95 about 123.4 ms;
+    - CCRO-fast-v4: repair success 9/10, online acceptance 9/10, verified safety 9/9, P95 about 130.3 ms.
+  - Hard band `[0.055, 0.065)`:
+    - Critical-fast-v4: repair success 1/10, online acceptance 1/10, verified safety 1/1, P95 about 150.6 ms;
+    - CCRO-fast-v4: repair success 3/10, online acceptance 2/10, verified safety 2/2, P95 about 146.7 ms.
+- Interpretation:
+  - The band study gives a credible capability curve rather than a single success number.
+  - CCRO's dense whole-body active set consistently outperforms the sparse Critical-point active set under the same solver shell.
+  - The main band is a strong candidate for the paper's primary G1 result: CCRO-fast-v4 reached 9/10 dense repair success and 9/10 online acceptance with 100% verified safety among accepted candidates.
+  - The hard band should be presented as the capability boundary, not as the main operating regime.
+  - This confirms the current freeze decision: further solver tuning is lower priority than moving to formal D1/D2 fast experiments with the frozen v4 configuration and three-rate reporting.
