@@ -315,3 +315,22 @@ G1-band capability boundary after parameter freeze:
   - The main band is a strong candidate for the paper's primary G1 result: CCRO-fast-v4 reached 9/10 dense repair success and 9/10 online acceptance with 100% verified safety among accepted candidates.
   - The hard band should be presented as the capability boundary, not as the main operating regime.
   - This confirms the current freeze decision: further solver tuning is lower priority than moving to formal D1/D2 fast experiments with the frozen v4 configuration and three-rate reporting.
+
+Final paper-table consolidation:
+
+- Added `experiments/new/6_4/fast_v4_paper_tables_64.py`.
+- Generated paper-ready tables from the frozen G1-band study:
+  - `results/new/6_4_fast_v4_g1_band_study/paper/table_6_4_fast_v4_main_performance.md`;
+  - `results/new/6_4_fast_v4_g1_band_study/paper/table_6_4_fast_v4_clearance_gain.md`;
+  - `results/new/6_4_fast_v4_g1_band_study/paper/table_6_4_fast_v4_runtime_decomposition.md`.
+- Clearance-gain evidence:
+  - in the main band, Critical-fast-v4 improved dense clearance by about 0.0128 m on average;
+  - CCRO-fast-v4 improved dense clearance by about 0.0193 m on average.
+- Runtime evidence:
+  - in the main band, CCRO-fast-v4 online P95 was about 130.3 ms;
+  - mean QP time was about 8.87 ms;
+  - mean online gate time was about 22.72 ms;
+  - dense recheck was reported separately as offline GT validation.
+- Final state:
+  - Fast CCRO-NUBS v4 is frozen for paper writing and D1/D2 extension.
+  - Further solver tuning is explicitly out of scope unless new D1/D2 evidence contradicts the G1-band capability curve.
