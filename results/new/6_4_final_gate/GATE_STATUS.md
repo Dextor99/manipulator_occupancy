@@ -382,3 +382,36 @@ Formal compact D1/D2M run after freeze:
   - This completed run should be treated as a stress/boundary audit rather than the main 6.4 success-rate table.
   - The G1-band capability study remains the current paper-ready main evidence.
   - Do not respond to this result by tuning solver parameters or lowering thresholds. The next credible D1/D2M extension, if needed, should add a method-independent admissible-risk sampling/reporting protocol and keep frozen v4 parameters unchanged.
+
+D1/D2M admissible-risk dynamic protocol:
+
+- Added method-independent dynamic risk bands in `config_64.py`:
+  - `admissible`: reference dense minimum in `[0.04, 0.08) m`;
+  - `stress`: reference dense minimum in `[-0.02, 0.04) m`;
+  - `unfiltered`: legacy compact sampling.
+- Added `--formal-risk-band` to `fast_local_repair_64.py`.
+- Added `--risk-band` to `fast_v4_formal_dynamic_64.py`; default is now `admissible`.
+- The admissible band additionally requires a dense active risk point with nontrivial local NUBS sensitivity, matching the local-repair operating assumption without using any method output.
+- Completed admissible D1/D2M run:
+  - output: `results/new/6_4_fast_v4_formal_dynamic_admissible`;
+  - status: `results/new/6_4_fast_v4_formal_dynamic_admissible/FORMAL_DYNAMIC_ADMISSIBLE_STATUS.md`.
+- Admissible result:
+  - D1 Critical-fast-v4: dense repair 4/20, online acceptance 2/20, P95 162.7 ms;
+  - D1 CCRO-fast-v4: dense repair 10/20, online acceptance 5/20, P95 135.3 ms;
+  - D2M Critical-fast-v4: dense repair 12/20, online acceptance 9/20, P95 127.7 ms;
+  - D2M CCRO-fast-v4: dense repair 13/20, online acceptance 12/20, P95 138.0 ms.
+- Interpretation:
+  - The admissible protocol produces a credible formal dynamic extension without changing the solver or safety thresholds.
+  - CCRO-fast-v4 improves over Critical-fast-v4 in D1 dense repair, D1 online acceptance, and D2M online acceptance.
+  - D1 crossing remains a hard dynamic local-repair case and should be reported as such.
+
+D1/D2M stress band:
+
+- Completed stress-band run:
+  - output: `results/new/6_4_fast_v4_formal_dynamic_stress`;
+  - status: `results/new/6_4_fast_v4_formal_dynamic_stress/FORMAL_DYNAMIC_STRESS_STATUS.md`.
+- Stress result:
+  - all four scenario/method groups have dense repair 0/20 and online acceptance 0/20.
+- Interpretation:
+  - The stress band and the earlier unfiltered compact run jointly define the operating boundary.
+  - They should not replace the G1-band and admissible dynamic tables as the main evidence.

@@ -27,8 +27,8 @@ def _fmt(value: Any, digits: int = 3) -> str:
     return f"{number:.{digits}f}"
 
 
-def _run_case(output: Path, *, scenario: str, method: str) -> dict[str, Any]:
-    case_dir = output / f"{scenario.lower()}_{method}"
+def _run_case(output: Path, *, scenario: str, method: str, risk_band: str) -> dict[str, Any]:
+    case_dir = output / f"{scenario.lower()}_{method}_{risk_band}"
     cmd = [
         sys.executable,
         "-u",
@@ -39,6 +39,8 @@ def _run_case(output: Path, *, scenario: str, method: str) -> dict[str, Any]:
         "--scenario",
         scenario,
         "--formal-compact",
+        "--formal-risk-band",
+        risk_band,
         "--method",
         method,
         "--v4-target-clearance",
@@ -56,6 +58,7 @@ def _run_case(output: Path, *, scenario: str, method: str) -> dict[str, Any]:
         "case_dir": str(case_dir.relative_to(cfg.ROOT)),
         "scenario": scenario,
         "method": method,
+        "risk_band": risk_band,
         "trial_count": len(trials),
         "summary": summary_rows,
     }
@@ -69,6 +72,7 @@ def _flatten_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 {
                     "scenario": case["scenario"],
                     "method": case["method"],
+                    "risk_band": case["risk_band"],
                     "speed_group": row["speed_group"],
                     "conflict": row["lead_label"],
                     "n": row["n"],
@@ -93,12 +97,12 @@ def _write_table(rows: list[dict[str, Any]], path: Path) -> None:
     lines = [
         "# 6.4 Frozen Fast v4 D1/D2 Formal Dynamic Validation",
         "",
-        "| scenario | method | speed | conflict | n | repair success | online acceptance | verified safety | time pass | accel pass | mean dD dense / m | online mean / ms | online p95 / ms | online max / ms | deformation RMS / rad | case |",
-        "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| scenario | risk band | method | speed | conflict | n | repair success | online acceptance | verified safety | time pass | accel pass | mean dD dense / m | online mean / ms | online p95 / ms | online max / ms | deformation RMS / rad | case |",
+        "|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in rows:
         lines.append(
-            f"| {row['scenario']} | {row['method']} | {row['speed_group']} | {row['conflict']} | {row['n']} | "
+            f"| {row['scenario']} | {row['risk_band']} | {row['method']} | {row['speed_group']} | {row['conflict']} | {row['n']} | "
             f"{_fmt(row['repair_success'], 2)} | {_fmt(row['online_acceptance'], 2)} | {_fmt(row['verified_safety'], 2)} | "
             f"{_fmt(row['time_pass'], 2)} | {_fmt(row['acceleration_ok'], 2)} | {_fmt(row['delta_dense'], 4)} | "
             f"{_fmt(row['online_ms_mean'], 1)} | {_fmt(row['online_ms_p95'], 1)} | {_fmt(row['online_ms_max'], 1)} | "
@@ -113,6 +117,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default="results/new/6_4_fast_v4_formal_dynamic")
     parser.add_argument("--scenarios", nargs="+", choices=["D1", "D2M"], default=["D1", "D2M"])
     parser.add_argument("--methods", nargs="+", choices=["critical_fast_v4", "ccro_fast_v4"], default=["critical_fast_v4", "ccro_fast_v4"])
+    parser.add_argument("--risk-band", choices=sorted(cfg.FAST_DYNAMIC_RISK_BANDS), default="admissible")
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -127,16 +132,22 @@ def main() -> None:
     if args.dry_run:
         for scenario in args.scenarios:
             for method in args.methods:
-                print(f"[6.4 formal] would run scenario={scenario} method={method}")
+                print(f"[6.4 formal] would run scenario={scenario} method={method} risk_band={args.risk_band}")
         return
     rows = []
     for scenario in args.scenarios:
         for method in args.methods:
-            row = _run_case(output, scenario=scenario, method=method)
+            row = _run_case(output, scenario=scenario, method=method, risk_band=args.risk_band)
             rows.append(row)
-            print(f"[6.4 formal] {scenario} {method} trials={row['trial_count']}")
+            print(f"[6.4 formal] {scenario} {method} risk_band={args.risk_band} trials={row['trial_count']}")
     flat = _flatten_summary(rows)
-    payload = {"experiment": "6.4 frozen Fast v4 formal dynamic validation", "cases": rows, "summary": flat}
+    payload = {
+        "experiment": "6.4 frozen Fast v4 formal dynamic validation",
+        "risk_band": args.risk_band,
+        "risk_band_range": list(cfg.FAST_DYNAMIC_RISK_BANDS[args.risk_band]),
+        "cases": rows,
+        "summary": flat,
+    }
     (output / "fast_v4_formal_dynamic_64.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     _write_table(flat, output / "paper" / "table_6_4_fast_v4_formal_dynamic.md")
     print(f"[6.4 formal] saved {output / 'paper' / 'table_6_4_fast_v4_formal_dynamic.md'}")

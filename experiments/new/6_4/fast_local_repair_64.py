@@ -145,6 +145,7 @@ def make_fast_instances(
     g1_near: bool,
     g1_band: str | None = None,
     formal_compact: bool = False,
+    formal_risk_band: str = "unfiltered",
 ) -> list[dict[str, Any]]:
     rng = np.random.default_rng(cfg.RANDOM_SEED + (8100 if scenario == "D1" else 9100) + int(g1) * 1000)
     links = cfg.BODY_LINKS if scenario == "D1" else cfg.EE_LINKS
@@ -179,7 +180,10 @@ def make_fast_instances(
                 q_conflict = local_ref.evaluate(float(conflict_time))
                 link, surface_point, outward = _surface_outward(model, q_conflict, links, rng)
                 radius = float(rng.uniform(0.04, 0.055))
-                if g1_near:
+                if formal_compact and formal_risk_band != "unfiltered":
+                    clearance_candidates = np.linspace(0.04, 0.42, 24, dtype=np.float64)
+                    rng.shuffle(clearance_candidates)
+                elif g1_near:
                     clearance_candidates = np.linspace(0.12, 0.34, 12, dtype=np.float64)
                     rng.shuffle(clearance_candidates)
                 elif g1:
@@ -196,6 +200,21 @@ def make_fast_instances(
                     center_at_start = crossing_center - velocity * float(conflict_time)
                     forecast = constant_forecast(center_at_start, velocity, radius)
                     reference_dense_min = _trajectory_min(dense_evaluator, local_ref, forecast, density="dense")
+                    if formal_compact and formal_risk_band != "unfiltered":
+                        low, high = cfg.FAST_DYNAMIC_RISK_BANDS[formal_risk_band]
+                        if not (low <= reference_dense_min < high):
+                            continue
+                        if formal_risk_band == "admissible" and not _has_controllable_reference_risk(
+                            dense_evaluator,
+                            local_ref,
+                            p_inner,
+                            head,
+                            tail,
+                            forecast,
+                        ):
+                            continue
+                        selected = (clearance, center_at_start, forecast, reference_dense_min)
+                        break
                     if not (g1 or g1_near):
                         selected = (clearance, center_at_start, forecast, reference_dense_min)
                         break
@@ -220,6 +239,7 @@ def make_fast_instances(
                         "speed_group": float(speed),
                         "lead_label": lead_label,
                         "g1_band": g1_band or ("near" if g1_near else ("shallow" if g1 else None)),
+                        "dynamic_risk_band": formal_risk_band if formal_compact else None,
                         "conflict_time_after_start": float(conflict_time),
                         "tau_start": tau_start,
                         "tau_goal": tau_start + cfg.FAST_LOCAL_HORIZON,
@@ -231,6 +251,7 @@ def make_fast_instances(
                         "reference_dense_min_distance": float(reference_dense_min),
                         "seed": int(cfg.RANDOM_SEED + index),
                         "repeat_index": int(repeat),
+                        "generation_attempts": int(attempts),
                     }
                 )
                 index += 1
@@ -700,6 +721,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--g1-near", action="store_true")
     parser.add_argument("--g1-band", choices=sorted(cfg.FAST_G1_BANDS), default=None)
     parser.add_argument("--formal-compact", action="store_true")
+    parser.add_argument("--formal-risk-band", choices=sorted(cfg.FAST_DYNAMIC_RISK_BANDS), default="unfiltered")
     parser.add_argument("--v4-target-clearance", type=float, default=None)
     parser.add_argument("--v4-max-iterations", type=int, default=None)
     parser.add_argument("--v4-clearance-reward", type=float, default=None)
@@ -748,6 +770,7 @@ def main() -> None:
         g1_near=bool(args.g1_near or args.g1_band),
         g1_band=args.g1_band,
         formal_compact=args.formal_compact,
+        formal_risk_band=args.formal_risk_band,
     )
     methods = (args.method,) if args.method else (
         "critical_fast_repair",
@@ -804,7 +827,11 @@ def main() -> None:
                 else (
                     "g1"
                     if args.g1
-                    else ("formal_compact_fast" if args.formal_compact else ("smoke" if args.smoke else "formal_stage_a_fast"))
+                    else (
+                        f"formal_compact_fast_{args.formal_risk_band}"
+                        if args.formal_compact
+                        else ("smoke" if args.smoke else "formal_stage_a_fast")
+                    )
                 )
             )
         ),

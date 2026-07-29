@@ -41,6 +41,11 @@ FAST_G1_BANDS = {
     "main": (0.065, 0.075),
     "hard": (0.055, 0.065),
 }
+FAST_DYNAMIC_RISK_BANDS = {
+    "admissible": (0.040, 0.080),
+    "stress": (-0.020, 0.040),
+    "unfiltered": (-float("inf"), float("inf")),
+}
 FAST_G2_MEDIUM_DENSE_MIN_RANGE = (0.055, 0.07)
 FAST_STRESS_DENSE_MIN_RANGE = (0.04, 0.055)
 FAST_V3_MAX_ITERATIONS = 2
