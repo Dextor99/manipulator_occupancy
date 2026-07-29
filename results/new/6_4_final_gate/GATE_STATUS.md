@@ -415,3 +415,28 @@ D1/D2M stress band:
 - Interpretation:
   - The stress band and the earlier unfiltered compact run jointly define the operating boundary.
   - They should not replace the G1-band and admissible dynamic tables as the main evidence.
+
+Final D1/D2M paper-table consolidation:
+
+- Added `experiments/new/6_4/fast_v4_dynamic_paper_tables_64.py`.
+- Generated admissible dynamic paper tables:
+  - `results/new/6_4_fast_v4_formal_dynamic_admissible/paper/table_6_4_fast_v4_dynamic_performance.md`;
+  - `results/new/6_4_fast_v4_formal_dynamic_admissible/paper/table_6_4_fast_v4_dynamic_clearance_gain.md`;
+  - `results/new/6_4_fast_v4_formal_dynamic_admissible/paper/table_6_4_fast_v4_dynamic_runtime.md`;
+  - `results/new/6_4_fast_v4_formal_dynamic_admissible/paper/table_6_4_fast_v4_dynamic_representative_cases.md`.
+- Generated the same table set for the stress boundary directory:
+  - `results/new/6_4_fast_v4_formal_dynamic_stress/paper/`.
+- Dynamic clearance-gain evidence:
+  - D1 admissible:
+    - Critical-fast-v4 mean dense clearance gain: about 0.0063 m;
+    - CCRO-fast-v4 mean dense clearance gain: about 0.0120 m.
+  - D2M admissible:
+    - Critical-fast-v4 mean dense clearance gain: about 0.0171 m;
+    - CCRO-fast-v4 mean dense clearance gain: about 0.0189 m.
+- Dynamic runtime evidence:
+  - D1 CCRO-fast-v4 online P95: about 135.3 ms;
+  - D2M CCRO-fast-v4 online P95: about 138.2 ms.
+- Final interpretation:
+  - D1 is the stronger whole-body crossing evidence: CCRO repairs 10/20 dense cases versus 4/20 for Critical, and doubles the mean dense clearance gain.
+  - D2M is an easier approaching/local-risk setting: Critical is already competitive, while CCRO still improves online acceptance from 9/20 to 12/20.
+  - The final 6.4 paper structure should be: setup and risk-band protocol, G1 capability boundary, D1/D2 admissible dynamic validation, stress boundary and limitations.
