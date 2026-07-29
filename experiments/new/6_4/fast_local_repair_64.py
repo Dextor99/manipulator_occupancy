@@ -144,6 +144,7 @@ def make_fast_instances(
     g1: bool,
     g1_near: bool,
     g1_band: str | None = None,
+    formal_compact: bool = False,
 ) -> list[dict[str, Any]]:
     rng = np.random.default_rng(cfg.RANDOM_SEED + (8100 if scenario == "D1" else 9100) + int(g1) * 1000)
     links = cfg.BODY_LINKS if scenario == "D1" else cfg.EE_LINKS
@@ -151,6 +152,10 @@ def make_fast_instances(
     if g1 or g1_near:
         speeds = (0.15,)
         conflict_groups = {"G1": cfg.FAST_G1_CONFLICT_TIME}
+        repeats = 10
+    elif formal_compact:
+        speeds = (0.15, 0.25)
+        conflict_groups = {"Dynamic": cfg.FAST_G1_CONFLICT_TIME}
         repeats = 10
     else:
         speeds = cfg.SPEED_GROUPS
@@ -273,6 +278,18 @@ def _motion_violations(trajectory: NUBSTrajectory6D, limits) -> dict[str, float]
         "q": float(np.max(np.maximum(q_low, q_high), initial=0.0)),
         "qd": float(np.max(qd, initial=0.0)),
         "qdd": float(np.max(qdd, initial=0.0)),
+    }
+
+
+def _trajectory_deformation(candidate: NUBSTrajectory6D, reference: NUBSTrajectory6D) -> dict[str, float]:
+    times = np.arange(0.0, candidate.total_duration + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
+    candidate_q = candidate.sample(times).q
+    reference_q = reference.sample(times).q
+    diff = candidate_q - reference_q
+    norms = np.linalg.norm(diff, axis=1)
+    return {
+        "path_deformation_rms": float(np.sqrt(np.mean(np.sum(diff * diff, axis=1)))),
+        "path_deformation_max": float(np.max(norms, initial=0.0)),
     }
 
 
@@ -400,6 +417,7 @@ def fast_repair(
     dense_recheck_ms = (time.perf_counter() - t_dense) * 1000.0
     ref_dense_min = _trajectory_min(dense_verifier.risk_evaluator, local_ref, forecast, density="dense")
     cand_dense_min = float(dense.min_distance)
+    deformation = _trajectory_deformation(trajectory, local_ref)
     return {
         "reference_trajectory": local_ref,
         "candidate_trajectory": trajectory,
@@ -407,6 +425,7 @@ def fast_repair(
             "reference_dense_min_distance": ref_dense_min,
             "candidate_dense_min_distance": cand_dense_min,
             "delta_dense_min_distance": float(cand_dense_min - ref_dense_min),
+            **deformation,
             "online_feasible": bool(online.accepted),
             "dense_geometry_only_feasible": bool(dense.accepted),
             "usable_candidate": bool(online_ms <= cfg.FAST_REPAIR_ACCEPT_MS and online.accepted and dense.accepted),
@@ -485,6 +504,7 @@ def fast_repair_v3(
     ref_dense_min = _trajectory_min(dense_verifier.risk_evaluator, local_ref, forecast, density="dense")
     cand_dense_min = float(dense.min_distance)
     cand_online_min = float(online.min_distance)
+    deformation = _trajectory_deformation(repaired.trajectory, local_ref)
     time_pass = bool(online_ms <= cfg.FAST_REPAIR_ACCEPT_MS)
     hard_time_pass = bool(online_ms <= cfg.FAST_REPAIR_HARD_MAX_MS)
     online_distance_pass = bool("distance_ok" not in online.reasons)
@@ -500,6 +520,7 @@ def fast_repair_v3(
             "candidate_online_min_distance": cand_online_min,
             "delta_dense_min_distance": float(cand_dense_min - ref_dense_min),
             "delta_online_min_distance": float(cand_online_min - ref_online_min),
+            **deformation,
             "candidate_medium_dense_gap": float(cand_online_min - cand_dense_min),
             "online_threshold_margin": float(cand_online_min - cfg.D_ONLINE_ACCEPT),
             "dense_threshold_margin": float(cand_dense_min - cfg.D_STOP),
@@ -568,6 +589,8 @@ def _aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "beneficial": float(np.mean([item["beneficial"] for item in items])),
                 "acceleration_ok": float(np.mean([item.get("acceleration_pass", "acceleration_ok" not in item["online_reasons"]) for item in items])),
                 "delta_dense": float(np.mean([item["delta_dense_min_distance"] for item in items])),
+                "path_deformation_rms": float(np.mean([item.get("path_deformation_rms", 0.0) for item in items])),
+                "path_deformation_max": float(np.max([item.get("path_deformation_max", 0.0) for item in items])),
                 "medium_dense_gap_mean": float(np.mean([item.get("candidate_medium_dense_gap", 0.0) for item in items])),
                 "online_margin_min": float(np.min([item.get("online_threshold_margin", 0.0) for item in items])),
                 "dense_margin_min": float(np.min([item.get("dense_threshold_margin", 0.0) for item in items])),
@@ -676,6 +699,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--g1", action="store_true")
     parser.add_argument("--g1-near", action="store_true")
     parser.add_argument("--g1-band", choices=sorted(cfg.FAST_G1_BANDS), default=None)
+    parser.add_argument("--formal-compact", action="store_true")
     parser.add_argument("--v4-target-clearance", type=float, default=None)
     parser.add_argument("--v4-max-iterations", type=int, default=None)
     parser.add_argument("--v4-clearance-reward", type=float, default=None)
@@ -723,6 +747,7 @@ def main() -> None:
         g1=bool(args.g1 or args.g1_band),
         g1_near=bool(args.g1_near or args.g1_band),
         g1_band=args.g1_band,
+        formal_compact=args.formal_compact,
     )
     methods = (args.method,) if args.method else (
         "critical_fast_repair",
@@ -770,7 +795,19 @@ def main() -> None:
         "git_commit": git_commit_hash(),
         "git_dirty": _git_dirty(),
         "scenario": args.scenario,
-        "mode": f"g1_{args.g1_band}" if args.g1_band else ("g1_near" if args.g1_near else ("g1" if args.g1 else ("smoke" if args.smoke else "formal_stage_a_fast"))),
+        "mode": (
+            f"g1_{args.g1_band}"
+            if args.g1_band
+            else (
+                "g1_near"
+                if args.g1_near
+                else (
+                    "g1"
+                    if args.g1
+                    else ("formal_compact_fast" if args.formal_compact else ("smoke" if args.smoke else "formal_stage_a_fast"))
+                )
+            )
+        ),
         "timing_targets_ms": {
             "p95_online": cfg.FAST_REPAIR_ACCEPT_MS,
             "hard_max": cfg.FAST_REPAIR_HARD_MAX_MS,

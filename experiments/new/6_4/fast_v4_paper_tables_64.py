@@ -74,6 +74,30 @@ def _write_main_table(rows: list[dict[str, Any]], path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_reference_repair_table(input_dir: Path, rows: list[dict[str, Any]], path: Path) -> None:
+    lines = [
+        "# 6.4 Reference-vs-Repaired Dense Clearance",
+        "",
+        "| Band | Method | N | Reference Dmin mean / m | Repaired Dmin mean / m | Dense-safe repaired | Online accepted | Path deformation RMS / rad | Path deformation max / rad |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in _sorted_rows(rows):
+        trials = _load_case_trials(input_dir, row["case_dir"])
+        ref = np.asarray([item["reference_dense_min_distance"] for item in trials], dtype=np.float64)
+        cand = np.asarray([item["candidate_dense_min_distance"] for item in trials], dtype=np.float64)
+        rms_values = [item.get("path_deformation_rms") for item in trials if item.get("path_deformation_rms") is not None]
+        max_values = [item.get("path_deformation_max") for item in trials if item.get("path_deformation_max") is not None]
+        lines.append(
+            f"| {row['band']} | {METHOD_NAMES.get(row['method'], row['method'])} | {row['n']} | "
+            f"{_fmt(np.mean(ref), 4)} | {_fmt(np.mean(cand), 4)} | "
+            f"{int(round(row['repair_success'] * row['n']))}/{row['n']} | "
+            f"{int(round(row['online_acceptance'] * row['n']))}/{row['n']} | "
+            f"{_fmt(np.mean(rms_values), 4) if rms_values else '-'} | "
+            f"{_fmt(np.max(max_values), 4) if max_values else '-'} |"
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _write_gain_table(input_dir: Path, rows: list[dict[str, Any]], path: Path) -> None:
     lines = [
         "# 6.4 Dense Clearance Gain",
@@ -132,6 +156,7 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     rows = _load_rows(input_dir)
     _write_main_table(rows, output / "table_6_4_fast_v4_main_performance.md")
+    _write_reference_repair_table(rows=rows, input_dir=input_dir, path=output / "table_6_4_fast_v4_reference_vs_repaired.md")
     _write_gain_table(input_dir, rows, output / "table_6_4_fast_v4_clearance_gain.md")
     _write_runtime_table(input_dir, rows, output / "table_6_4_fast_v4_runtime_decomposition.md")
     print(f"[6.4 paper] saved tables under {output}")

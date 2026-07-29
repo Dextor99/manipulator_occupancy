@@ -334,3 +334,51 @@ Final paper-table consolidation:
 - Final state:
   - Fast CCRO-NUBS v4 is frozen for paper writing and D1/D2 extension.
   - Further solver tuning is explicitly out of scope unless new D1/D2 evidence contradicts the G1-band capability curve.
+
+Formal D1/D2 extension entry point:
+
+- Added `experiments/new/6_4/fast_v4_formal_dynamic_64.py`.
+- Added `--formal-compact` to `fast_local_repair_64.py`.
+- Formal compact mode:
+  - does not use G1-band reference-clearance filtering;
+  - uses frozen v4 parameters;
+  - samples speeds 0.15 and 0.25 m/s;
+  - generates 10 random trials per speed;
+  - runs Critical-fast-v4 and CCRO-fast-v4 for D1 and D2M.
+- Expected formal scale:
+  - D1: 20 trials per method;
+  - D2M: 20 trials per method;
+  - total: 80 method trials.
+- Dry run passed with:
+  - D1 / Critical-fast-v4;
+  - D1 / CCRO-fast-v4;
+  - D2M / Critical-fast-v4;
+  - D2M / CCRO-fast-v4.
+- `fast_local_repair_64.py` now records path deformation metrics for new trials:
+  - `path_deformation_rms`;
+  - `path_deformation_max`.
+- Added reference-vs-repaired paper table generation:
+  - `results/new/6_4_fast_v4_g1_band_study/paper/table_6_4_fast_v4_reference_vs_repaired.md`.
+
+Formal compact D1/D2M run after freeze:
+
+- Completed the frozen compact dynamic run:
+  - command entry point: `experiments/new/6_4/fast_v4_formal_dynamic_64.py`;
+  - output: `results/new/6_4_fast_v4_formal_dynamic`;
+  - summary table: `results/new/6_4_fast_v4_formal_dynamic/paper/table_6_4_fast_v4_formal_dynamic.md`;
+  - status note: `results/new/6_4_fast_v4_formal_dynamic/FORMAL_DYNAMIC_STATUS.md`.
+- Scale:
+  - D1: 20 trials per method;
+  - D2M: 20 trials per method;
+  - total: 80 method trials.
+- Outcome:
+  - D1 Critical-fast-v4 and CCRO-fast-v4: dense repair 0/20, online acceptance 0/20;
+  - D2M Critical-fast-v4 and CCRO-fast-v4: dense repair 0/20, online acceptance 0/20.
+- Reference dense clearance audit:
+  - D1 reference dense minimum mean was about -0.0766 m, range [-0.1037, -0.0190] m;
+  - D2M reference dense minimum mean was about -0.0592 m, range [-0.1078, -0.0128] m.
+- Interpretation:
+  - The unfiltered compact D1/D2M generator produced deep penetration cases, not shallow-risk dynamic local-repair cases.
+  - This completed run should be treated as a stress/boundary audit rather than the main 6.4 success-rate table.
+  - The G1-band capability study remains the current paper-ready main evidence.
+  - Do not respond to this result by tuning solver parameters or lowering thresholds. The next credible D1/D2M extension, if needed, should add a method-independent admissible-risk sampling/reporting protocol and keep frozen v4 parameters unchanged.
