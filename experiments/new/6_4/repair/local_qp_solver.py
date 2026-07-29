@@ -68,6 +68,7 @@ def solve_local_qp(
     *,
     trust_region: float,
     d_safe: float,
+    clearance_reward: float = 0.0,
 ) -> LocalQPResult:
     n = sensitivity.variable_count
     if n == 0 or not active:
@@ -82,7 +83,9 @@ def solve_local_qp(
         if np.linalg.norm(row) < 1.0e-12:
             continue
         distance_rows.append((float(item.distance), row.copy(), deficit))
-        drive += deficit * row / max(float(np.linalg.norm(row)), 1.0e-12)
+        row_norm = max(float(np.linalg.norm(row)), 1.0e-12)
+        drive += deficit * row / row_norm
+        drive += float(clearance_reward) * row / row_norm
     if not distance_rows:
         return LocalQPResult(False, np.zeros(n), 0.0, -2, "no usable active rows", 0, float("inf"))
 
@@ -112,13 +115,18 @@ def solve_local_qp(
     min_predicted = float(np.min(predicted)) if predicted else float("inf")
     violations = [max(0.0, bound - float(np.dot(row, x))) for row, bound in halfspaces]
     max_violation = float(np.max(violations)) if violations else 0.0
-    objective = 0.5 * float(np.dot(x, x)) + cfg.FAST_V3_SLACK_WEIGHT * max_violation * max_violation
+    clearance_gain = float(np.mean([float(np.dot(row, x)) for _, row, _ in distance_rows])) if distance_rows else 0.0
+    objective = (
+        0.5 * float(np.dot(x, x))
+        + cfg.FAST_V3_SLACK_WEIGHT * max_violation * max_violation
+        - float(clearance_reward) * clearance_gain
+    )
     return LocalQPResult(
         success=bool(np.all(np.isfinite(x))),
         delta=x,
         objective=objective,
         status=0 if max_violation < 1.0e-5 else 1,
-        message=f"projected_qp max_violation={max_violation:.3e}",
+        message=f"projected_qp max_violation={max_violation:.3e} clearance_reward={float(clearance_reward):.3g}",
         iterations=changed,
         min_predicted_distance=min_predicted,
     )

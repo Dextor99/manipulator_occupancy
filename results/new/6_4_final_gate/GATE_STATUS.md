@@ -248,3 +248,42 @@ G1 acceptance audit and Critical-point baseline:
   - acceleration pass: 10/10;
   - mean dense clearance improvement: about 0.0077 m.
 - Interpretation: the current CCRO result should no longer be described as "5/10 algorithm success." A more precise conclusion is that Fast CCRO-NUBS generated dense-safe candidates for all G1-near cases within the real-time budget, while the predefined conservative online margin accepted half of them. The Critical-point baseline supports the CCRO contribution: under the same solver shell and instances, the sparse critical-point active set repaired fewer dense GT cases and produced only 1/10 online-accepted candidates.
+
+Margin-stability sweep and calibration:
+
+- Added explicit v4 development parameters:
+  - `FAST_V4_TARGET_CLEARANCE`;
+  - `FAST_V4_MAX_ITERATIONS`;
+  - `FAST_V4_CLEARANCE_REWARD`;
+  - CLI overrides in `fast_local_repair_64.py` for transparent development sweeps.
+- Added `experiments/new/6_4/fast_v4_sweep_64.py` for the G1-near margin sweep.
+- Added `experiments/new/6_4/margin_calibration_64.py` for online-vs-dense calibration tables.
+- No safety threshold was relaxed:
+  - online acceptance remains `D_ONLINE_ACCEPT = 0.09 m`;
+  - dense GT safety remains `D_STOP = 0.08 m`.
+- Reward sweep output:
+  - `results/new/6_4_fast_v4_margin_sweep_reward03/paper/table_6_4_fast_v4_margin_sweep.md`;
+  - clearance reward `0.3` did not improve online acceptance;
+  - several cases introduced dense repair loss or timing tails.
+- Target/iteration sweep output:
+  - `results/new/6_4_fast_v4_margin_sweep_reward00/paper/table_6_4_fast_v4_margin_sweep.md`;
+  - `target=0.095, iterations=1, reward=0.0` remained Pareto-best on the current 10-case development set:
+    - repair success: 10/10;
+    - online acceptance: 5/10;
+    - verified safety: 5/5;
+    - time pass: 10/10;
+    - acceleration pass: 10/10;
+    - online P95: about 130.3 ms.
+  - two QP iterations increased dense clearance but exceeded the realtime budget: P95 about 215.7--393.2 ms depending on target.
+  - target clearances `0.100` and `0.105` did not improve online acceptance and introduced dense repair failures or timing tails.
+- Margin calibration output:
+  - `results/new/6_4_margin_calibration_g1_near_v4/paper/table_6_4_margin_calibration.md`;
+  - CCRO candidate medium-minus-dense gap mean was about 0.0004 m;
+  - CCRO P95 absolute gap was about 0.0020 m;
+  - this shows that current online rejection is dominated by the 0.09 m conservative margin rather than a large medium-vs-dense evaluator discrepancy.
+- Parameter-freeze decision for the next stage:
+  - keep `target_clearance=0.095`;
+  - keep one online QP iteration;
+  - keep `clearance_reward=0.0`;
+  - keep online and dense thresholds unchanged.
+- Interpretation: the attempted margin maximization and sequential refinement are useful negative controls. They improve neither online acceptance nor paper credibility on the current G1-near development set. The next credibility step should be scenario stratification and reporting the three-rate funnel (`repair success`, `online acceptance`, `verified safety`) rather than further local solver tuning.

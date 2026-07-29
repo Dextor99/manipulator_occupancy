@@ -106,6 +106,7 @@ def run_repair_v3(
             limits,
             trust_region=cfg.FAST_V3_TRUST_REGION,
             d_safe=cfg.FAST_V4_TARGET_CLEARANCE if v4_mode else cfg.D_ONLINE_ACCEPT,
+            clearance_reward=cfg.FAST_V4_CLEARANCE_REWARD if v4_mode else 0.0,
         )
         qp_ms += (time.perf_counter() - t_qp) * 1000.0
         messages.append(qp.message)

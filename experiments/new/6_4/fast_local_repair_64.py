@@ -134,7 +134,17 @@ def _has_controllable_reference_risk(
     return False
 
 
-def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smoke: bool, g1: bool, g1_near: bool) -> list[dict[str, Any]]:
+def make_fast_instances(
+    model,
+    reference,
+    dense_evaluator,
+    *,
+    scenario: str,
+    smoke: bool,
+    g1: bool,
+    g1_near: bool,
+    g1_band: str | None = None,
+) -> list[dict[str, Any]]:
     rng = np.random.default_rng(cfg.RANDOM_SEED + (8100 if scenario == "D1" else 9100) + int(g1) * 1000)
     links = cfg.BODY_LINKS if scenario == "D1" else cfg.EE_LINKS
     scenario_type = "body_crossing_fast" if scenario == "D1" else "ee_crossing_fast"
@@ -184,7 +194,10 @@ def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smo
                     if not (g1 or g1_near):
                         selected = (clearance, center_at_start, forecast, reference_dense_min)
                         break
-                    low, high = cfg.FAST_G1_NEAR_DENSE_MIN_RANGE if g1_near else cfg.FAST_G1_REFERENCE_DENSE_MIN_RANGE
+                    if g1_band:
+                        low, high = cfg.FAST_G1_BANDS[g1_band]
+                    else:
+                        low, high = cfg.FAST_G1_NEAR_DENSE_MIN_RANGE if g1_near else cfg.FAST_G1_REFERENCE_DENSE_MIN_RANGE
                     if not (low <= reference_dense_min < high):
                         continue
                     if not _has_controllable_reference_risk(dense_evaluator, local_ref, p_inner, head, tail, forecast):
@@ -201,6 +214,7 @@ def make_fast_instances(model, reference, dense_evaluator, *, scenario: str, smo
                         "scenario": scenario,
                         "speed_group": float(speed),
                         "lead_label": lead_label,
+                        "g1_band": g1_band or ("near" if g1_near else ("shallow" if g1 else None)),
                         "conflict_time_after_start": float(conflict_time),
                         "tau_start": tau_start,
                         "tau_goal": tau_start + cfg.FAST_LOCAL_HORIZON,
@@ -661,11 +675,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--g1", action="store_true")
     parser.add_argument("--g1-near", action="store_true")
+    parser.add_argument("--g1-band", choices=sorted(cfg.FAST_G1_BANDS), default=None)
+    parser.add_argument("--v4-target-clearance", type=float, default=None)
+    parser.add_argument("--v4-max-iterations", type=int, default=None)
+    parser.add_argument("--v4-clearance-reward", type=float, default=None)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.v4_target_clearance is not None:
+        cfg.FAST_V4_TARGET_CLEARANCE = float(args.v4_target_clearance)
+    if args.v4_max_iterations is not None:
+        cfg.FAST_V4_MAX_ITERATIONS = int(args.v4_max_iterations)
+    if args.v4_clearance_reward is not None:
+        cfg.FAST_V4_CLEARANCE_REWARD = float(args.v4_clearance_reward)
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     trials_dir = output / "trials"
@@ -696,8 +720,9 @@ def main() -> None:
         ccro_evaluator,
         scenario=args.scenario,
         smoke=args.smoke,
-        g1=args.g1,
-        g1_near=args.g1_near,
+        g1=bool(args.g1 or args.g1_band),
+        g1_near=bool(args.g1_near or args.g1_band),
+        g1_band=args.g1_band,
     )
     methods = (args.method,) if args.method else (
         "critical_fast_repair",
@@ -745,10 +770,18 @@ def main() -> None:
         "git_commit": git_commit_hash(),
         "git_dirty": _git_dirty(),
         "scenario": args.scenario,
-        "mode": "g1_near" if args.g1_near else ("g1" if args.g1 else ("smoke" if args.smoke else "formal_stage_a_fast")),
+        "mode": f"g1_{args.g1_band}" if args.g1_band else ("g1_near" if args.g1_near else ("g1" if args.g1 else ("smoke" if args.smoke else "formal_stage_a_fast"))),
         "timing_targets_ms": {
             "p95_online": cfg.FAST_REPAIR_ACCEPT_MS,
             "hard_max": cfg.FAST_REPAIR_HARD_MAX_MS,
+        },
+        "v4_parameters": {
+            "target_clearance": cfg.FAST_V4_TARGET_CLEARANCE,
+            "max_iterations": cfg.FAST_V4_MAX_ITERATIONS,
+            "clearance_reward": cfg.FAST_V4_CLEARANCE_REWARD,
+            "acceptance_scales": list(cfg.FAST_V4_ACCEPTANCE_SCALES),
+            "trust_region": cfg.FAST_V3_TRUST_REGION,
+            "projection_sweeps": cfg.FAST_V4_PROJECTION_SWEEPS,
         },
         "trial_count": len(rows),
         "summary": summary,

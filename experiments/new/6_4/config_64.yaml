@@ -55,6 +55,11 @@ fast_local_repair:
   g1_min_active_a_norm: 0.02
   g1_reference_dense_min_range: [0.04, 0.08]
   g1_near_dense_min_range: [0.07, 0.08]
+  g1_bands:
+    near: [0.070, 0.080]
+    easy: [0.075, 0.080]
+    main: [0.065, 0.075]
+    hard: [0.055, 0.065]
   g2_medium_dense_min_range: [0.055, 0.07]
   stress_dense_min_range: [0.04, 0.055]
   v3:
@@ -69,6 +74,7 @@ fast_local_repair:
   v4:
     max_iterations: 1
     target_clearance: 0.095
+    clearance_reward: 0.0
     acceptance_scales: [0.85, 0.65, 0.45, 0.30, 0.20, 0.10]
     projection_sweeps: 8
     drive_scale: 0.75
