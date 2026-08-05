@@ -12,6 +12,9 @@ class Frame:
     depth: np.ndarray
     points_cam: np.ndarray
     timestamp: float
+    camera_timestamp: float | None = None
+    host_receive_timestamp: float | None = None
+    frame_valid: bool = True
 
 
 class RealSensePipelineReader:
@@ -46,22 +49,28 @@ class RealSensePipelineReader:
         }
 
     def read(self) -> Frame:
+        host_before = time.time()
         frames = self.align.process(self.pipeline.wait_for_frames())
         depth_frame = frames.get_depth_frame()
         color_frame = frames.get_color_frame()
         if not depth_frame or not color_frame:
             raise RuntimeError("RealSense frame is incomplete")
+        host_receive = time.time()
 
         color = np.asanyarray(color_frame.get_data())
         depth = np.asanyarray(depth_frame.get_data())
 
         points_cam = depth_to_points(depth, self.intrinsic, self.depth_scale)
+        camera_timestamp = float(depth_frame.get_timestamp()) * 0.001
 
         return Frame(
             color=color,
             depth=depth,
             points_cam=points_cam,
-            timestamp=time.time(),
+            timestamp=host_before,
+            camera_timestamp=camera_timestamp,
+            host_receive_timestamp=host_receive,
+            frame_valid=True,
         )
 
     def stop(self):

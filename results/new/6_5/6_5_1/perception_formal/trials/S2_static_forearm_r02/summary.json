@@ -1,0 +1,81 @@
+{
+  "created_at": "2026-08-05T08:41:48.393882+00:00",
+  "scenario": "S2",
+  "scenario_name": "static_forearm",
+  "description": "static foam obstacle near forearm",
+  "repeat": 2,
+  "robot_commanded": false,
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_1/perception_formal/trials/S2_static_forearm_r02",
+  "expected_region": "forearm",
+  "expected_links": [
+    "foreArm_Link",
+    "wrist1_Link",
+    "wrist2_Link"
+  ],
+  "duration_wall_s": 32.35804462432861,
+  "frame_count": 124,
+  "phase_summaries": [
+    {
+      "phase": "pre_empty",
+      "frames": 24,
+      "effective_hz": 8.305098846911166,
+      "detected_frame_ratio": 0.0,
+      "stable_track_frame_ratio": 0.0,
+      "risk_frame_ratio": 0.0,
+      "nearest_distance_min_m": null,
+      "nearest_distance_p50_m": null,
+      "nearest_distance_p95_m": null,
+      "predicted_distance_min_m": null,
+      "nearest_links": {},
+      "predicted_links": {},
+      "elapsed_ms_p50": 127.7523,
+      "elapsed_ms_p95": 137.066915
+    },
+    {
+      "phase": "obstacle",
+      "frames": 76,
+      "effective_hz": 7.687509926906616,
+      "detected_frame_ratio": 0.9736842105263158,
+      "stable_track_frame_ratio": 0.9473684210526315,
+      "risk_frame_ratio": 0.9736842105263158,
+      "nearest_distance_min_m": 0.044575,
+      "nearest_distance_p50_m": 0.0480715,
+      "nearest_distance_p95_m": 0.0506427,
+      "predicted_distance_min_m": -0.064335,
+      "nearest_links": {
+        "right_link": 74
+      },
+      "predicted_links": {
+        "right_link": 72
+      },
+      "elapsed_ms_p50": 132.11169999999998,
+      "elapsed_ms_p95": 135.673275
+    },
+    {
+      "phase": "post_removed",
+      "frames": 24,
+      "effective_hz": 8.20977582157461,
+      "detected_frame_ratio": 0.0,
+      "stable_track_frame_ratio": 0.0,
+      "risk_frame_ratio": 0.0,
+      "nearest_distance_min_m": null,
+      "nearest_distance_p50_m": null,
+      "nearest_distance_p95_m": null,
+      "predicted_distance_min_m": null,
+      "nearest_links": {},
+      "predicted_links": {},
+      "elapsed_ms_p50": 129.52605,
+      "elapsed_ms_p95": 135.61527999999998
+    }
+  ],
+  "parameters": {
+    "remove_planes": true,
+    "cluster_eps": 0.06,
+    "cluster_min_points": 30,
+    "surface_density": "coarse",
+    "temporal_denoise": true,
+    "d_safe": 0.15,
+    "d_slow": 0.1,
+    "d_stop": 0.05
+  }
+}

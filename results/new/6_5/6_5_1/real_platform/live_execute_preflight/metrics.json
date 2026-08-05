@@ -1,0 +1,55 @@
+{
+  "manifest": {
+    "created_at": "2026-08-05T07:29:29.669404+00:00",
+    "mode": "live-execute",
+    "execution_mode": "live_execute_guarded",
+    "sensor_live": false,
+    "robot_state_live": false,
+    "robot_commanded": false,
+    "software_gate": "PASS",
+    "real_experiment_gate": "BLOCKED_NO_SUPPORTED_AUBO_TRAJECTORY_API",
+    "config": "/home/hzy/Code/manipulator_occupancy/config/ccro_stage2.yaml",
+    "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_1/real_platform/live_execute_preflight",
+    "required_operator_phrase": "I understand this will move the real AUBO at low speed",
+    "note": "No robot command was sent. Existing project code lacks a bounded AUBO NUBS trajectory queue/batch execution interface."
+  },
+  "preflight": {
+    "checks": {
+      "allow_real_robot_commands": false,
+      "operator_phrase_ok": false,
+      "dense_validation_ok": false,
+      "supported_aubo_trajectory_api_available": false
+    },
+    "dense_verification": {
+      "accepted": false,
+      "reasons": [
+        "distance_ok"
+      ],
+      "checks": {
+        "solver_ok": true,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": false,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true
+      },
+      "goal_error": 2.0816681711721685e-16,
+      "min_distance": 0.0005491996214953393,
+      "nearest_link": "foreArm_Link",
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0,
+      "continuity_q": 0.0,
+      "continuity_qd": 0.0,
+      "continuity_qdd": 3.66205343881779e-15,
+      "validation_ms": 4036.0520561225712,
+      "self_collision_checked": false
+    },
+    "blocking_reason": "Refusing live execution because the repository currently exposes state reading and Y-axis Cartesian worker code, but not a supported bounded joint/NUBS trajectory execution API. This avoids unsafe point-by-point Python streaming."
+  },
+  "accepted": false
+}

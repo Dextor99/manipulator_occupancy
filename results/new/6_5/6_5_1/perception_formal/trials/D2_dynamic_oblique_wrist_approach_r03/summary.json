@@ -1,0 +1,87 @@
+{
+  "created_at": "2026-08-05T11:05:39.748454+00:00",
+  "scenario": "D2",
+  "scenario_name": "dynamic_oblique_wrist_approach",
+  "description": "hand-held foam ball approaches wrist/forearm obliquely and leaves",
+  "repeat": 3,
+  "robot_commanded": false,
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_1/perception_formal/trials/D2_dynamic_oblique_wrist_approach_r03",
+  "expected_region": "wrist_forearm",
+  "expected_links": [
+    "foreArm_Link",
+    "gripper_base_link",
+    "wrist1_Link",
+    "wrist2_Link",
+    "wrist3_Link"
+  ],
+  "duration_wall_s": 26.243149518966675,
+  "frame_count": 161,
+  "phase_summaries": [
+    {
+      "phase": "pre_empty",
+      "frames": 24,
+      "effective_hz": 8.08621781995926,
+      "detected_frame_ratio": 0.0,
+      "stable_track_frame_ratio": 0.0,
+      "risk_frame_ratio": 0.0,
+      "nearest_distance_min_m": null,
+      "nearest_distance_p50_m": null,
+      "nearest_distance_p95_m": null,
+      "predicted_distance_min_m": null,
+      "nearest_links": {},
+      "predicted_links": {},
+      "elapsed_ms_p50": 131.4655,
+      "elapsed_ms_p95": 136.89205
+    },
+    {
+      "phase": "dynamic",
+      "frames": 113,
+      "effective_hz": 7.571581913505689,
+      "detected_frame_ratio": 0.6371681415929203,
+      "stable_track_frame_ratio": 0.6106194690265486,
+      "risk_frame_ratio": 0.415929203539823,
+      "nearest_distance_min_m": 0.039915,
+      "nearest_distance_p50_m": 0.1396255,
+      "nearest_distance_p95_m": 0.3146764000000001,
+      "predicted_distance_min_m": -0.018762,
+      "nearest_links": {
+        "wrist2_Link": 28,
+        "wrist1_Link": 27,
+        "gripper_base_link": 17
+      },
+      "predicted_links": {
+        "wrist2_Link": 45,
+        "wrist1_Link": 18,
+        "gripper_base_link": 6
+      },
+      "elapsed_ms_p50": 133.8895,
+      "elapsed_ms_p95": 144.55748
+    },
+    {
+      "phase": "post_removed",
+      "frames": 24,
+      "effective_hz": 8.037346488195404,
+      "detected_frame_ratio": 0.0,
+      "stable_track_frame_ratio": 0.0,
+      "risk_frame_ratio": 0.0,
+      "nearest_distance_min_m": null,
+      "nearest_distance_p50_m": null,
+      "nearest_distance_p95_m": null,
+      "predicted_distance_min_m": null,
+      "nearest_links": {},
+      "predicted_links": {},
+      "elapsed_ms_p50": 130.478,
+      "elapsed_ms_p95": 146.31838999999997
+    }
+  ],
+  "parameters": {
+    "remove_planes": true,
+    "cluster_eps": 0.06,
+    "cluster_min_points": 30,
+    "surface_density": "coarse",
+    "temporal_denoise": true,
+    "d_safe": 0.15,
+    "d_slow": 0.1,
+    "d_stop": 0.05
+  }
+}

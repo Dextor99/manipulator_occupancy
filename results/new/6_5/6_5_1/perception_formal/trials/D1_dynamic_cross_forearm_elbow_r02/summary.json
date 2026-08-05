@@ -1,0 +1,82 @@
+{
+  "created_at": "2026-08-05T11:01:31.630824+00:00",
+  "scenario": "D1",
+  "scenario_name": "dynamic_cross_forearm_elbow",
+  "description": "hand-held foam ball crosses forearm/elbow region",
+  "repeat": 2,
+  "robot_commanded": false,
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_1/perception_formal/trials/D1_dynamic_cross_forearm_elbow_r02",
+  "expected_region": "body",
+  "expected_links": [
+    "foreArm_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link"
+  ],
+  "duration_wall_s": 27.365355253219604,
+  "frame_count": 157,
+  "phase_summaries": [
+    {
+      "phase": "pre_empty",
+      "frames": 20,
+      "effective_hz": 6.942858407984205,
+      "detected_frame_ratio": 0.0,
+      "stable_track_frame_ratio": 0.0,
+      "risk_frame_ratio": 0.0,
+      "nearest_distance_min_m": null,
+      "nearest_distance_p50_m": null,
+      "nearest_distance_p95_m": null,
+      "predicted_distance_min_m": null,
+      "nearest_links": {},
+      "predicted_links": {},
+      "elapsed_ms_p50": 137.40965,
+      "elapsed_ms_p95": 246.85872000000006
+    },
+    {
+      "phase": "dynamic",
+      "frames": 113,
+      "effective_hz": 7.544590278922128,
+      "detected_frame_ratio": 0.7079646017699115,
+      "stable_track_frame_ratio": 0.6902654867256637,
+      "risk_frame_ratio": 0.3893805309734513,
+      "nearest_distance_min_m": 0.044822,
+      "nearest_distance_p50_m": 0.185981,
+      "nearest_distance_p95_m": 0.38226975,
+      "predicted_distance_min_m": -0.122023,
+      "nearest_links": {
+        "upperArm_Link": 80
+      },
+      "predicted_links": {
+        "upperArm_Link": 78
+      },
+      "elapsed_ms_p50": 133.8758,
+      "elapsed_ms_p95": 143.31915999999998
+    },
+    {
+      "phase": "post_removed",
+      "frames": 24,
+      "effective_hz": 8.076818572640365,
+      "detected_frame_ratio": 0.0,
+      "stable_track_frame_ratio": 0.0,
+      "risk_frame_ratio": 0.0,
+      "nearest_distance_min_m": null,
+      "nearest_distance_p50_m": null,
+      "nearest_distance_p95_m": null,
+      "predicted_distance_min_m": null,
+      "nearest_links": {},
+      "predicted_links": {},
+      "elapsed_ms_p50": 130.59785,
+      "elapsed_ms_p95": 134.67128
+    }
+  ],
+  "parameters": {
+    "remove_planes": true,
+    "cluster_eps": 0.06,
+    "cluster_min_points": 30,
+    "surface_density": "coarse",
+    "temporal_denoise": true,
+    "d_safe": 0.15,
+    "d_slow": 0.1,
+    "d_stop": 0.05
+  }
+}

@@ -1,7 +1,11 @@
 # 6.5.1 Real-Platform Baseline Results
 
-Generated at: `2026-08-05T07:19:18.098942+00:00`
+> 本结果用于验证6.5.1实验程序、轨迹生成、风险评价、dense复核和统计链路的可重复性；若 `sensor_live=false` 或 `robot_commanded=false`，则未直接驱动AUBO i16或采集完整RealSense实机执行数据，不作为正式实机结果。
+
+Generated at: `2026-08-05T07:29:00.471981+00:00`
 Mode: `offline`
+Software gate: `PASS`
+Real experiment gate: `NOT_RUN`
 
 | Condition | Trials | Completion | Joint RMSE mean / rad | Joint RMSE P95 / rad | Max joint error / rad | Terminal max error / rad | Min clearance / m | False HOLD |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|

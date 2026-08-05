@@ -1,0 +1,466 @@
+{
+  "purpose": "revised 6.5.1 perception-only reuse audit",
+  "missing_sources": [],
+  "decoupling": {
+    "empty_robot": {
+      "source_path": "data/results/ch4_2/scene_A_delta_0p050.json",
+      "recording": {
+        "record_dir": "data/recordings/ch4_2_scene_A",
+        "exists": true,
+        "scene": "A",
+        "obstacle_desc": "empty workspace, robot-only motion",
+        "frames": 373,
+        "duration_wall_s": 90.01575803756714,
+        "requested_camera": {
+          "source": "realsense",
+          "width": 1280,
+          "height": 720,
+          "fps": 30
+        },
+        "joint_names": [
+          "shoulder_joint",
+          "upperArm_joint",
+          "foreArm_joint",
+          "wrist1_joint",
+          "wrist2_joint",
+          "wrist3_joint",
+          "left_joint",
+          "right_joint"
+        ],
+        "save_images": false
+      },
+      "metrics": {
+        "workspace": {
+          "frames": 373,
+          "T_dec_ms_mean": 0.0,
+          "T_dec_ms_std": 0.0,
+          "N_res": 3.613941018766756,
+          "R_res": 1.0,
+          "R_false": 1.0
+        },
+        "ksi_like": {
+          "frames": 373,
+          "T_dec_ms_mean": 39.233542879358005,
+          "T_dec_ms_std": 2.699214113908085,
+          "N_res": 0.0,
+          "R_res": 0.09051789674887595,
+          "R_false": 0.0
+        },
+        "ours": {
+          "frames": 373,
+          "T_dec_ms_mean": 6.500080576409312,
+          "T_dec_ms_std": 1.1773458654975473,
+          "N_res": 0.002680965147453083,
+          "R_res": 0.06286729303075426,
+          "R_false": 0.002680965147453083
+        }
+      }
+    },
+    "single_static": {
+      "source_path": "data/results/ch4_2/scene_B_delta_0p050.json",
+      "recording": {
+        "record_dir": "data/recordings/ch4_2_scene_B",
+        "exists": true,
+        "scene": "B",
+        "obstacle_desc": "static box near robot link",
+        "frames": 377,
+        "duration_wall_s": 90.19593167304993,
+        "requested_camera": {
+          "source": "realsense",
+          "width": 1280,
+          "height": 720,
+          "fps": 30
+        },
+        "joint_names": [
+          "shoulder_joint",
+          "upperArm_joint",
+          "foreArm_joint",
+          "wrist1_joint",
+          "wrist2_joint",
+          "wrist3_joint",
+          "left_joint",
+          "right_joint"
+        ],
+        "save_images": false
+      },
+      "metrics": {
+        "workspace": {
+          "frames": 377,
+          "T_dec_ms_mean": 0.0,
+          "T_dec_ms_std": 0.0,
+          "visible_frames": 377,
+          "R_keep": 1.0,
+          "R_over": 0.0,
+          "R_det": 0.9946949602122016,
+          "sigma_c": 0.016880110820407353
+        },
+        "ksi_like": {
+          "frames": 377,
+          "T_dec_ms_mean": 39.90386856498808,
+          "T_dec_ms_std": 2.752330362450704,
+          "visible_frames": 377,
+          "R_keep": 0.9198319521178637,
+          "R_over": 0.08016804788213627,
+          "R_det": 0.44297082228116713,
+          "sigma_c": 0.05999095835097307
+        },
+        "ours": {
+          "frames": 377,
+          "T_dec_ms_mean": 6.2874292970715056,
+          "T_dec_ms_std": 1.1338034660167187,
+          "visible_frames": 377,
+          "R_keep": 1.0,
+          "R_over": 0.0,
+          "R_det": 1.0,
+          "sigma_c": 0.01684141879381292
+        }
+      }
+    },
+    "multi_static": {
+      "source_path": "data/results/ch4_2/scene_B2_delta_0p050.json",
+      "recording": {
+        "record_dir": "data/recordings/ch4_2_scene_B2",
+        "exists": true,
+        "scene": "B2",
+        "obstacle_desc": "two static boxes near different robot links",
+        "frames": 381,
+        "duration_wall_s": 90.01693367958069,
+        "requested_camera": {
+          "source": "realsense",
+          "width": 1280,
+          "height": 720,
+          "fps": 30
+        },
+        "joint_names": [
+          "shoulder_joint",
+          "upperArm_joint",
+          "foreArm_joint",
+          "wrist1_joint",
+          "wrist2_joint",
+          "wrist3_joint",
+          "left_joint",
+          "right_joint"
+        ],
+        "save_images": false
+      },
+      "metrics": {
+        "workspace": {
+          "frames": 381,
+          "T_dec_ms_mean": 0.0,
+          "T_dec_ms_std": 0.0,
+          "obstacle_count": 2,
+          "visible_frames_1": 381,
+          "R_keep_1": 1.0,
+          "R_over_1": 0.0,
+          "R_det_1": 0.984251968503937,
+          "sigma_c_1": 0.01916685819299052,
+          "visible_frames_2": 45,
+          "R_keep_2": 1.0,
+          "R_over_2": 0.0,
+          "R_det_2": 1.0,
+          "sigma_c_2": 0.00962326514203803,
+          "visible_pairs": 426,
+          "visible_frames": 426,
+          "R_keep": 1.0,
+          "R_over": 0.0,
+          "R_det": 0.9859154929577465,
+          "sigma_c": 0.014395061667514275
+        },
+        "ksi_like": {
+          "frames": 381,
+          "T_dec_ms_mean": 40.62754842258082,
+          "T_dec_ms_std": 2.5158608701091723,
+          "obstacle_count": 2,
+          "visible_frames_1": 381,
+          "R_keep_1": 0.8510107422414078,
+          "R_over_1": 0.14898925775859218,
+          "R_det_1": 0.4435695538057743,
+          "sigma_c_1": 0.06943545797576074,
+          "visible_frames_2": 45,
+          "R_keep_2": 0.9196013289036545,
+          "R_over_2": 0.08039867109634546,
+          "R_det_2": 0.4444444444444444,
+          "sigma_c_2": 0.04397126940110049,
+          "visible_pairs": 426,
+          "visible_frames": 426,
+          "R_keep": 0.8521317955735106,
+          "R_over": 0.1478682044264894,
+          "R_det": 0.44366197183098594,
+          "sigma_c": 0.05670336368843062
+        },
+        "ours": {
+          "frames": 381,
+          "T_dec_ms_mean": 6.236540349080439,
+          "T_dec_ms_std": 1.053798783769737,
+          "obstacle_count": 2,
+          "visible_frames_1": 381,
+          "R_keep_1": 0.9999116773573865,
+          "R_over_1": 8.832264261349199e-05,
+          "R_det_1": 1.0,
+          "sigma_c_1": 0.016445688451238644,
+          "visible_frames_2": 45,
+          "R_keep_2": 0.9993355481727575,
+          "R_over_2": 0.0006644518272425071,
+          "R_det_2": 1.0,
+          "sigma_c_2": 0.010034290742249267,
+          "visible_pairs": 426,
+          "visible_frames": 426,
+          "R_keep": 0.999902261028214,
+          "R_over": 9.773897178599888e-05,
+          "R_det": 1.0,
+          "sigma_c": 0.013239989596743955
+        }
+      }
+    }
+  },
+  "warning": {
+    "static_safe": {
+      "source_path": "data/results/ch4_3/final_static_A/metrics.json",
+      "trials": 1,
+      "metrics": {
+        "dsa": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 1.0,
+          "D_trigger_ref": 0.15425124162830745,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ssm": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 0.0,
+          "D_trigger_ref": null,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ours_wo_temporal": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 0.0,
+          "D_trigger_ref": null,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ours": {
+          "T_lead": null,
+          "R_miss": null,
+          "R_false_time": 0.010025062656641603,
+          "D_trigger_ref": 0.2074871067283925,
+          "T_recover": null,
+          "N_switch": 6.0
+        }
+      }
+    },
+    "dynamic_approach": {
+      "source_path": "data/results/ch4_3/final_dynamic/metrics.json",
+      "trials": 8,
+      "metrics": {
+        "dsa": {
+          "T_lead": 8.389327704906464,
+          "R_miss": 0.0,
+          "R_false_time": 1.0,
+          "D_trigger_ref": Infinity,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ssm": {
+          "T_lead": 4.735648363828659,
+          "R_miss": 0.0,
+          "R_false_time": 0.21411608287255457,
+          "D_trigger_ref": Infinity,
+          "T_recover": 0.11470305919647217,
+          "N_switch": 13.75
+        },
+        "ours_wo_temporal": {
+          "T_lead": 4.735648363828659,
+          "R_miss": 0.0,
+          "R_false_time": 0.21411608287255457,
+          "D_trigger_ref": Infinity,
+          "T_recover": 0.11470305919647217,
+          "N_switch": 13.75
+        },
+        "ours": {
+          "T_lead": 5.128593176603317,
+          "R_miss": 0.0,
+          "R_false_time": 0.44822218196168523,
+          "D_trigger_ref": 0.3550832712129981,
+          "T_recover": 0.8488276898860931,
+          "N_switch": 14.25
+        }
+      }
+    },
+    "approach_hold_leave": {
+      "source_path": "data/results/ch4_3/final_recover/metrics.json",
+      "trials": 3,
+      "metrics": {
+        "dsa": {
+          "T_lead": 8.628471930821737,
+          "R_miss": 0.0,
+          "R_false_time": 1.0,
+          "D_trigger_ref": Infinity,
+          "T_recover": null,
+          "N_switch": 0.0
+        },
+        "ssm": {
+          "T_lead": 0.4494642416636149,
+          "R_miss": 0.0,
+          "R_false_time": 0.0,
+          "D_trigger_ref": 0.1451172297852359,
+          "T_recover": 0.0,
+          "N_switch": 6.0
+        },
+        "ours_wo_temporal": {
+          "T_lead": 0.4494642416636149,
+          "R_miss": 0.0,
+          "R_false_time": 0.0,
+          "D_trigger_ref": 0.1451172297852359,
+          "T_recover": 0.0,
+          "N_switch": 6.0
+        },
+        "ours": {
+          "T_lead": 1.2807931105295818,
+          "R_miss": 0.0,
+          "R_false_time": 0.09495460539663218,
+          "D_trigger_ref": 0.23760854990732852,
+          "T_recover": 0.37324802080790204,
+          "N_switch": 6.333333333333333
+        }
+      }
+    }
+  },
+  "body_risk": {
+    "source": "reused Chapter 4.4 real replay results for Chapter 6.3",
+    "scenes": {
+      "ee_risk": {
+        "source_dir": "data/results/ch4_4/final_ee",
+        "metrics": {
+          "apf": {
+            "C_grad_D": 1.0,
+            "G_rep": 0.004217196100134542,
+            "R_body": null,
+            "active_frames": 24,
+            "active_ee_frames": 24,
+            "active_body_frames": 0
+          },
+          "ours_ee_only": {
+            "C_grad_D": 0.8859315856975749,
+            "G_rep": 0.0051032791440802,
+            "R_body": null,
+            "active_frames": 25,
+            "active_ee_frames": 25,
+            "active_body_frames": 0
+          },
+          "ours_wo_temporal": {
+            "C_grad_D": 1.0,
+            "G_rep": 0.005597066501902795,
+            "R_body": null,
+            "active_frames": 25,
+            "active_ee_frames": 25,
+            "active_body_frames": 0
+          },
+          "ours": {
+            "C_grad_D": 0.9939229407006168,
+            "G_rep": 0.0078277427527879,
+            "R_body": null,
+            "active_frames": 33,
+            "active_ee_frames": 33,
+            "active_body_frames": 0
+          }
+        },
+        "trials": 8,
+        "frame_summary": {
+          "sampled_frames": 140,
+          "ee_risk_frames": 27,
+          "body_risk_frames": 0,
+          "nearest_links": {
+            "left_link": 58,
+            "gripper_base_link": 57,
+            "upperArm_Link": 13,
+            "wrist1_Link": 11,
+            "wrist3_Link": 1
+          }
+        },
+        "record_dirs": [
+          "data/recordings/ch4_3_dynamic_01",
+          "data/recordings/ch4_3_dynamic_02",
+          "data/recordings/ch4_3_dynamic_03",
+          "data/recordings/ch4_3_dynamic_04",
+          "data/recordings/ch4_3_dynamic_05",
+          "data/recordings/ch4_3_dynamic_06",
+          "data/recordings/ch4_3_dynamic_07",
+          "data/recordings/ch4_3_dynamic_08"
+        ]
+      },
+      "body_risk": {
+        "source_dir": "data/results/ch4_4/final_body_09_11",
+        "metrics": {
+          "apf": {
+            "C_grad_D": 1.0,
+            "G_rep": 0.002499115803011703,
+            "R_body": 0.9008658008658008,
+            "active_frames": 112,
+            "active_ee_frames": 0,
+            "active_body_frames": 112
+          },
+          "ours_ee_only": {
+            "C_grad_D": 0.6382258623697755,
+            "G_rep": 0.002098097206180436,
+            "R_body": 0.0,
+            "active_frames": 12,
+            "active_ee_frames": 0,
+            "active_body_frames": 12
+          },
+          "ours_wo_temporal": {
+            "C_grad_D": 1.0,
+            "G_rep": 0.0035110542913688613,
+            "R_body": 0.9484848484848484,
+            "active_frames": 114,
+            "active_ee_frames": 0,
+            "active_body_frames": 114
+          },
+          "ours": {
+            "C_grad_D": 0.9968264430157955,
+            "G_rep": 0.004625474011759651,
+            "R_body": 0.9606060606060606,
+            "active_frames": 132,
+            "active_ee_frames": 0,
+            "active_body_frames": 132
+          }
+        },
+        "trials": 3,
+        "frame_summary": {
+          "sampled_frames": 185,
+          "ee_risk_frames": 0,
+          "body_risk_frames": 118,
+          "nearest_links": {
+            "wrist1_Link": 109,
+            "upperArm_Link": 71,
+            "wrist2_Link": 3,
+            "gripper_base_link": 2
+          }
+        },
+        "record_dirs": [
+          "data/recordings/ch4_3_dynamic_09",
+          "data/recordings/ch4_3_dynamic_10",
+          "data/recordings/ch4_3_dynamic_11"
+        ]
+      }
+    }
+  },
+  "reuse_decision": {
+    "can_reuse_for_651": true,
+    "usable_evidence": [
+      "real RealSense recordings with AUBO joint states exist",
+      "empty/static decoupling results cover robot self-filtering and static obstacle detection",
+      "dynamic approach/recover results cover obstacle tracking, STRO warning and risk recovery",
+      "whole-body risk replay covers end-effector and middle-link nearest-link evidence"
+    ],
+    "gaps": [
+      "no dedicated revised-6.5.1 static S1/S2/S3 dataset with elbow/forearm/wrist labels and 3 repeats each",
+      "existing dynamic trials are reused from Chapter 4.3/4.4 and are not named D1/D2 with path markers",
+      "existing metrics summarize object-level warning and whole-body risk separately; a unified per-frame 6.5.1 log may still be useful"
+    ],
+    "recommendation": "Use existing results as preliminary/reuse evidence for 6.5.1, then optionally add a minimal perception-only recording set: E0 x2 poses, S1-S3 x3 static trials, D1-D2 x5 dynamic trials."
+  }
+}

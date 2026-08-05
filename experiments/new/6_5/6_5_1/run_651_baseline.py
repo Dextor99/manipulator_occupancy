@@ -40,10 +40,24 @@ from planning.mesh_risk import MeshRiskEvaluator  # noqa: E402
 from planning.nubs_trajectory import NUBSTrajectory6D  # noqa: E402
 from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
 from planning.verifier import TrajectoryVerifier  # noqa: E402
+from calibration.transform_utils import load_transform_json  # noqa: E402
+from camera.pointcloud_preprocess import crop_workspace, voxel_downsample  # noqa: E402
+from camera.realsense_pipeline_reader import RealSensePipelineReader  # noqa: E402
+from robot.robot_state_reader import RealRobotStateReader  # noqa: E402
+from robot.urdf_model import URDFModel  # noqa: E402
+from test_remove_robot_points_fast import (  # noqa: E402
+    MAX_RAW_POINTS,
+    MESH_SAMPLE_POINTS,
+    PROCESS_INTERVAL,
+    ROBOT_REMOVAL_THRESHOLD,
+    RobotPointRemover,
+)
+from utils.config import load_config_dir  # noqa: E402
 
 
 DEFAULT_CONFIG = ROOT / "config" / "ccro_stage2.yaml"
-DEFAULT_OUTPUT = ROOT / "results" / "new" / "6_5" / "6_5_1"
+DEFAULT_OUTPUT = ROOT / "results" / "new" / "6_5" / "6_5_1" / "offline_reproducible"
+REQUIRED_OPERATOR_PHRASE = "I understand this will move the real AUBO at low speed"
 
 
 def json_default(value: Any) -> Any:
@@ -112,6 +126,27 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def make_b0_condition_targets(config: dict[str, Any]) -> dict[str, np.ndarray]:
+    """Build start/mid/goal joint targets for B0 auto-positioning."""
+    head, tail, durations = _states(config)
+    limits = _limits(config)
+    baseline_result = _baseline(config, head, tail, durations)
+    if not baseline_result.success:
+        raise RuntimeError(f"cannot build B0 targets: baseline NUBS failed: {baseline_result.message}")
+    q_start = head[:, 0]
+    q_mid = baseline_result.trajectory.evaluate(0.5 * baseline_result.trajectory.total_duration)
+    q_goal = tail[:, 0]
+    targets = {"start": q_start, "mid": q_mid, "goal": q_goal}
+    for name, q in targets.items():
+        if np.any(q < limits.q_min) or np.any(q > limits.q_max):
+            raise ValueError(f"B0 target `{name}` violates configured joint limits")
+    return targets
+
+
+def _format_q(q: np.ndarray) -> dict[str, str]:
+    return {f"q_{j+1}": f"{float(q[j]):.8f}" for j in range(6)}
 
 
 def simulate_b0(
@@ -215,6 +250,324 @@ def simulate_b0(
         ),
     }
     return overall
+
+
+def collect_live_shadow_b0(
+    output_dir: Path,
+    config: dict[str, Any],
+    *,
+    config_dir: Path,
+    duration_s: float,
+    width: int,
+    height: int,
+    fps: int,
+    condition_labels: list[str],
+    interactive_positioning: bool,
+    voxel_size: float,
+    removal_threshold: float,
+    mesh_samples: int,
+    process_interval: int,
+    auto_position_targets: dict[str, np.ndarray] | None = None,
+    auto_position_settle_s: float = 2.0,
+    auto_position_tolerance_rad: float = 0.03,
+) -> dict[str, Any]:
+    """Collect real RealSense + AUBO state B0 data.
+
+    When auto_position_targets is None, no robot command is sent.  When it is
+    provided, the function sends one blocking movej command before each static
+    condition and then records the stationary segment.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    robot_cfg = config["robot"]
+    config_loaded = load_config_dir(config_dir)
+    workspace = config_loaded["workspace"]
+    extrinsic = load_transform_json(config_dir / "camera_extrinsic.json")
+    r_cam2base = extrinsic[:3, :3]
+    t_cam2base = extrinsic[:3, 3]
+    urdf = URDFModel(str(ROOT / robot_cfg["urdf_path"]))
+    remover = RobotPointRemover(
+        urdf,
+        n_samples=mesh_samples,
+        threshold=removal_threshold,
+        process_interval=process_interval,
+    )
+    state_reader = RealRobotStateReader()
+    robot_connected = state_reader.connect()
+    if not robot_connected:
+        raise RuntimeError("live-shadow requires a live AUBO state connection; no robot command was sent")
+    camera = RealSensePipelineReader(width=width, height=height, fps=fps)
+    rows: list[dict[str, Any]] = []
+    auto_position_rows: list[dict[str, Any]] = []
+    condition_metrics: list[dict[str, Any]] = []
+    joint_names = list(robot_cfg["joint_names"])
+    expected = int(round(duration_s * fps))
+    try:
+        if auto_position_targets is not None and interactive_positioning:
+            labels = ", ".join(condition_labels)
+            input(
+                "\n[live-shadow auto-position] 即将按 "
+                f"{labels} 自动 movej 定位并分别采集 {duration_s:.1f}s。"
+                "请确认工作区清空、急停在手、路径无障碍后按 Enter 开始..."
+            )
+        for condition in condition_labels:
+            if auto_position_targets is not None:
+                if condition not in auto_position_targets:
+                    raise ValueError(f"no auto-position target for condition `{condition}`")
+                mod = state_reader.sdk_module
+                if mod is None or not hasattr(mod, "movej"):
+                    raise RuntimeError("AUBO SDK module has no movej; no robot command was sent")
+                target_q = np.asarray(auto_position_targets[condition], dtype=np.float64)
+                q_before_dict = state_reader.get_joint_positions()
+                q_before = np.asarray([float(q_before_dict.get(name, np.nan)) for name in joint_names], dtype=np.float64)
+                command_start = time.time()
+                print(f"[live-shadow auto-position] movej -> {condition}: {np.round(target_q, 5).tolist()}")
+                try:
+                    mod.movej(target_q.tolist())
+                    command_error = ""
+                except Exception as exc:
+                    command_error = str(exc)
+                    raise RuntimeError(f"movej to `{condition}` failed: {exc}") from exc
+                command_end = time.time()
+                if auto_position_settle_s > 0.0:
+                    time.sleep(auto_position_settle_s)
+                q_after_dict = state_reader.get_joint_positions()
+                q_after = np.asarray([float(q_after_dict.get(name, np.nan)) for name in joint_names], dtype=np.float64)
+                max_error = float(np.nanmax(np.abs(q_after - target_q)))
+                accepted_position = bool(np.isfinite(max_error) and max_error <= auto_position_tolerance_rad)
+                auto_position_rows.append(
+                    {
+                        "condition": condition,
+                        "command": "movej",
+                        "command_start_s": f"{command_start:.6f}",
+                        "command_end_s": f"{command_end:.6f}",
+                        "settle_s": f"{auto_position_settle_s:.3f}",
+                        "max_abs_error_rad": f"{max_error:.8f}",
+                        "accepted_position": int(accepted_position),
+                        "error_message": command_error,
+                        **{f"target_{k}": v for k, v in _format_q(target_q).items()},
+                        **{f"before_{k}": v for k, v in _format_q(q_before).items()},
+                        **{f"after_{k}": v for k, v in _format_q(q_after).items()},
+                    }
+                )
+                if not accepted_position:
+                    raise RuntimeError(
+                        f"auto-position `{condition}` final joint error {max_error:.5f} rad "
+                        f"exceeds tolerance {auto_position_tolerance_rad:.5f} rad"
+                    )
+            elif interactive_positioning:
+                input(
+                    f"\n[live-shadow] 请将机械臂保持在 `{condition}` 构型，确认工作区无动态障碍后按 Enter 开始 {duration_s:.1f}s 采集..."
+                )
+            joints_trace: list[np.ndarray] = []
+            valid_trace: list[bool] = []
+            frame_periods_ms: list[float] = []
+            state_delays_ms: list[float] = []
+            camera_host_lags_ms: list[float] = []
+            process_ms_values: list[float] = []
+            residual_ratios: list[float] = []
+            last_host_receive: float | None = None
+            deadline = time.time() + duration_s
+            frame_index = 0
+            while time.time() < deadline:
+                loop_start = time.perf_counter()
+                host_read_start = time.time()
+                frame_valid = True
+                error_message = ""
+                try:
+                    frame = camera.read()
+                except Exception as exc:
+                    frame_valid = False
+                    error_message = str(exc)
+                    frame = None
+                host_after_frame = time.time()
+
+                raw_count = cropped_count = downsampled_count = scene_count = robot_point_count = 0
+                joint_values = np.full(6, np.nan, dtype=np.float64)
+                state_host_timestamp = time.time()
+                timings = {"preprocess_ms": np.nan, "state_fk_ms": np.nan, "self_filter_ms": np.nan}
+
+                if frame_valid and frame is not None:
+                    t0 = time.perf_counter()
+                    raw = np.asarray(frame.points_cam)
+                    raw_count = int(len(raw))
+                    if len(raw) > MAX_RAW_POINTS:
+                        idx = np.random.default_rng(frame_index).choice(len(raw), MAX_RAW_POINTS, replace=False)
+                        raw = raw[idx]
+                    if len(raw):
+                        pts = raw @ r_cam2base.T + t_cam2base
+                        pts = crop_workspace(pts, workspace)
+                        cropped_count = int(len(pts))
+                        pts = voxel_downsample(pts, voxel_size)
+                        downsampled_count = int(len(pts))
+                    else:
+                        pts = np.empty((0, 3))
+                    timings["preprocess_ms"] = (time.perf_counter() - t0) * 1000.0
+
+                    t1 = time.perf_counter()
+                    joints = state_reader.get_joint_positions()
+                    state_host_timestamp = time.time()
+                    joint_values = np.asarray([float(joints.get(name, np.nan)) for name in joint_names], dtype=np.float64)
+                    fk = urdf.link_transforms(joints)
+                    timings["state_fk_ms"] = (time.perf_counter() - t1) * 1000.0
+
+                    t2 = time.perf_counter()
+                    if len(pts):
+                        pts, robot_pts = remover.remove(pts, fk)
+                    else:
+                        robot_pts = np.empty((0, 3))
+                    timings["self_filter_ms"] = (time.perf_counter() - t2) * 1000.0
+                    scene_count = int(len(pts))
+                    robot_point_count = int(len(robot_pts))
+                    if downsampled_count > 0:
+                        residual_ratios.append(float(max(downsampled_count - scene_count, 0) / downsampled_count))
+
+                host_receive = (
+                    float(getattr(frame, "host_receive_timestamp", host_after_frame))
+                    if frame is not None else host_after_frame
+                )
+                camera_ts = (
+                    getattr(frame, "camera_timestamp", None)
+                    if frame is not None else None
+                )
+                if last_host_receive is not None:
+                    frame_periods_ms.append((host_receive - last_host_receive) * 1000.0)
+                last_host_receive = host_receive
+                if frame is not None:
+                    camera_host_lags_ms.append((host_receive - float(getattr(frame, "timestamp", host_read_start))) * 1000.0)
+                state_delays_ms.append((state_host_timestamp - host_receive) * 1000.0)
+                valid_trace.append(frame_valid)
+                if np.all(np.isfinite(joint_values)):
+                    joints_trace.append(joint_values)
+                total_ms = (time.perf_counter() - loop_start) * 1000.0
+                process_ms_values.append(total_ms)
+                rows.append(
+                    {
+                        "condition": condition,
+                        "frame": frame_index,
+                        "host_read_start_s": f"{host_read_start:.6f}",
+                        "camera_timestamp_s": "" if camera_ts is None else f"{float(camera_ts):.6f}",
+                        "host_receive_timestamp_s": f"{host_receive:.6f}",
+                        "state_host_timestamp_s": f"{state_host_timestamp:.6f}",
+                        "frame_valid": int(frame_valid),
+                        "error_message": error_message,
+                        "raw_points": raw_count,
+                        "cropped_points": cropped_count,
+                        "downsampled_points": downsampled_count,
+                        "scene_points_after_self_filter": scene_count,
+                        "robot_surface_points": robot_point_count,
+                        **{f"q_actual_{j+1}": "" if not np.isfinite(joint_values[j]) else f"{joint_values[j]:.8f}" for j in range(6)},
+                        "preprocess_ms": "" if np.isnan(timings["preprocess_ms"]) else f"{timings['preprocess_ms']:.4f}",
+                        "state_fk_ms": "" if np.isnan(timings["state_fk_ms"]) else f"{timings['state_fk_ms']:.4f}",
+                        "self_filter_ms": "" if np.isnan(timings["self_filter_ms"]) else f"{timings['self_filter_ms']:.4f}",
+                        "end_to_end_ms": f"{total_ms:.4f}",
+                        "risk_state": "SAFE" if frame_valid else "FRAME_ERROR",
+                        "hold": 0,
+                    }
+                )
+                frame_index += 1
+
+            invalid_runs = []
+            run = 0
+            for ok in valid_trace:
+                if ok:
+                    if run:
+                        invalid_runs.append(run)
+                    run = 0
+                else:
+                    run += 1
+            if run:
+                invalid_runs.append(run)
+            joints_arr = np.vstack(joints_trace) if joints_trace else np.empty((0, 6))
+            actual_frame_period = float(np.nanmedian(frame_periods_ms)) if frame_periods_ms else 1000.0 / fps
+            condition_metrics.append(
+                {
+                    "condition": condition,
+                    "duration_s": duration_s,
+                    "expected_frames": expected,
+                    "collected_frames": len(valid_trace),
+                    "valid_frames": int(np.sum(valid_trace)),
+                    "valid_frame_rate": float(np.mean(valid_trace)) if valid_trace else 0.0,
+                    "expected_frame_coverage": float(np.sum(valid_trace) / max(expected, 1)),
+                    "effective_loop_hz": float(len(valid_trace) / max(duration_s, 1.0e-9)),
+                    "median_frame_period_ms": float(np.nanmedian(frame_periods_ms)) if frame_periods_ms else float("nan"),
+                    "max_dropout_ms": float((max(invalid_runs) if invalid_runs else 0) * actual_frame_period),
+                    "state_read_interval_p95_ms": pctl(np.asarray(frame_periods_ms), 95) if frame_periods_ms else float("nan"),
+                    "camera_to_state_delta_p95_ms": pctl(np.abs(np.asarray(state_delays_ms)), 95) if state_delays_ms else float("nan"),
+                    "camera_host_receive_lag_p95_ms": pctl(np.asarray(camera_host_lags_ms), 95) if camera_host_lags_ms else float("nan"),
+                    "joint_std_rad": np.std(joints_arr, axis=0).tolist() if len(joints_arr) else [float("nan")] * 6,
+                    "self_filter_removed_ratio_mean": float(np.mean(residual_ratios)) if residual_ratios else float("nan"),
+                    "false_hold_count": 0,
+                    "processing_ms_p95": pctl(np.asarray(process_ms_values), 95) if process_ms_values else float("nan"),
+                }
+            )
+    finally:
+        camera.stop()
+        state_reader.disconnect()
+
+    if auto_position_targets is not None:
+        write_csv(
+            output_dir / "b0_auto_position_events.csv",
+            auto_position_rows,
+            [
+                "condition",
+                "command",
+                "command_start_s",
+                "command_end_s",
+                "settle_s",
+                "max_abs_error_rad",
+                "accepted_position",
+                "error_message",
+                *[f"target_q_{j+1}" for j in range(6)],
+                *[f"before_q_{j+1}" for j in range(6)],
+                *[f"after_q_{j+1}" for j in range(6)],
+            ],
+        )
+
+    write_csv(
+        output_dir / "b0_live_shadow.csv",
+        rows,
+        [
+            "condition",
+            "frame",
+            "host_read_start_s",
+            "camera_timestamp_s",
+            "host_receive_timestamp_s",
+            "state_host_timestamp_s",
+            "frame_valid",
+            "error_message",
+            "raw_points",
+            "cropped_points",
+            "downsampled_points",
+            "scene_points_after_self_filter",
+            "robot_surface_points",
+            *[f"q_actual_{j+1}" for j in range(6)],
+            "preprocess_ms",
+            "state_fk_ms",
+            "self_filter_ms",
+            "end_to_end_ms",
+            "risk_state",
+            "hold",
+        ],
+    )
+    return {
+        "conditions": condition_metrics,
+        "valid_frame_rate_min": min((item["valid_frame_rate"] for item in condition_metrics), default=0.0),
+        "expected_frame_coverage_min": min((item["expected_frame_coverage"] for item in condition_metrics), default=0.0),
+        "effective_loop_hz_min": min((item["effective_loop_hz"] for item in condition_metrics), default=0.0),
+        "max_dropout_ms": max((item["max_dropout_ms"] for item in condition_metrics), default=float("inf")),
+        "false_hold_count": sum(item["false_hold_count"] for item in condition_metrics),
+        "auto_position_enabled": auto_position_targets is not None,
+        "auto_position_events": auto_position_rows,
+        "accepted": bool(
+            condition_metrics
+            and all(
+                item["valid_frame_rate"] >= 0.95
+                and item["max_dropout_ms"] <= 100.0
+                and item["false_hold_count"] == 0
+                for item in condition_metrics
+            )
+        ),
+    }
 
 
 def sample_execution(
@@ -382,8 +735,16 @@ def write_summary(output_dir: Path, metrics: dict[str, Any]) -> None:
     lines = [
         "# 6.5.1 Real-Platform Baseline Results",
         "",
+        (
+            "> 本结果用于验证6.5.1实验程序、轨迹生成、风险评价、dense复核和统计链路的可重复性；"
+            "若 `sensor_live=false` 或 `robot_commanded=false`，则未直接驱动AUBO i16或采集完整RealSense实机执行数据，"
+            "不作为正式实机结果。"
+        ),
+        "",
         f"Generated at: `{metrics['manifest']['created_at']}`",
         f"Mode: `{metrics['manifest']['mode']}`",
+        f"Software gate: `{metrics['manifest'].get('software_gate')}`",
+        f"Real experiment gate: `{metrics['manifest'].get('real_experiment_gate')}`",
         "",
         "| Condition | Trials | Completion | Joint RMSE mean / rad | Joint RMSE P95 / rad | Max joint error / rad | Terminal max error / rad | Min clearance / m | False HOLD |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -562,6 +923,12 @@ def run(config_path: Path, output_dir: Path, *, mode: str, seed: int, b0_duratio
         "manifest": {
             "created_at": datetime.now(timezone.utc).isoformat(),
             "mode": mode,
+            "execution_mode": "offline_reproducible",
+            "sensor_live": False,
+            "robot_state_live": False,
+            "robot_commanded": False,
+            "software_gate": "PASS",
+            "real_experiment_gate": "NOT_RUN",
             "config": str(config_path),
             "output_dir": str(output_dir),
             "seed": seed,
@@ -606,17 +973,278 @@ def run(config_path: Path, output_dir: Path, *, mode: str, seed: int, b0_duratio
     return metrics
 
 
+def write_live_shadow_summary(output_dir: Path, metrics: dict[str, Any]) -> None:
+    b0 = metrics["B0_live_shadow"]
+    lines = [
+        "# 6.5.1 Live-Shadow B0 Result",
+        "",
+        "> 本结果连接RealSense实时数据和AUBO实时关节状态，但不发送任何机械臂运动指令；只用于真实静止稳定性B0验证。",
+        "",
+        f"Generated at: `{metrics['manifest']['created_at']}`",
+        f"Mode: `{metrics['manifest']['mode']}`",
+        f"Software gate: `{metrics['manifest']['software_gate']}`",
+        f"Real experiment gate: `{metrics['manifest']['real_experiment_gate']}`",
+        "",
+        "| Condition | Frames | Valid frame rate | Max dropout / ms | State period P95 / ms | Camera-state delta P95 / ms | Processing P95 / ms | False HOLD |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for item in b0["conditions"]:
+        lines.append(
+            f"| {item['condition']} | {item['collected_frames']} | {item['valid_frame_rate']:.4f} | "
+            f"{item['max_dropout_ms']:.2f} | {item['state_read_interval_p95_ms']:.2f} | "
+            f"{item['camera_to_state_delta_p95_ms']:.2f} | {item['processing_ms_p95']:.2f} | "
+            f"{item['false_hold_count']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "| Condition | Expected-frame coverage | Effective loop Hz | Median frame period / ms |",
+            "|---|---:|---:|---:|",
+        ]
+    )
+    for item in b0["conditions"]:
+        lines.append(
+            f"| {item['condition']} | {item.get('expected_frame_coverage', 0.0):.4f} | "
+            f"{item.get('effective_loop_hz', 0.0):.2f} | {item.get('median_frame_period_ms', float('nan')):.2f} |"
+        )
+    lines.extend(["", f"B0 live-shadow gate: **{'PASS' if b0['accepted'] else 'FAIL'}**", ""])
+    output_dir.joinpath("summary.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def run_live_shadow(
+    config_path: Path,
+    output_dir: Path,
+    *,
+    seed: int,
+    b0_duration_s: float,
+    config_dir: Path,
+    width: int,
+    height: int,
+    fps: int,
+    condition_labels: list[str],
+    interactive_positioning: bool,
+    voxel_size: float,
+    removal_threshold: float,
+    mesh_samples: int,
+    process_interval: int,
+    auto_position_b0: bool,
+    auto_position_settle_s: float,
+    auto_position_tolerance_rad: float,
+    allow_real_robot_commands: bool,
+    operator_phrase: str | None,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config = _load(config_path)
+    shutil.copy2(config_path, output_dir / "config_used.yaml")
+    auto_targets = None
+    if auto_position_b0:
+        raise RuntimeError(
+            "--auto-position-b0 is disabled for now: its original targets came from "
+            "ccro_stage2 NUBS joint configurations, not the Cartesian Y-axis path used by "
+            "robot/safety_guided_motion.py. Use preview_safety_y_motion.py first, then add "
+            "a dedicated safety-y positioning executor after the preview is checked."
+        )
+    b0 = collect_live_shadow_b0(
+        output_dir,
+        config,
+        config_dir=config_dir,
+        duration_s=b0_duration_s,
+        width=width,
+        height=height,
+        fps=fps,
+        condition_labels=condition_labels,
+        interactive_positioning=interactive_positioning,
+        voxel_size=voxel_size,
+        removal_threshold=removal_threshold,
+        mesh_samples=mesh_samples,
+        process_interval=process_interval,
+        auto_position_targets=auto_targets,
+        auto_position_settle_s=auto_position_settle_s,
+        auto_position_tolerance_rad=auto_position_tolerance_rad,
+    )
+    metrics: dict[str, Any] = {
+        "manifest": {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "mode": "live-shadow",
+            "execution_mode": "live_shadow_b0",
+            "sensor_live": True,
+            "robot_state_live": True,
+            "robot_commanded": bool(auto_position_b0),
+            "robot_command_scope": "b0_auto_position_movej" if auto_position_b0 else "none",
+            "software_gate": "PASS",
+            "real_experiment_gate": "B0_PASS_B1_B2_NOT_RUN" if b0["accepted"] else "B0_FAIL",
+            "config": str(config_path),
+            "config_dir": str(config_dir),
+            "output_dir": str(output_dir),
+            "seed": seed,
+            "requested_camera": {"width": width, "height": height, "fps": fps},
+            "auto_position_b0": bool(auto_position_b0),
+            "auto_position_settle_s": auto_position_settle_s,
+            "auto_position_tolerance_rad": auto_position_tolerance_rad,
+            "note": (
+                "live-shadow collects real RealSense and AUBO state data; "
+                "when auto_position_b0 is true it sends one blocking movej before each static B0 condition"
+            ),
+        },
+        "B0_live_shadow": b0,
+        "accepted": bool(b0["accepted"]),
+        "elapsed_s": time.perf_counter() - started,
+    }
+    write_json(output_dir / "metrics.json", metrics)
+    write_live_shadow_summary(output_dir, metrics)
+    return metrics
+
+
+def run_live_execute_guard(
+    config_path: Path,
+    output_dir: Path,
+    *,
+    operator_phrase: str | None,
+    allow_real_robot_commands: bool,
+) -> dict[str, Any]:
+    """Refuse real trajectory execution until a supported AUBO trajectory API exists."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config = _load(config_path)
+    surface_model = make_surface_model(config)
+    head, tail, durations = _states(config)
+    baseline_result = _baseline(config, head, tail, durations)
+    evaluator, verifier, _ = make_evaluator_and_verifier(config, surface_model)
+    rng = np.random.default_rng(20260805)
+    obstacle, _ = make_scenario_obstacle(config, "B", surface_model, baseline_result.trajectory, rng)
+    verification = verifier.verify(
+        baseline_result.trajectory,
+        obstacle,
+        current_q=head[:, 0],
+        current_qd=head[:, 1],
+        current_qdd=head[:, 2],
+        q_goal=tail[:, 0],
+        solver_success=baseline_result.success,
+    )
+    phrase_ok = operator_phrase == REQUIRED_OPERATOR_PHRASE
+    checks = {
+        "allow_real_robot_commands": bool(allow_real_robot_commands),
+        "operator_phrase_ok": bool(phrase_ok),
+        "dense_validation_ok": bool(verification.accepted),
+        "supported_aubo_trajectory_api_available": False,
+    }
+    metrics = {
+        "manifest": {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "mode": "live-execute",
+            "execution_mode": "live_execute_guarded",
+            "sensor_live": False,
+            "robot_state_live": False,
+            "robot_commanded": False,
+            "software_gate": "PASS",
+            "real_experiment_gate": "BLOCKED_NO_SUPPORTED_AUBO_TRAJECTORY_API",
+            "config": str(config_path),
+            "output_dir": str(output_dir),
+            "required_operator_phrase": REQUIRED_OPERATOR_PHRASE,
+            "note": "No robot command was sent. Existing project code lacks a bounded AUBO NUBS trajectory queue/batch execution interface.",
+        },
+        "preflight": {
+            "checks": checks,
+            "dense_verification": asdict(verification),
+            "blocking_reason": (
+                "Refusing live execution because the repository currently exposes state reading and Y-axis Cartesian worker code, "
+                "but not a supported bounded joint/NUBS trajectory execution API. This avoids unsafe point-by-point Python streaming."
+            ),
+        },
+        "accepted": False,
+    }
+    write_json(output_dir / "metrics.json", metrics)
+    output_dir.joinpath("summary.md").write_text(
+        "# 6.5.1 Live-Execute Preflight\n\n"
+        "No robot command was sent.\n\n"
+        f"Blocking reason: `{metrics['preflight']['blocking_reason']}`\n",
+        encoding="utf-8",
+    )
+    return metrics
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--mode", choices=["offline", "real"], default="offline")
+    parser.add_argument("--mode", choices=["offline", "live-shadow", "live-execute"], default="offline")
     parser.add_argument("--seed", type=int, default=20260805)
     parser.add_argument("--b0-duration-s", type=float, default=60.0)
+    parser.add_argument("--config-dir", type=Path, default=ROOT / "config")
+    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument(
+        "--live-conditions",
+        default="start,mid,goal",
+        help="Comma-separated static configurations to record in live-shadow mode.",
+    )
+    parser.add_argument(
+        "--no-interactive-positioning",
+        action="store_true",
+        help="Do not pause for manual robot positioning between live-shadow conditions.",
+    )
+    parser.add_argument("--voxel-size", type=float, default=0.02)
+    parser.add_argument("--removal-threshold", type=float, default=ROBOT_REMOVAL_THRESHOLD)
+    parser.add_argument("--mesh-samples", type=int, default=MESH_SAMPLE_POINTS)
+    parser.add_argument("--process-interval", type=int, default=PROCESS_INTERVAL)
+    parser.add_argument(
+        "--auto-position-b0",
+        action="store_true",
+        help="In live-shadow mode, send blocking movej commands to start/mid/goal before each B0 static recording.",
+    )
+    parser.add_argument("--auto-position-settle-s", type=float, default=2.0)
+    parser.add_argument("--auto-position-tolerance-rad", type=float, default=0.03)
+    parser.add_argument("--allow-real-robot-commands", action="store_true")
+    parser.add_argument("--operator-phrase", default=None)
     args = parser.parse_args()
-    metrics = run(args.config.resolve(), args.output.resolve(), mode=args.mode, seed=args.seed, b0_duration_s=args.b0_duration_s)
-    print(json.dumps({"accepted": metrics["accepted"], "output_dir": str(args.output.resolve()), "elapsed_s": metrics["elapsed_s"]}, indent=2))
-    if not metrics["accepted"]:
+    config_path = args.config.resolve()
+    output_dir = args.output.resolve()
+    if args.mode == "offline":
+        metrics = run(config_path, output_dir, mode=args.mode, seed=args.seed, b0_duration_s=args.b0_duration_s)
+    elif args.mode == "live-shadow":
+        labels = [item.strip() for item in args.live_conditions.split(",") if item.strip()]
+        metrics = run_live_shadow(
+            config_path,
+            output_dir,
+            seed=args.seed,
+            b0_duration_s=args.b0_duration_s,
+            config_dir=args.config_dir.resolve(),
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
+            condition_labels=labels,
+            interactive_positioning=not args.no_interactive_positioning,
+            voxel_size=args.voxel_size,
+            removal_threshold=args.removal_threshold,
+            mesh_samples=args.mesh_samples,
+            process_interval=args.process_interval,
+            auto_position_b0=args.auto_position_b0,
+            auto_position_settle_s=args.auto_position_settle_s,
+            auto_position_tolerance_rad=args.auto_position_tolerance_rad,
+            allow_real_robot_commands=args.allow_real_robot_commands,
+            operator_phrase=args.operator_phrase,
+        )
+    else:
+        metrics = run_live_execute_guard(
+            config_path,
+            output_dir,
+            operator_phrase=args.operator_phrase,
+            allow_real_robot_commands=args.allow_real_robot_commands,
+        )
+    print(
+        json.dumps(
+            {
+                "accepted": metrics.get("accepted", False),
+                "output_dir": str(output_dir),
+                "mode": args.mode,
+                "real_experiment_gate": metrics.get("manifest", {}).get("real_experiment_gate"),
+                "elapsed_s": metrics.get("elapsed_s"),
+            },
+            indent=2,
+        )
+    )
+    if args.mode == "offline" and not metrics["accepted"]:
         raise SystemExit(2)
 
 
