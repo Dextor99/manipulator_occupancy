@@ -20,6 +20,12 @@ experiments/new/6_5/6_5_1/run_651_perception_capture.py
 experiments/new/6_5/6_5_1/plot_651_perception.py
 ```
 
+插图关键帧补采程序：
+
+```bash
+experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py
+```
+
 正式结果目录：
 
 ```bash
@@ -276,3 +282,43 @@ sed -n '1,200p' results/new/6_5/6_5_1/perception_formal/d1_quality_check.md
 5. 动态障碍场景中，预测风险触发早于当前距离风险触发，说明 STRO 对接近趋势具有提前预警能力。
 
 本节不报告真实轨迹跟踪误差、停止响应时间或在线重规划成功率；这些内容应放入后续 6.5.2 或 6.5.3。
+
+## 插图素材获取
+
+当前正式试次目录只保存逐帧数值日志和风险曲线，不能从 `frames.csv` 恢复真实 RGB 图、深度图或点云轮廓。论文中距离-风险曲线可直接使用正式试次中的 `perception_curve.png`，或由 `frames.csv` 重新绘制；真实检测帧需要单独补采。
+
+建议补采 3 个代表性可视化试次：
+
+```bash
+# S2 静态前臂障碍
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py \
+  --scenario S2 \
+  --repeat 1 \
+  --output results/new/6_5/6_5_1/perception_visual_snapshots
+
+# D1 动态横穿肘部/上臂区域
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py \
+  --scenario D1 \
+  --repeat 1 \
+  --output results/new/6_5/6_5_1/perception_visual_snapshots
+
+# D2 动态斜向接近腕部/末端区域
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py \
+  --scenario D2 \
+  --repeat 1 \
+  --output results/new/6_5/6_5_1/perception_visual_snapshots
+```
+
+每个关键事件输出：
+
+```text
+rgb.png
+depth_colormap.png
+rgb_overlay.png
+scene_points.npz
+robot_points.npz
+clusters.npz
+snapshot_meta.json
+```
+
+其中 `rgb_overlay.png` 为真实 RGB 检测叠加图，可作为论文候选子图；`.npz` 点云文件可用于后续重绘自滤除点云、障碍聚类和机器人点云示意图。该补采程序同样不向 AUBO 发送任何运动指令。

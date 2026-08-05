@@ -263,3 +263,51 @@ results/new/6_5/6_5_1/perception_formal/trials/<scenario>_<name>_rXX/frames.csv
 ```text
 perception_curve.png
 ```
+
+## 5. 论文插图关键帧补采
+
+正式 6.5.1 结果目录只保存了 `frames.csv`、`summary.json` 和 `perception_curve.png`，不能从中恢复真实 RGB、深度图或点云画面。若论文需要静态检测、D1 动态横穿、D2 动态接近的真实检测帧，可使用独立补采程序：
+
+```bash
+experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py
+```
+
+该程序不会向机器人发送运动指令，只读取 RealSense 和 AUBO 状态。建议只补采 3 个代表性场景：
+
+```bash
+# S2：前臂附近静态障碍关键帧
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py \
+  --scenario S2 \
+  --repeat 1 \
+  --output results/new/6_5/6_5_1/perception_visual_snapshots
+
+# D1：横向经过肘部/上臂区域关键帧
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py \
+  --scenario D1 \
+  --repeat 1 \
+  --output results/new/6_5/6_5_1/perception_visual_snapshots
+
+# D2：斜向接近腕部/末端区域关键帧
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_1/capture_651_visual_snapshots.py \
+  --scenario D2 \
+  --repeat 1 \
+  --output results/new/6_5/6_5_1/perception_visual_snapshots
+```
+
+输出结构：
+
+```text
+results/new/6_5/6_5_1/perception_visual_snapshots/
+└── trials/<scenario>_<name>_rXX/
+    ├── snapshot_index.json
+    └── snapshots/<scenario>_rXX_<event>/
+        ├── rgb.png
+        ├── depth_colormap.png
+        ├── rgb_overlay.png
+        ├── scene_points.npz
+        ├── robot_points.npz
+        ├── clusters.npz
+        └── snapshot_meta.json
+```
+
+其中 `rgb_overlay.png` 可直接作为论文候选插图；`scene_points.npz`、`robot_points.npz` 和 `clusters.npz` 可用于后续重绘点云视图。动态场景会尽量保存 `predicted_risk_onset`、`current_risk_onset`、`minimum_clearance` 和 `risk_cleared` 等关键事件帧。
