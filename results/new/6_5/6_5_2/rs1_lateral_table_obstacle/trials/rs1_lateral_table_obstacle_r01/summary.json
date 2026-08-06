@@ -1,0 +1,143 @@
+{
+  "created_at": "2026-08-06T07:23:28.139554+00:00",
+  "scenario": "R-S1",
+  "scenario_title": "R-S1 lateral table obstacle",
+  "repeat": 1,
+  "mode": "capture-plan",
+  "status": "VALIDATION_REJECTED",
+  "robot_commanded": false,
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r01",
+  "elapsed_s": 61.68593650893308,
+  "obstacle_model": {
+    "accepted": true,
+    "reason": "ok",
+    "frame_count": 22,
+    "selected_frames": [
+      18,
+      5,
+      14,
+      7,
+      11,
+      16,
+      21,
+      10
+    ],
+    "point_count": 1639,
+    "center": [
+      0.5703820697591976,
+      0.0407844048158255,
+      0.36942478452469846
+    ],
+    "radius_estimate_m": 0.18724416909873579,
+    "nearest_link_representative": "right_link",
+    "nearest_distance_representative_m": 0.090645,
+    "q_mean": [
+      0.014826169237494469,
+      0.005252616014331579,
+      1.581470251083374,
+      0.005351652856916189,
+      1.5711411237716675,
+      -0.007809231523424387
+    ],
+    "snapshot_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r01/snapshots"
+  },
+  "reference_risk": {
+    "D_min_ref_obs_m": 0.0005009366247159276,
+    "nearest_link": "foreArm_Link",
+    "min_time_s": 1.44,
+    "dense_verification_if_reference_were_executed": {
+      "accepted": false,
+      "reasons": [
+        "distance_ok"
+      ],
+      "checks": {
+        "solver_ok": true,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": false,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true
+      },
+      "goal_error": 2.0816681711721685e-16,
+      "min_distance": 0.0003313393661925965,
+      "nearest_link": "foreArm_Link",
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0,
+      "continuity_q": 0.0,
+      "continuity_qd": 0.0,
+      "continuity_qdd": 3.66205343881779e-15,
+      "validation_ms": 2865.937461145222,
+      "self_collision_checked": false
+    },
+    "risk_condition_ok": true,
+    "note": "Reference trajectory is evaluated only; it must not be executed in this risky layout."
+  },
+  "candidate_audit": {
+    "D_min_cand_val_m": 0.001874965999370159,
+    "nearest_link": "foreArm_Link",
+    "min_time_s": 0.2,
+    "optimization": {
+      "success": true,
+      "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+      "elapsed_ms": 8403.10588106513,
+      "iterations": 27,
+      "function_evaluations": 45,
+      "initial_min_distance_m": 0.0010316638032279559,
+      "final_min_distance_m": 0.0033150875786940406,
+      "initial_risk": 0.000917329876481071,
+      "final_risk": 0.00015947237621271183
+    }
+  },
+  "dense_verification": {
+    "accepted": false,
+    "reasons": [
+      "distance_ok"
+    ],
+    "checks": {
+      "solver_ok": true,
+      "finite_ok": true,
+      "goal_ok": true,
+      "distance_ok": false,
+      "position_ok": true,
+      "velocity_ok": true,
+      "acceleration_ok": true,
+      "continuity_q_ok": true,
+      "continuity_qd_ok": true,
+      "continuity_qdd_ok": true
+    },
+    "goal_error": 2.0816681711721685e-16,
+    "min_distance": 0.001836480710881454,
+    "nearest_link": "foreArm_Link",
+    "max_q_violation": 0.0,
+    "max_qd_violation": 0.0,
+    "max_qdd_violation": 0.0,
+    "continuity_q": 0.0,
+    "continuity_qd": 0.0,
+    "continuity_qdd": 3.66205343881779e-15,
+    "validation_ms": 3228.491032961756,
+    "self_collision_checked": false
+  },
+  "pre_execution_recheck": {
+    "accepted": false,
+    "skipped": true,
+    "reason": "mode capture-plan does not perform pre-execution recheck"
+  },
+  "execution": {
+    "robot_commanded": false,
+    "attempted": false,
+    "executed": false,
+    "reason": "mode capture-plan does not command the robot"
+  },
+  "parameters": {
+    "D_min_ref_risk_threshold_m": 0.08,
+    "D_min_exec_obs_threshold_m": 0.08,
+    "start_q_tolerance_rad": 0.02,
+    "required_operator_phrase": "CCRO_652_STATIC_LOW_SPEED_APPROVED",
+    "use_current_start": false
+  }
+}

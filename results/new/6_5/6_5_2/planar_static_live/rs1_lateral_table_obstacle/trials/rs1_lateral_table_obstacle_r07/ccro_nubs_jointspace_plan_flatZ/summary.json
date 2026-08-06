@@ -1,0 +1,138 @@
+{
+  "created_at": "2026-08-06T13:17:16.340806+00:00",
+  "robot_commanded": false,
+  "trajectory_type": "joint_space_NUBS_not_B_spline",
+  "trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r07",
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r07/ccro_nubs_jointspace_plan_flatZ",
+  "status": "PLAN_REJECTED",
+  "accepted_for_real_execution": false,
+  "optimizer_type": "joint_space_CCRO_NUBS_with_constant_TCP_height_preference",
+  "q_start_rad": [
+    0.8698325157165527,
+    -0.4290015697479248,
+    1.0239592037702863,
+    -0.11783172935247421,
+    1.5707816073769016,
+    0.8698214888572693
+  ],
+  "q_goal_rad": [
+    -0.31612899899482727,
+    -0.4193803369998932,
+    1.0387744903564453,
+    -0.11262313276529312,
+    1.5707963705062866,
+    -0.31613266468048096
+  ],
+  "q_goal_source_note": "Captured from X+0.10 m tabletop goal execution log, Y=-0.4 m.",
+  "durations": [
+    2.0,
+    2.0,
+    2.0,
+    2.0
+  ],
+  "reference": {
+    "solver_success": true,
+    "min_distance_m": 0.0033712772386895826,
+    "nearest_link": "right_link",
+    "dense_verification": {
+      "accepted": false,
+      "reasons": [
+        "distance_ok"
+      ],
+      "checks": {
+        "solver_ok": true,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": false,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true
+      },
+      "goal_error": 0.0,
+      "min_distance": 0.0029162550741170766,
+      "nearest_link": "right_link",
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0,
+      "continuity_q": 0.0,
+      "continuity_qd": 0.0,
+      "continuity_qdd": 0.0,
+      "validation_ms": 3350.7402610002828,
+      "self_collision_checked": false
+    }
+  },
+  "candidate": {
+    "optimizer_success": false,
+    "optimizer_message": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+    "elapsed_ms": 37420.429922999574,
+    "iterations": 80,
+    "initial_min_distance_m": 0.00869485536771326,
+    "final_min_distance_m": 0.11735561672062401,
+    "sampled_min_distance_m": 0.11295862757005258,
+    "nearest_link": "right_link",
+    "dense_verification": {
+      "accepted": false,
+      "reasons": [
+        "solver_ok"
+      ],
+      "checks": {
+        "solver_ok": false,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": true,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true
+      },
+      "goal_error": 0.0,
+      "min_distance": 0.11295862757005258,
+      "nearest_link": "right_link",
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0,
+      "continuity_q": 0.0,
+      "continuity_qd": 0.0,
+      "continuity_qdd": 0.0,
+      "validation_ms": 3294.9931590001142,
+      "self_collision_checked": false
+    },
+    "tcp_z_stats": {
+      "tcp_link": "gripper_base_link",
+      "z_min_m": 0.5395564686660268,
+      "z_max_m": 0.5546146365367867,
+      "z_range_m": 0.015058167870759864,
+      "z_start_m": 0.5395623023838171,
+      "z_goal_m": 0.5395564686660268
+    }
+  },
+  "reference_tcp_z_stats": {
+    "tcp_link": "gripper_base_link",
+    "z_min_m": 0.5395564686660268,
+    "z_max_m": 0.5395649994680713,
+    "z_range_m": 8.53080204454848e-06,
+    "z_start_m": 0.5395623023838171,
+    "z_goal_m": 0.5395564686660268
+  },
+  "tabletop_preference": {
+    "enabled": true,
+    "lambda_tcp_z": 20000.0,
+    "tcp_z_tolerance_m": 0.015,
+    "tcp_preference_samples": 25,
+    "tcp_link": "gripper_base_link"
+  },
+  "files": [
+    "reference_trajectory.csv",
+    "ccro_nubs_candidate_trajectory.csv",
+    "ccro_nubs_trajectories.npz",
+    "figures/distance_risk_curve.png",
+    "figures/joint_trajectory_preview.png",
+    "figures/ccro_nubs_urdf_pose_sequence.png"
+  ],
+  "execution_note": "No robot command was sent. Execute only after inspecting URDF pose sequence, dense verification, and confirming a bounded joint trajectory execution interface."
+}
