@@ -95,6 +95,20 @@ def summarize_plan(plan_dir: Path, config: dict[str, Any], surface_model: Any, e
         args.tcp_link,
         samples=args.samples,
     )
+    task_violations = {
+        "tcp_z_corridor_violation_m": float(
+            max(metrics["max_tcp_z_deviation_m"] - args.tcp_z_hard_tolerance_m, 0.0)
+        ),
+        "tcp_orientation_violation_deg": float(
+            0.0
+            if args.tcp_orientation_hard_deg <= 0.0
+            else max(metrics["max_tcp_orientation_deviation_deg"] - args.tcp_orientation_hard_deg, 0.0)
+        ),
+        "tcp_orientation_hard_gate_enabled": bool(args.tcp_orientation_hard_deg > 0.0),
+        "dense_execution_margin_m": float(dense_risk.min_distance - args.clearance_m),
+        "table_clearance_checked": False,
+        "base_self_clearance_checked": False,
+    }
     lambda_smooth = float(config["optimizer"]["lambda_smooth"])
     lambda_risk = float(config["optimizer"]["lambda_risk"])
     return {
@@ -118,6 +132,7 @@ def summarize_plan(plan_dir: Path, config: dict[str, Any], surface_model: Any, e
             "active_sample_count": int(dense_risk.active_sample_count),
         },
         "minimal_change_metrics": metrics,
+        "task_corridor_audit": task_violations,
     }
 
 
@@ -125,23 +140,29 @@ def render_report(payload: dict[str, Any]) -> str:
     lines = [
         "# 6.5.2 Objective-Term Audit",
         "",
-        "This audit explains why the original CCRO-NUBS objective can prefer an overpass route.",
+        "This audit compares original CCRO-NUBS objective terms with the general candidate-selection metrics.",
         "",
-        "| candidate | accepted | approx original objective | smooth term | risk term | dense min / m | max TCP z dev / m | TCP path length / m | joint length / rad |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| candidate | accepted | approx original objective | smooth term | risk term | dense min / m | margin / m | max z dev / m | z violation / m | mean xy dev / m | orient / deg | orient violation / deg | TCP xy length / m | joint length / rad |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in payload["plans"]:
         terms = item["optimizer_objective_terms"]
         dense = item["dense_audit"]
         metrics = item["minimal_change_metrics"]
+        task = item["task_corridor_audit"]
         lines.append(
             f"| `{item['name']}` | {str(item['accepted_for_real_execution'])} | "
             f"{terms['original_objective_approx']:.6f} | "
             f"{terms['lambda_smooth_energy']:.6f} | "
             f"{terms['lambda_risk_cost']:.6f} | "
             f"{dense['min_distance_m']:.4f} | "
+            f"{task['dense_execution_margin_m']:.4f} | "
             f"{metrics['max_tcp_z_deviation_m']:.4f} | "
-            f"{metrics['tcp_path_length_m']:.4f} | "
+            f"{task['tcp_z_corridor_violation_m']:.4f} | "
+            f"{metrics.get('mean_tcp_xy_deviation_m', 0.0):.4f} | "
+            f"{metrics.get('max_tcp_orientation_deviation_deg', 0.0):.3f} | "
+            f"{task['tcp_orientation_violation_deg']:.3f} | "
+            f"{metrics.get('tcp_xy_path_length_m', metrics['tcp_path_length_m']):.4f} | "
             f"{metrics['joint_path_length_rad']:.4f} |"
         )
     lines.extend(
@@ -149,10 +170,10 @@ def render_report(payload: dict[str, Any]) -> str:
             "",
             "Interpretation:",
             "",
-            "- The original objective is dominated by joint-space smooth energy once both candidates are outside the hard acceptance distance.",
-            "- It has no direct penalty for lifting the TCP or deviating from the intended tabletop path.",
-            "- Therefore an overpass route can be mathematically optimal under the original objective, even when a planar/lateral route is more appropriate for the real tabletop task.",
-            "- The corrected 6.5.2 policy is: dense safety gate first, then choose the strict accepted candidate with smaller task-space deviation and bounded TCP height change.",
+            "- Dense safety, joint limits, continuity, and goal reaching are hard feasibility gates.",
+            "- TCP height is not a hard preference in the general static-avoidance setting; vertical motion contributes through the 3D TCP path length.",
+            "- Candidate selection should compare feasible path families using 3D TCP path length, joint path length, jerk energy, duration, and near-boundary clearance penalty.",
+            "- The selected path may therefore be an overpass or a lateral route depending on the unified objective values.",
             "",
         ]
     )
@@ -184,6 +205,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--tcp-link", default="gripper_base_link")
     parser.add_argument("--samples", type=int, default=241)
+    parser.add_argument("--clearance-m", type=float, default=0.08)
+    parser.add_argument("--tcp-z-hard-tolerance-m", type=float, default=0.03)
+    parser.add_argument("--tcp-orientation-hard-deg", type=float, default=0.0)
     return parser
 
 

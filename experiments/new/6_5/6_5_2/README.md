@@ -272,25 +272,28 @@ feedback and the RGB-D observed obstacle model.
 
 ## Candidate Selection Policy
 
-For tabletop static-obstacle execution, the selected trajectory is not simply
-the one with the largest possible clearance or the lowest original joint-space
-objective.  The formal 6.5.2 policy is:
+For general static-obstacle execution, the selected trajectory is not simply the
+one with the largest possible clearance or the lowest original joint-space
+objective, and it is not forced to remain planar or near-constant height.  The
+formal 6.5.2 policy is frozen in
+`candidate_selection_policy.yaml` and follows:
 
 1. Reject every candidate that fails dense verification, joint limits,
-   trajectory continuity, endpoint checks, or the optimizer success flag.
-2. Among strict `PLAN_ACCEPTED` candidates, prefer the one with smaller
-   task-space change relative to the reference path, especially bounded TCP
-   height change for tabletop motions.
-3. Treat excessive clearance as a small secondary term after the required
-   safety threshold has already been met.
-4. Never execute a candidate that is only visually plausible but not strict
-   `PLAN_ACCEPTED`.
+   trajectory continuity, endpoint checks, or optimizer success.
+2. Generate or retain multiple path-family candidates, such as overpass,
+   base-side lateral, outer-side lateral, and free local optimization seeds.
+3. Pareto-filter feasible candidates over 3D TCP path length, joint-space path
+   length, NUBS jerk/smooth energy, near-boundary clearance penalty, and
+   duration.
+4. Score only Pareto non-dominated candidates using normalized objective terms:
+   `w_tcp L_TCP + w_joint L_q + w_jerk J_jerk + w_clear J_clear + w_time T`.
+5. Never execute a candidate that is only visually plausible but not hard
+   feasible.
 
-This policy avoids an artifact in the original CCRO-NUBS objective: once a
-candidate is outside the safety distance, the squared-hinge risk becomes very
-small and the remaining joint-space smoothness term may prefer lifting over the
-obstacle.  Such an overpass can be mathematically optimal under the original
-joint-space objective, but it is not necessarily the best tabletop execution
-choice.  Use `select_652_candidate_family.py` and
-`audit_652_objective_terms.py` to document the selected candidate and the reason
-for rejecting or deprioritizing alternatives.
+The near-boundary clearance term penalizes candidates that stay close to the
+acceptance threshold, but stops rewarding clearance after the preferred margin is
+reached.  TCP height is reported as a diagnostic only; vertical and horizontal
+motion both contribute naturally through the 3D TCP path length.  Use
+`select_652_candidate_family.py` and `audit_652_objective_terms.py` to document
+the selected candidate, Pareto status, normalized score, and reasons for
+rejecting or deprioritizing alternatives.

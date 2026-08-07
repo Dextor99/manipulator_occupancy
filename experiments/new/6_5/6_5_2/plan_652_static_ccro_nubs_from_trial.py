@@ -77,8 +77,8 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
         tcp_link: str,
         lambda_tcp_z: float,
         tcp_z_tolerance_m: float,
-        lambda_tcp_xyz: float,
-        tcp_xyz_tolerance_m: float,
+        lambda_tcp_xy: float,
+        tcp_xy_tolerance_m: float,
         lambda_joint_deviation: float,
         joint_deviation_tolerance_rad: float,
         tcp_preference_samples: int,
@@ -89,8 +89,8 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
         self.tcp_link = tcp_link
         self.lambda_tcp_z = float(lambda_tcp_z)
         self.tcp_z_tolerance_m = float(max(tcp_z_tolerance_m, 0.0))
-        self.lambda_tcp_xyz = float(lambda_tcp_xyz)
-        self.tcp_xyz_tolerance_m = float(max(tcp_xyz_tolerance_m, 0.0))
+        self.lambda_tcp_xy = float(lambda_tcp_xy)
+        self.tcp_xy_tolerance_m = float(max(tcp_xy_tolerance_m, 0.0))
         self.lambda_joint_deviation = float(lambda_joint_deviation)
         self.joint_deviation_tolerance_rad = float(max(joint_deviation_tolerance_rad, 0.0))
         count = max(2, int(tcp_preference_samples))
@@ -126,15 +126,15 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
         hinge = np.maximum(dz - self.tcp_z_tolerance_m, 0.0)
         return float(np.mean(hinge * hinge))
 
-    def tcp_xyz_preference_cost(self, flat_points: np.ndarray) -> float:
-        if self.lambda_tcp_xyz <= 0.0:
+    def tcp_xy_preference_cost(self, flat_points: np.ndarray) -> float:
+        if self.lambda_tcp_xy <= 0.0:
             return 0.0
         points = np.asarray(flat_points, dtype=np.float64).reshape(self.inner_shape)
         trajectory = self._trajectory(points)
         samples = trajectory.sample(self.tcp_preference_times, max_derivative=0).q
         xyz = np.asarray([self._tcp_xyz(q) for q in samples], dtype=np.float64)
-        deviation = np.linalg.norm(xyz - self.reference_tcp_xyz, axis=1)
-        hinge = np.maximum(deviation - self.tcp_xyz_tolerance_m, 0.0)
+        deviation = np.linalg.norm(xyz[:, :2] - self.reference_tcp_xyz[:, :2], axis=1)
+        hinge = np.maximum(deviation - self.tcp_xy_tolerance_m, 0.0)
         return float(np.mean(hinge * hinge))
 
     def joint_deviation_preference_cost(self, flat_points: np.ndarray) -> float:
@@ -150,7 +150,7 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
     def preference_cost(self, flat_points: np.ndarray) -> float:
         return float(
             self.lambda_tcp_z * self.tcp_z_preference_cost(flat_points)
-            + self.lambda_tcp_xyz * self.tcp_xyz_preference_cost(flat_points)
+            + self.lambda_tcp_xy * self.tcp_xy_preference_cost(flat_points)
             + self.lambda_joint_deviation * self.joint_deviation_preference_cost(flat_points)
         )
 
@@ -159,7 +159,7 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
             flat_points.size == 0
             or (
                 self.lambda_tcp_z <= 0.0
-                and self.lambda_tcp_xyz <= 0.0
+                and self.lambda_tcp_xy <= 0.0
                 and self.lambda_joint_deviation <= 0.0
             )
         ):
@@ -226,8 +226,8 @@ def make_tabletop_optimizer(
         tcp_link=args.tcp_link,
         lambda_tcp_z=args.lambda_tcp_z,
         tcp_z_tolerance_m=args.tcp_z_tolerance_m,
-        lambda_tcp_xyz=args.lambda_tcp_xyz,
-        tcp_xyz_tolerance_m=args.tcp_xyz_tolerance_m,
+        lambda_tcp_xy=args.lambda_tcp_xy,
+        tcp_xy_tolerance_m=args.tcp_xy_tolerance_m,
         lambda_joint_deviation=args.lambda_joint_deviation,
         joint_deviation_tolerance_rad=args.joint_deviation_tolerance_rad,
         tcp_preference_samples=args.tcp_preference_samples,
@@ -296,6 +296,12 @@ def tcp_path_z_stats(surface_model: RobotSurfaceModel, trajectory: NUBSTrajector
     }
 
 
+def rotation_angle_rad(rotation: np.ndarray) -> float:
+    trace = float(np.trace(rotation))
+    value = np.clip((trace - 1.0) * 0.5, -1.0, 1.0)
+    return float(np.arccos(value))
+
+
 def trajectory_preference_metrics(
     surface_model: RobotSurfaceModel,
     reference: NUBSTrajectory6D,
@@ -308,28 +314,74 @@ def trajectory_preference_metrics(
     cand_q = candidate.sample(times, max_derivative=0).q
     ref_xyz = []
     cand_xyz = []
+    orientation_errors = []
     for qr, qc in zip(ref_q, cand_q):
         ref_fk = surface_model.urdf.link_transforms({name: float(qr[i]) for i, name in enumerate(surface_model.joint_names)})
         cand_fk = surface_model.urdf.link_transforms({name: float(qc[i]) for i, name in enumerate(surface_model.joint_names)})
         ref_xyz.append(np.asarray(ref_fk[tcp_link][:3, 3], dtype=np.float64))
         cand_xyz.append(np.asarray(cand_fk[tcp_link][:3, 3], dtype=np.float64))
+        relative = ref_fk[tcp_link][:3, :3].T @ cand_fk[tcp_link][:3, :3]
+        orientation_errors.append(rotation_angle_rad(relative))
     ref_xyz_arr = np.asarray(ref_xyz, dtype=np.float64)
     cand_xyz_arr = np.asarray(cand_xyz, dtype=np.float64)
     xyz_dev = np.linalg.norm(cand_xyz_arr - ref_xyz_arr, axis=1)
+    xy_dev = np.linalg.norm(cand_xyz_arr[:, :2] - ref_xyz_arr[:, :2], axis=1)
     z_dev = np.abs(cand_xyz_arr[:, 2] - ref_xyz_arr[:, 2])
+    orientation = np.asarray(orientation_errors, dtype=np.float64)
     joint_dev = np.linalg.norm(cand_q - ref_q, axis=1)
     joint_step = np.linalg.norm(np.diff(cand_q, axis=0), axis=1) if len(cand_q) > 1 else np.zeros(1)
     tcp_step = np.linalg.norm(np.diff(cand_xyz_arr, axis=0), axis=1) if len(cand_xyz_arr) > 1 else np.zeros(1)
+    tcp_xy_step = np.linalg.norm(np.diff(cand_xyz_arr[:, :2], axis=0), axis=1) if len(cand_xyz_arr) > 1 else np.zeros(1)
     return {
         "tcp_link": tcp_link,
         "max_tcp_xyz_deviation_m": float(np.max(xyz_dev)),
         "mean_tcp_xyz_deviation_m": float(np.mean(xyz_dev)),
+        "max_tcp_xy_deviation_m": float(np.max(xy_dev)),
+        "mean_tcp_xy_deviation_m": float(np.mean(xy_dev)),
         "max_tcp_z_deviation_m": float(np.max(z_dev)),
         "mean_tcp_z_deviation_m": float(np.mean(z_dev)),
+        "max_tcp_orientation_deviation_rad": float(np.max(orientation)),
+        "mean_tcp_orientation_deviation_rad": float(np.mean(orientation)),
+        "max_tcp_orientation_deviation_deg": float(np.rad2deg(np.max(orientation))),
+        "mean_tcp_orientation_deviation_deg": float(np.rad2deg(np.mean(orientation))),
         "max_joint_deviation_rad": float(np.max(joint_dev)),
         "mean_joint_deviation_rad": float(np.mean(joint_dev)),
         "joint_path_length_rad": float(np.sum(joint_step)),
         "tcp_path_length_m": float(np.sum(tcp_step)),
+        "tcp_xy_path_length_m": float(np.sum(tcp_xy_step)),
+    }
+
+
+def task_constraint_report(
+    metrics: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    z_tol = float(args.tcp_z_hard_tolerance_m)
+    orient_tol = float(args.tcp_orientation_hard_deg)
+    checks = {
+        "tcp_z_corridor_ok": bool(z_tol <= 0.0 or metrics["max_tcp_z_deviation_m"] <= z_tol),
+        "tcp_orientation_ok": bool(
+            orient_tol <= 0.0 or metrics["max_tcp_orientation_deviation_deg"] <= orient_tol
+        ),
+        "table_clearance_ok": True,
+        "base_self_clearance_ok": True,
+    }
+    reasons = [name for name, ok in checks.items() if not ok]
+    enabled = bool(z_tol > 0.0 or orient_tol > 0.0)
+    return {
+        "accepted": bool(all(checks.values())),
+        "checks": checks,
+        "reasons": reasons,
+        "enabled": enabled,
+        "tcp_z_hard_tolerance_m": z_tol,
+        "tcp_orientation_hard_deg": orient_tol,
+        "table_clearance_checked": False,
+        "base_self_clearance_checked": False,
+        "note": (
+            "TCP height and orientation are enforced here. Table/base/self checks "
+            "are reported as not independently implemented in this script and must "
+            "remain covered by visual/dense safety review before hardware execution."
+        ),
     }
 
 
@@ -361,7 +413,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     baseline = _baseline(config, head, tail, durations)
     reference = baseline.trajectory
-    if args.lambda_tcp_z > 0.0 or args.lambda_tcp_xyz > 0.0 or args.lambda_joint_deviation > 0.0:
+    legacy_lambda_tcp_xyz = float(args.lambda_tcp_xyz or 0.0)
+    if legacy_lambda_tcp_xyz > 0.0 and args.lambda_tcp_xy <= 0.0:
+        args.lambda_tcp_xy = legacy_lambda_tcp_xyz
+    if args.lambda_tcp_z > 0.0 or args.lambda_tcp_xy > 0.0 or args.lambda_joint_deviation > 0.0:
         optimizer = make_tabletop_optimizer(
             config, head, tail, durations, limits, evaluator, obstacle, reference, surface_model, args
         )
@@ -448,7 +503,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         config["risk"]["validation_density"],
     )
 
-    accepted = bool(validation.accepted)
+    candidate_metrics = trajectory_preference_metrics(surface_model, reference, candidate, args.tcp_link)
+    task_constraints = task_constraint_report(candidate_metrics, args)
+    accepted = bool(validation.accepted and (not task_constraints["enabled"] or task_constraints["accepted"]))
     summary = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "robot_commanded": False,
@@ -480,21 +537,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "nearest_link": candidate_dist["nearest_link"],
             "dense_verification": asdict(validation),
             "tcp_z_stats": tcp_path_z_stats(surface_model, candidate, args.tcp_link),
-            "minimal_change_metrics": trajectory_preference_metrics(surface_model, reference, candidate, args.tcp_link),
+            "minimal_change_metrics": candidate_metrics,
+            "task_constraints": task_constraints,
         },
         "reference_tcp_z_stats": tcp_path_z_stats(surface_model, reference, args.tcp_link),
-        "reference_candidate_minimal_change_metrics": trajectory_preference_metrics(surface_model, reference, candidate, args.tcp_link),
+        "reference_candidate_minimal_change_metrics": candidate_metrics,
         "tabletop_preference": {
-            "enabled": bool(args.lambda_tcp_z > 0.0 or args.lambda_tcp_xyz > 0.0 or args.lambda_joint_deviation > 0.0),
+            "enabled": bool(args.lambda_tcp_z > 0.0 or args.lambda_tcp_xy > 0.0 or args.lambda_joint_deviation > 0.0),
             "lambda_tcp_z": args.lambda_tcp_z,
             "tcp_z_tolerance_m": args.tcp_z_tolerance_m,
-            "lambda_tcp_xyz": args.lambda_tcp_xyz,
-            "tcp_xyz_tolerance_m": args.tcp_xyz_tolerance_m,
+            "lambda_tcp_xy": args.lambda_tcp_xy,
+            "tcp_xy_tolerance_m": args.tcp_xy_tolerance_m,
+            "legacy_lambda_tcp_xyz": legacy_lambda_tcp_xyz,
             "lambda_joint_deviation": args.lambda_joint_deviation,
             "joint_deviation_tolerance_rad": args.joint_deviation_tolerance_rad,
             "tcp_preference_samples": args.tcp_preference_samples,
             "tcp_link": args.tcp_link,
         },
+        "task_constraints": task_constraints,
         "files": [
             "reference_trajectory.csv",
             "ccro_nubs_candidate_trajectory.csv",
@@ -539,12 +599,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tcp-z-tolerance-m", type=float, default=0.015)
     parser.add_argument(
+        "--lambda-tcp-xy",
+        type=float,
+        default=0.0,
+        help="softly penalize in-plane TCP path deviations relative to the reference trajectory",
+    )
+    parser.add_argument("--tcp-xy-tolerance-m", type=float, default=0.03)
+    parser.add_argument(
         "--lambda-tcp-xyz",
         type=float,
         default=0.0,
-        help="softly penalize 3D TCP path deviations relative to the reference trajectory",
+        help="deprecated compatibility alias; if --lambda-tcp-xy is zero this value is used for XY deviation",
     )
-    parser.add_argument("--tcp-xyz-tolerance-m", type=float, default=0.03)
     parser.add_argument(
         "--lambda-joint-deviation",
         type=float,
@@ -552,6 +618,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="softly penalize joint-space deviations relative to the reference trajectory",
     )
     parser.add_argument("--joint-deviation-tolerance-rad", type=float, default=0.10)
+    parser.add_argument(
+        "--tcp-z-hard-tolerance-m",
+        type=float,
+        default=0.0,
+        help="0 disables TCP height as a hard gate for general static avoidance",
+    )
+    parser.add_argument(
+        "--tcp-orientation-hard-deg",
+        type=float,
+        default=0.0,
+        help="0 disables orientation as a hard task gate; keep it reported for audit",
+    )
     parser.add_argument("--tcp-preference-samples", type=int, default=25)
     parser.add_argument("--max-iterations-override", type=int, default=None)
     parser.add_argument(

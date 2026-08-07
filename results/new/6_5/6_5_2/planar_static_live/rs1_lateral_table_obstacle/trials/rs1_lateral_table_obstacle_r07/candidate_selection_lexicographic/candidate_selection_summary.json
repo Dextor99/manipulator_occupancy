@@ -1,0 +1,183 @@
+{
+  "trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r07",
+  "clearance_m": 0.08,
+  "task_gates": {
+    "tcp_z_hard_tolerance_m": 0.03,
+    "tcp_orientation_hard_deg": 0.0,
+    "clearance_margin_cap_m": 0.03
+  },
+  "selection": {
+    "mode": "lexicographic",
+    "order": [
+      "mean_tcp_xy_deviation_m",
+      "mean_tcp_orientation_deviation_rad",
+      "trajectory_energy",
+      "joint_path_length_rad",
+      "-saturated_clearance_margin_m"
+    ]
+  },
+  "ranked_all": [
+    {
+      "name": "ccro_nubs_jointspace_plan_flatZ_300iter",
+      "plan_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r07/ccro_nubs_jointspace_plan_flatZ_300iter",
+      "status": "PLAN_ACCEPTED",
+      "optimizer_type": "joint_space_CCRO_NUBS_with_task_space_minimal_change_preference",
+      "optimizer_success": true,
+      "strict_execution_ok": true,
+      "geometric_dense_ok_without_solver_flag": true,
+      "dense_reasons": [],
+      "dense_min_distance_m": 0.1129820810497089,
+      "nearest_link": "right_link",
+      "tcp_z_range_m": 0.015082534340848941,
+      "task_constraints": {
+        "accepted": true,
+        "checks": {
+          "tcp_z_corridor_ok": true,
+          "tcp_orientation_ok": true,
+          "table_clearance_ok": true,
+          "base_self_clearance_ok": true
+        },
+        "reasons": [],
+        "tcp_z_hard_tolerance_m": 0.03,
+        "tcp_orientation_hard_deg": 0.0,
+        "table_clearance_checked": false,
+        "base_self_clearance_checked": false,
+        "note": "TCP height and orientation are enforced here. Table/base/self checks are reported as not independently implemented in this script and must remain covered by visual/dense safety review before hardware execution."
+      },
+      "task_constraints_ok": true,
+      "trajectory_energy": 0.14620873204234275,
+      "tcp_link": "gripper_base_link",
+      "max_tcp_xyz_deviation_m": 0.12568663345734568,
+      "mean_tcp_xyz_deviation_m": 0.056109399119162476,
+      "max_tcp_xy_deviation_m": 0.12480917363496719,
+      "mean_tcp_xy_deviation_m": 0.05567970492720934,
+      "max_tcp_z_deviation_m": 0.015075367450471111,
+      "mean_tcp_z_deviation_m": 0.006876202265526894,
+      "max_tcp_orientation_deviation_rad": 0.3290169150930726,
+      "mean_tcp_orientation_deviation_rad": 0.14657864819189362,
+      "max_tcp_orientation_deviation_deg": 18.851280623247217,
+      "mean_tcp_orientation_deviation_deg": 8.398337908128399,
+      "max_joint_deviation_rad": 0.3555627556902907,
+      "mean_joint_deviation_rad": 0.1589173160748674,
+      "joint_path_length_rad": 1.871442323836646,
+      "tcp_path_length_m": 0.9362171106509838,
+      "tcp_xy_path_length_m": 0.9351403400664595,
+      "route_class": "planar/lateral",
+      "saturated_clearance_margin_m": 0.03,
+      "hard_feasible_for_execution": true,
+      "selection_tuple": [
+        0.05567970492720934,
+        0.14657864819189362,
+        0.14620873204234275,
+        1.871442323836646,
+        -0.03
+      ]
+    },
+    {
+      "name": "ccro_nubs_jointspace_plan",
+      "plan_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r07/ccro_nubs_jointspace_plan",
+      "status": "PLAN_ACCEPTED",
+      "optimizer_type": "joint_space_CCRO_NUBS",
+      "optimizer_success": true,
+      "strict_execution_ok": true,
+      "geometric_dense_ok_without_solver_flag": true,
+      "dense_reasons": [],
+      "dense_min_distance_m": 0.1169899075352476,
+      "nearest_link": "right_link",
+      "tcp_z_range_m": 0.14134625856901184,
+      "task_constraints": {
+        "accepted": false,
+        "checks": {
+          "tcp_z_corridor_ok": false,
+          "tcp_orientation_ok": true
+        },
+        "reasons": [
+          "tcp_z_corridor_ok"
+        ]
+      },
+      "task_constraints_ok": false,
+      "trajectory_energy": 0.09049957185425388,
+      "tcp_link": "gripper_base_link",
+      "max_tcp_xyz_deviation_m": 0.16464951829754945,
+      "mean_tcp_xyz_deviation_m": 0.07400690692854524,
+      "max_tcp_xy_deviation_m": 0.08445609257116093,
+      "mean_tcp_xy_deviation_m": 0.036994706848926494,
+      "max_tcp_z_deviation_m": 0.14133871480675975,
+      "mean_tcp_z_deviation_m": 0.06408761346598302,
+      "max_tcp_orientation_deviation_rad": 0.29979264669144173,
+      "mean_tcp_orientation_deviation_rad": 0.13536358844685456,
+      "max_tcp_orientation_deviation_deg": 17.176853384476235,
+      "mean_tcp_orientation_deviation_deg": 7.755762317750596,
+      "max_joint_deviation_rad": 0.19312856766188327,
+      "mean_joint_deviation_rad": 0.08727454878600312,
+      "joint_path_length_rad": 1.7413222748844417,
+      "tcp_path_length_m": 0.8934287063297378,
+      "tcp_xy_path_length_m": 0.8161282485498489,
+      "route_class": "overpass",
+      "saturated_clearance_margin_m": 0.03,
+      "hard_feasible_for_execution": false,
+      "selection_tuple": [
+        0.036994706848926494,
+        0.13536358844685456,
+        0.09049957185425388,
+        1.7413222748844417,
+        -0.03
+      ]
+    },
+    {
+      "name": "ccro_nubs_jointspace_plan_flatZ",
+      "plan_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r07/ccro_nubs_jointspace_plan_flatZ",
+      "status": "PLAN_REJECTED",
+      "optimizer_type": "joint_space_CCRO_NUBS_with_constant_TCP_height_preference",
+      "optimizer_success": false,
+      "strict_execution_ok": false,
+      "geometric_dense_ok_without_solver_flag": true,
+      "dense_reasons": [
+        "solver_ok"
+      ],
+      "dense_min_distance_m": 0.11295862757005258,
+      "nearest_link": "right_link",
+      "tcp_z_range_m": 0.015058167870759864,
+      "task_constraints": {
+        "accepted": true,
+        "checks": {
+          "tcp_z_corridor_ok": true,
+          "tcp_orientation_ok": true
+        },
+        "reasons": []
+      },
+      "task_constraints_ok": true,
+      "trajectory_energy": 0.1462124769712937,
+      "tcp_link": "gripper_base_link",
+      "max_tcp_xyz_deviation_m": 0.12576098247255482,
+      "mean_tcp_xyz_deviation_m": 0.0560958713556683,
+      "max_tcp_xy_deviation_m": 0.12489416408762707,
+      "mean_tcp_xy_deviation_m": 0.055675805488365634,
+      "max_tcp_z_deviation_m": 0.01505108268977684,
+      "mean_tcp_z_deviation_m": 0.006779686720872364,
+      "max_tcp_orientation_deviation_rad": 0.32612303834731343,
+      "mean_tcp_orientation_deviation_rad": 0.14499986649282579,
+      "max_tcp_orientation_deviation_deg": 18.685473699284163,
+      "mean_tcp_orientation_deviation_deg": 8.30788037999932,
+      "max_joint_deviation_rad": 0.3556053909579999,
+      "mean_joint_deviation_rad": 0.1587112703855637,
+      "joint_path_length_rad": 1.8707429523054606,
+      "tcp_path_length_m": 0.9361800720393548,
+      "tcp_xy_path_length_m": 0.9351035856675445,
+      "route_class": "planar/lateral",
+      "saturated_clearance_margin_m": 0.03,
+      "hard_feasible_for_execution": false,
+      "selection_tuple": [
+        0.055675805488365634,
+        0.14499986649282579,
+        0.1462124769712937,
+        1.8707429523054606,
+        -0.03
+      ]
+    }
+  ],
+  "status": "EXECUTABLE_CANDIDATE_SELECTED",
+  "hard_feasible_execution_candidate": "ccro_nubs_jointspace_plan_flatZ_300iter",
+  "strict_execution_candidate": "ccro_nubs_jointspace_plan_flatZ_300iter",
+  "minimal_change_geometric_candidate": "ccro_nubs_jointspace_plan_flatZ_300iter"
+}

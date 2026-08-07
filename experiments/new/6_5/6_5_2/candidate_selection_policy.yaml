@@ -1,0 +1,65 @@
+task:
+  description: >
+    General static-obstacle avoidance for 6.5.2.  Candidate routes may pass
+    above or around low obstacles; for high tabletop obstacles, vertical
+    overpass routes are rejected as task-inappropriate before cost scoring.
+  tcp_z_hard_tolerance_m: 0.0
+  tcp_orientation_hard_deg: 0.0
+  high_tabletop_overpass_policy:
+    mode: reject_high_obstacle_overpass
+    high_obstacle_height_m: 0.220
+    overpass_z_deviation_m: 0.090
+    note: >
+      This is not a flat-Z preference. It only rejects candidates that try to
+      make a large vertical overpass over a tall table obstacle. Low obstacles
+      still allow overpass and lateral candidates to compete under the same
+      multi-objective score.
+  note: >
+    TCP height and orientation are reported as diagnostics. Height is used as a
+    hard gate only for tall tabletop obstacles where crossing above the object
+    is not a suitable execution strategy.
+
+safety:
+  dense_accept_m: 0.080
+  real_execution_margin_m: 0.000
+  table_clearance_m: null
+  base_self_clearance_m: null
+  note: >
+    Dense robot-obstacle clearance is enforced in code.  Table/base/self checks
+    require a separate calibrated geometry module before being used as hard
+    execution gates.
+
+candidate_families:
+  - reference_seed
+  - base_side_lateral
+  - outer_side_lateral
+  - overpass_seed
+
+optimization:
+  max_iterations: 300
+  soft_regularization:
+    lambda_tcp_z: 0.0
+    lambda_tcp_xy: 0.0
+    lambda_joint_deviation: 0.0
+
+selection:
+  mode: pareto_then_normalized_weighted_score
+  hard_gates:
+    - solver_ok
+    - dense_distance_ok
+    - joint_limits_ok
+    - trajectory_continuity_ok
+    - goal_ok
+  objectives:
+    - tcp_path_length_ratio
+    - joint_path_length_rad
+    - jerk_energy
+    - clearance_penalty
+    - duration_s
+  weights:
+    w_tcp: 0.35
+    w_joint: 0.25
+    w_jerk: 0.25
+    w_clearance: 0.15
+    w_time: 0.0
+  clearance_pref_m: 0.110
