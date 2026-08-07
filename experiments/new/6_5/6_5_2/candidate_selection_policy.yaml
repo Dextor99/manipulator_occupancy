@@ -1,23 +1,16 @@
 task:
   description: >
-    General static-obstacle avoidance for 6.5.2.  Candidate routes may pass
-    above or around low obstacles; for high tabletop obstacles, vertical
-    overpass routes are rejected as task-inappropriate before cost scoring.
+    General static-obstacle avoidance for 6.5.2. Candidate routes may pass
+    above or around obstacles. The final route is not chosen by a flat-Z or
+    overpass preference, but by geometric route classification and fixed-scale
+    layered execution cost.
   tcp_z_hard_tolerance_m: 0.0
   tcp_orientation_hard_deg: 0.0
-  high_tabletop_overpass_policy:
-    mode: reject_high_obstacle_overpass
-    high_obstacle_height_m: 0.220
-    overpass_z_deviation_m: 0.090
-    note: >
-      This is not a flat-Z preference. It only rejects candidates that try to
-      make a large vertical overpass over a tall table obstacle. Low obstacles
-      still allow overpass and lateral candidates to compete under the same
-      multi-objective score.
   note: >
-    TCP height and orientation are reported as diagnostics. Height is used as a
-    hard gate only for tall tabletop obstacles where crossing above the object
-    is not a suitable execution strategy.
+    TCP height and orientation are reported as diagnostics. A true overpass is
+    defined by robot swept geometry crossing the inflated obstacle XY footprint
+    with sufficient vertical clearance over the robust obstacle top, not by TCP
+    z-change alone.
 
 safety:
   dense_accept_m: 0.080
@@ -43,23 +36,44 @@ optimization:
     lambda_joint_deviation: 0.0
 
 selection:
-  mode: pareto_then_normalized_weighted_score
+  mode: layered_fixed_scale_time_then_lexicographic
   hard_gates:
     - solver_ok
     - dense_distance_ok
     - joint_limits_ok
     - trajectory_continuity_ok
     - goal_ok
+  route_classification:
+    xy_footprint_inflation_m: 0.080
+    overpass_z_deviation_m: 0.090
+    lateral_xy_deviation_m: 0.060
+    vertical_uncertainty_m: 0.020
+    robust_obstacle_top: p99
+    true_overpass_definition: >
+      Robot swept surface enters the inflated obstacle XY footprint and the
+      minimum swept surface height over that footprint is no lower than
+      obstacle_top_p99 + d_accept + vertical_uncertainty.
+  time_scaling:
+    use_velocity_and_acceleration_limits: true
+    near_best_time_ratio: 1.050
   objectives:
-    - tcp_path_length_ratio
+    - required_execution_time_s
+    - tcp_path_length_m
     - joint_path_length_rad
     - jerk_energy
     - clearance_penalty
+  order: >
+    First keep all hard-feasible candidates. Estimate required execution time
+    under the same velocity and acceleration limits. Keep candidates with
+    T_req <= 1.05 * T_req_best. Among those, select lexicographically by
+    L_TCP, L_q, J_jerk, and J_clear.
+  fixed_scale_costs:
+    - tcp_path_length_ratio
+    - tcp_extra_ratio
+    - joint_path_length_rad
+    - joint_path_ratio
+    - jerk_energy
+    - jerk_ratio
+    - clearance_penalty
     - duration_s
-  weights:
-    w_tcp: 0.35
-    w_joint: 0.25
-    w_jerk: 0.25
-    w_clearance: 0.15
-    w_time: 0.0
   clearance_pref_m: 0.110

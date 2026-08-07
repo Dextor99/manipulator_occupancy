@@ -1,0 +1,103 @@
+{
+  "trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10",
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/multistart_formal_ccro",
+  "formal_objective": "joint_space_CCRO_NUBS_for_all_candidates",
+  "note": "Seed plans may come from task-space preference or manual detours, but all formal candidates are re-optimized with lambda_tcp_z=0, lambda_tcp_xy=0, lambda_joint_deviation=0.",
+  "plans": [
+    {
+      "candidate": "seed_free",
+      "formal_plan_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/multistart_formal_ccro/seed_free",
+      "seed_plan_dir": null,
+      "formal_objective": "joint_space_CCRO_NUBS",
+      "result": {
+        "cmd": [
+          "/home/hzy/miniconda3/envs/py310/bin/python",
+          "/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_2/plan_652_static_ccro_nubs_from_trial.py",
+          "--trial-dir",
+          "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10",
+          "--output",
+          "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/multistart_formal_ccro/seed_free",
+          "--q-goal-rad=-0.36184728145599365,-0.22320318222045898,1.315380573272705,-0.03216493874788284,1.5707743167877197,-0.3618289530277252",
+          "--segment-durations",
+          "2.0,2.0,2.0,2.0",
+          "--max-iterations-override",
+          "300",
+          "--lambda-tcp-z",
+          "0.0",
+          "--lambda-tcp-xy",
+          "0.0",
+          "--lambda-tcp-xyz",
+          "0.0",
+          "--lambda-joint-deviation",
+          "0.0",
+          "--tcp-z-hard-tolerance-m",
+          "0.0",
+          "--tcp-orientation-hard-deg",
+          "0.0"
+        ],
+        "returncode": 0,
+        "stdout_tail": "mean_tcp_xyz_deviation_m\": 0.15004848080738498,\n      \"max_tcp_xy_deviation_m\": 0.16545970054560555,\n      \"mean_tcp_xy_deviation_m\": 0.06563951906095612,\n      \"max_tcp_z_deviation_m\": 0.29413443652268745,\n      \"mean_tcp_z_deviation_m\": 0.134632006845995,\n      \"max_tcp_orientation_deviation_rad\": 0.6208571519084002,\n      \"mean_tcp_orientation_deviation_rad\": 0.2789330452469301,\n      \"max_tcp_orientation_deviation_deg\": 35.57249448486395,\n      \"mean_tcp_orientation_deviation_deg\": 15.981686259380721,\n      \"max_joint_deviation_rad\": 0.38659529857689107,\n      \"mean_joint_deviation_rad\": 0.17385079268346934,\n      \"joint_path_length_rad\": 1.9962535432657038,\n      \"tcp_path_length_m\": 1.0450292689857446,\n      \"tcp_xy_path_length_m\": 0.8006247548735554\n    },\n    \"task_constraints\": {\n      \"accepted\": true,\n      \"checks\": {\n        \"tcp_z_corridor_ok\": true,\n        \"tcp_orientation_ok\": true,\n        \"table_clearance_ok\": true,\n        \"base_self_clearance_ok\": true\n      },\n      \"reasons\": [],\n      \"enabled\": false,\n      \"tcp_z_hard_tolerance_m\": 0.0,\n      \"tcp_orientation_hard_deg\": 0.0,\n      \"table_clearance_checked\": false,\n      \"base_self_clearance_checked\": false,\n      \"note\": \"TCP height and orientation are enforced here. Table/base/self checks are reported as not independently implemented in this script and must remain covered by visual/dense safety review before hardware execution.\"\n    }\n  },\n  \"reference_tcp_z_stats\": {\n    \"tcp_link\": \"gripper_base_link\",\n    \"z_min_m\": 0.5395589930297279,\n    \"z_max_m\": 0.5420042632041191,\n    \"z_range_m\": 0.002445270174391223,\n    \"z_start_m\": 0.5395589930297279,\n    \"z_goal_m\": 0.5395878535522654\n  },\n  \"reference_candidate_minimal_change_metrics\": {\n    \"tcp_link\": \"gripper_base_link\",\n    \"max_tcp_xyz_deviation_m\": 0.337418162629562,\n    \"mean_tcp_xyz_deviation_m\": 0.15004848080738498,\n    \"max_tcp_xy_deviation_m\": 0.16545970054560555,\n    \"mean_tcp_xy_deviation_m\": 0.06563951906095612,\n    \"max_tcp_z_deviation_m\": 0.29413443652268745,\n    \"mean_tcp_z_deviation_m\": 0.134632006845995,\n    \"max_tcp_orientation_deviation_rad\": 0.6208571519084002,\n    \"mean_tcp_orientation_deviation_rad\": 0.2789330452469301,\n    \"max_tcp_orientation_deviation_deg\": 35.57249448486395,\n    \"mean_tcp_orientation_deviation_deg\": 15.981686259380721,\n    \"max_joint_deviation_rad\": 0.38659529857689107,\n    \"mean_joint_deviation_rad\": 0.17385079268346934,\n    \"joint_path_length_rad\": 1.9962535432657038,\n    \"tcp_path_length_m\": 1.0450292689857446,\n    \"tcp_xy_path_length_m\": 0.8006247548735554\n  },\n  \"tabletop_preference\": {\n    \"enabled\": false,\n    \"lambda_tcp_z\": 0.0,\n    \"tcp_z_tolerance_m\": 0.015,\n    \"lambda_tcp_xy\": 0.0,\n    \"tcp_xy_tolerance_m\": 0.03,\n    \"legacy_lambda_tcp_xyz\": 0.0,\n    \"lambda_joint_deviation\": 0.0,\n    \"joint_deviation_tolerance_rad\": 0.1,\n    \"tcp_preference_samples\": 25,\n    \"tcp_link\": \"gripper_base_link\"\n  },\n  \"task_constraints\": {\n    \"accepted\": true,\n    \"checks\": {\n      \"tcp_z_corridor_ok\": true,\n      \"tcp_orientation_ok\": true,\n      \"table_clearance_ok\": true,\n      \"base_self_clearance_ok\": true\n    },\n    \"reasons\": [],\n    \"enabled\": false,\n    \"tcp_z_hard_tolerance_m\": 0.0,\n    \"tcp_orientation_hard_deg\": 0.0,\n    \"table_clearance_checked\": false,\n    \"base_self_clearance_checked\": false,\n    \"note\": \"TCP height and orientation are enforced here. Table/base/self checks are reported as not independently implemented in this script and must remain covered by visual/dense safety review before hardware execution.\"\n  },\n  \"files\": [\n    \"reference_trajectory.csv\",\n    \"ccro_nubs_candidate_trajectory.csv\",\n    \"ccro_nubs_trajectories.npz\",\n    \"figures/distance_risk_curve.png\",\n    \"figures/joint_trajectory_preview.png\",\n    \"figures/ccro_nubs_urdf_pose_sequence.png\"\n  ],\n  \"execution_note\": \"No robot command was sent. Execute only after inspecting URDF pose sequence, dense verification, and confirming a bounded joint trajectory execution interface.\"\n}\n",
+        "stderr_tail": ""
+      }
+    },
+    {
+      "candidate": "base_side_from_preview",
+      "formal_plan_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/multistart_formal_ccro/base_side_from_preview",
+      "seed_plan_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10",
+      "formal_objective": "joint_space_CCRO_NUBS",
+      "result": {
+        "cmd": [
+          "/home/hzy/miniconda3/envs/py310/bin/python",
+          "/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_2/plan_652_static_ccro_nubs_from_trial.py",
+          "--trial-dir",
+          "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10",
+          "--output",
+          "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/multistart_formal_ccro/base_side_from_preview",
+          "--q-goal-rad=-0.36184728145599365,-0.22320318222045898,1.315380573272705,-0.03216493874788284,1.5707743167877197,-0.3618289530277252",
+          "--segment-durations",
+          "2.0,2.0,2.0,2.0",
+          "--max-iterations-override",
+          "300",
+          "--lambda-tcp-z",
+          "0.0",
+          "--lambda-tcp-xy",
+          "0.0",
+          "--lambda-tcp-xyz",
+          "0.0",
+          "--lambda-joint-deviation",
+          "0.0",
+          "--tcp-z-hard-tolerance-m",
+          "0.0",
+          "--tcp-orientation-hard-deg",
+          "0.0",
+          "--initial-plan-dir",
+          "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10"
+        ],
+        "returncode": 1,
+        "stdout_tail": "",
+        "stderr_tail": "Traceback (most recent call last):\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_2/plan_652_static_ccro_nubs_from_trial.py\", line 650, in <module>\n    main()\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_2/plan_652_static_ccro_nubs_from_trial.py\", line 646, in main\n    run(args)\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_2/plan_652_static_ccro_nubs_from_trial.py\", line 427, in run\n    initial_inner = load_initial_inner_points(args.initial_plan_dir, baseline.p_inner.shape)\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_2/plan_652_static_ccro_nubs_from_trial.py\", line 266, in load_initial_inner_points\n    raise FileNotFoundError(f\"missing initial plan data: {data_path}\")\nFileNotFoundError: missing initial plan data: /home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/ccro_nubs_trajectories.npz\n"
+      }
+    }
+  ],
+  "selection": {
+    "cmd": [
+      "/home/hzy/miniconda3/envs/py310/bin/python",
+      "/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_2/select_652_candidate_family.py",
+      "--trial-dir",
+      "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10",
+      "--output",
+      "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/multistart_formal_ccro/candidate_selection_layered_fixed",
+      "--plan-dirs",
+      "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r10/multistart_formal_ccro/seed_free",
+      "--clearance-m",
+      "0.08",
+      "--clearance-pref-m",
+      "0.11",
+      "--time-near-optimal-ratio",
+      "1.05"
+    ],
+    "returncode": 0,
+    "stdout_tail": "     \"tcp_path_length_ratio\": 1.314476981727729,\n        \"tcp_path_length_m\": 1.0450292689857446,\n        \"joint_path_length_rad\": 1.9962535432657038,\n        \"jerk_energy\": 0.16526306132796176,\n        \"clearance_penalty\": 0.0,\n        \"duration_s\": 8.0,\n        \"required_execution_time_s\": 8.0\n      },\n      \"fixed_scale_costs\": {\n        \"tcp_extra_ratio\": 0.3144769817277291,\n        \"joint_path_ratio\": 1.121440226072632,\n        \"jerk_ratio\": 2.3736358476514243,\n        \"clearance_penalty\": 0.0,\n        \"required_execution_time_s\": 8.0\n      },\n      \"selection_score\": 0.0,\n      \"near_best_time\": true,\n      \"clearance_penalty\": 0.0,\n      \"dense_sample_count\": 321,\n      \"dense_active_sample_count\": 26,\n      \"dense_min_distance_recomputed_m\": 0.1138546683976086,\n      \"dense_nearest_link_recomputed\": \"left_link\",\n      \"time_scale_factor\": 1.0,\n      \"required_execution_time_s\": 8.0,\n      \"max_qd_ratio\": 0.2998741216747367,\n      \"max_qdd_ratio\": 0.060305240055975345,\n      \"nominal_duration_s\": 8.0,\n      \"route_geometry_audit\": {\n        \"table_z_m\": 0.2740294422690461,\n        \"obstacle_bbox_min\": [\n          0.5570651084129454,\n          -0.14178994420394736,\n          0.2616818215774104\n        ],\n        \"obstacle_bbox_max\": [\n          0.7417391050520801,\n          0.05583051696941147,\n          0.5502684677759292\n        ],\n        \"obstacle_top_raw_max_m\": 0.5502684677759292,\n        \"obstacle_top_p95_m\": 0.5439737465519696,\n        \"obstacle_top_p99_m\": 0.5472407051947681,\n        \"obstacle_bottom_p01_m\": 0.2703406713850213,\n        \"robust_obstacle_height_p99_m\": 0.273211262925722,\n        \"reference_tcp_start_z_m\": 0.5395589930297279,\n        \"obstacle_top_p99_minus_reference_tcp_start_z_m\": 0.007681712165040211,\n        \"candidate_max_tcp_z_deviation_m\": 0.29413443652268745,\n        \"candidate_max_tcp_xy_deviation_m\": 0.16545970054560555,\n        \"overpass_z_deviation_threshold_m\": 0.09,\n        \"lateral_xy_deviation_threshold_m\": 0.06,\n        \"xy_inflation_m\": 0.08,\n        \"tcp_samples_inside_inflated_obstacle_xy\": 66,\n        \"tcp_crosses_inflated_obstacle_xy\": true,\n        \"robot_surface_points_inside_inflated_obstacle_xy\": 7956,\n        \"robot_surface_crosses_inflated_obstacle_xy\": true,\n        \"robot_surface_min_z_inside_footprint_m\": 0.5984399254185504,\n        \"robot_surface_max_z_inside_footprint_m\": 0.9839297546488571,\n        \"required_overpass_surface_z_m\": 0.6472407051947681,\n        \"large_vertical_motion\": true,\n        \"lateral_motion\": true,\n        \"overpass_clearance_ok\": false,\n        \"route_class\": \"footprint_crossing_vertical\",\n        \"route_feasibility_note\": \"swept_footprint_crossing_without_required_vertical_margin\"\n      },\n      \"tcp_link\": \"gripper_base_link\",\n      \"max_tcp_xyz_deviation_m\": 0.337418162629562,\n      \"mean_tcp_xyz_deviation_m\": 0.15004848080738498,\n      \"max_tcp_xy_deviation_m\": 0.16545970054560555,\n      \"mean_tcp_xy_deviation_m\": 0.06563951906095612,\n      \"max_tcp_z_deviation_m\": 0.29413443652268745,\n      \"mean_tcp_z_deviation_m\": 0.134632006845995,\n      \"max_tcp_orientation_deviation_rad\": 0.6208571519084002,\n      \"mean_tcp_orientation_deviation_rad\": 0.2789330452469301,\n      \"max_tcp_orientation_deviation_deg\": 35.57249448486395,\n      \"mean_tcp_orientation_deviation_deg\": 15.981686259380721,\n      \"max_joint_deviation_rad\": 0.38659529857689107,\n      \"mean_joint_deviation_rad\": 0.17385079268346934,\n      \"joint_path_length_rad\": 1.9962535432657038,\n      \"tcp_path_length_m\": 1.0450292689857446,\n      \"tcp_xy_path_length_m\": 0.8006247548735554,\n      \"route_class\": \"footprint_crossing_vertical\",\n      \"hard_feasible_for_execution\": true,\n      \"selection_layer\": \"near_best_time\"\n    }\n  ],\n  \"status\": \"EXECUTABLE_CANDIDATE_SELECTED\",\n  \"selected_execution_candidate\": \"seed_free\",\n  \"hard_feasible_execution_candidate\": \"seed_free\",\n  \"strict_execution_candidate\": \"seed_free\",\n  \"feasible_candidate_count\": 1,\n  \"near_best_time_candidate_count\": 1\n}\n",
+    "stderr_tail": ""
+  }
+}

@@ -49,6 +49,13 @@ def load_trajectory(npz_path: Path, key: str) -> NUBSTrajectory6D:
     return NUBSTrajectory6D().generate(data[key], head, tail, data["durations"])
 
 
+def find_trial_dir(plan_dir: Path) -> Path:
+    for path in [plan_dir.parent, *plan_dir.parents]:
+        if (path / "config_used.yaml").exists():
+            return path
+    raise FileNotFoundError(f"could not find config_used.yaml above {plan_dir}")
+
+
 def sample_surface(points: np.ndarray, n: int, rng: np.random.Generator) -> np.ndarray:
     if len(points) <= n:
         return points
@@ -91,7 +98,7 @@ def plot_top(plan_dir: Path, output: Path, args: argparse.Namespace) -> dict:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    trial_dir = plan_dir.parent
+    trial_dir = find_trial_dir(plan_dir)
     config = _load(trial_dir / "config_used.yaml")
     surface_model = make_surface_model(config)
     data_path = plan_dir / "ccro_nubs_trajectories.npz"
