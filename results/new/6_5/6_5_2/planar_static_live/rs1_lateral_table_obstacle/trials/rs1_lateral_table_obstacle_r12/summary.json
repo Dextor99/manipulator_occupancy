@@ -1,0 +1,107 @@
+{
+  "created_at": "2026-08-07T07:07:40.479894+00:00",
+  "robot_commanded": false,
+  "scenario": "R-S1",
+  "scenario_title": "R-S1 lateral table obstacle",
+  "repeat": 12,
+  "status": "PLAN_REJECTED",
+  "trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r12",
+  "obstacle_model": {
+    "accepted": true,
+    "reason": "ok",
+    "frame_count": 38,
+    "selected_frames": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "point_count": 914,
+    "center": [
+      0.5300560030250915,
+      -0.11603918406801829,
+      0.3735817150609894
+    ],
+    "radius_estimate_m": 0.3520766212138778,
+    "nearest_link_representative": "upperArm_Link",
+    "nearest_distance_representative_m": 0.0707286474905861,
+    "q_mean": [
+      0.8698328984411139,
+      -0.4290020520749845,
+      1.0239593982696533,
+      -0.11782816013223246,
+      1.5707851899297613,
+      0.8698435802208749
+    ],
+    "snapshot_dir": null,
+    "capture_mode": "light_no_rgb_depth_snapshots"
+  },
+  "q_start_mean_rad": [
+    0.8698328984411139,
+    -0.4290020520749845,
+    1.0239593982696533,
+    -0.11782816013223246,
+    1.5707851899297613,
+    0.8698435802208749
+  ],
+  "q_start_mean_deg": [
+    49.83775396230739,
+    -24.58000698634817,
+    58.66855191360651,
+    -6.751056283368548,
+    89.99936190463075,
+    49.838365983205385
+  ],
+  "tcp_link": "gripper_base_link",
+  "tcp_base_from_live_q": [
+    0.5874741951503142,
+    0.39996230360043916,
+    0.5395622972789456
+  ],
+  "table_z_m": 0.29295142136816743,
+  "reference_risky_under_observation": true,
+  "reference_min_obstacle_clearance_m": 0.032238438132999994,
+  "reference_min_table_clearance_m": 0.09904122919887559,
+  "candidate_min_obstacle_clearance_m": 0.012921878017142023,
+  "candidate_min_table_clearance_m": 0.09904122919887559,
+  "clearance_threshold_m": 0.08,
+  "reference_risk_threshold_m": 0.08,
+  "table_clearance_threshold_m": 0.06,
+  "candidate_waypoints": {
+    "P0_start": [
+      0.6874741951503142,
+      0.4,
+      0.5395622972789456
+    ],
+    "P1_via": [
+      1.1628523220642222,
+      -0.11603918406801828,
+      0.5395622972789456
+    ],
+    "P2_goal": [
+      0.6874741951503142,
+      -0.4,
+      0.5395622972789456
+    ]
+  },
+  "via_clamped": false,
+  "via_constraints": {
+    "min_via_x": null,
+    "max_via_x": null,
+    "min_via_y": null,
+    "max_via_y": null
+  },
+  "figures": [
+    "figures/top_view_tcp_paths.png",
+    "figures/clearance_curves.png",
+    "figures/reference_pose_sequence.png",
+    "figures/candidate_pose_sequence.png",
+    "figures/obstacle_model_pointcloud.png",
+    "snapshots/R-S*_static_obstacle_model_*"
+  ],
+  "next_step": "Inspect figures and summary. If PLAN_ACCEPTED and the physical path is visibly safe, use a separate guarded waypoint executor; this script never commands the robot."
+}

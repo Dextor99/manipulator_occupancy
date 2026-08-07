@@ -82,6 +82,16 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
         lambda_joint_deviation: float,
         joint_deviation_tolerance_rad: float,
         tcp_preference_samples: int,
+        route_family: str,
+        lambda_route_corridor: float,
+        route_corridor_margin_m: float,
+        route_corridor_influence_m: float,
+        lambda_side_z_corridor: float,
+        side_z_tolerance_m: float,
+        obstacle_points: np.ndarray,
+        table_z_m: float,
+        clearance_m: float,
+        vertical_uncertainty_m: float,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -93,6 +103,27 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
         self.tcp_xy_tolerance_m = float(max(tcp_xy_tolerance_m, 0.0))
         self.lambda_joint_deviation = float(lambda_joint_deviation)
         self.joint_deviation_tolerance_rad = float(max(joint_deviation_tolerance_rad, 0.0))
+        self.route_family = str(route_family)
+        self.lambda_route_corridor = float(lambda_route_corridor)
+        self.route_corridor_margin_m = float(route_corridor_margin_m)
+        self.route_corridor_influence_m = float(route_corridor_influence_m)
+        self.lambda_side_z_corridor = float(lambda_side_z_corridor)
+        self.side_z_tolerance_m = float(max(side_z_tolerance_m, 0.0))
+        self.clearance_m = float(clearance_m)
+        self.vertical_uncertainty_m = float(vertical_uncertainty_m)
+        self.obstacle_points = np.asarray(obstacle_points, dtype=np.float64)
+        self.obstacle_xy_center = np.mean(self.obstacle_points[:, :2], axis=0)
+        self.obstacle_xy_radius = float(
+            np.percentile(
+                np.linalg.norm(self.obstacle_points[:, :2] - self.obstacle_xy_center[None, :], axis=1),
+                95,
+            )
+        )
+        base_vec = -self.obstacle_xy_center
+        self.base_side_direction = base_vec / max(float(np.linalg.norm(base_vec)), 1.0e-9)
+        self.outer_side_direction = -self.base_side_direction
+        self.obstacle_top_p99_m = float(np.percentile(self.obstacle_points[:, 2], 99))
+        self.table_z_m = float(table_z_m)
         count = max(2, int(tcp_preference_samples))
         self.tcp_preference_times = np.linspace(0.0, reference.total_duration, count)
         self.reference_q = reference.sample(self.tcp_preference_times, max_derivative=0).q
@@ -104,6 +135,7 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
             self.reference_tcp_xyz[:, 2],
             dtype=np.float64,
         )
+        self.corridor_mask = self._make_corridor_mask()
 
     def _joint_dict(self, q: np.ndarray) -> dict[str, float]:
         return {name: float(q[i]) for i, name in enumerate(self.surface_model.joint_names)}
@@ -147,11 +179,139 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
         hinge = np.maximum(deviation - self.joint_deviation_tolerance_rad, 0.0)
         return float(np.mean(hinge * hinge))
 
+    def _make_corridor_mask(self) -> np.ndarray:
+        distances = np.linalg.norm(
+            self.reference_tcp_xyz[:, :2] - self.obstacle_xy_center[None, :],
+            axis=1,
+        )
+        threshold = self.obstacle_xy_radius + self.route_corridor_influence_m
+        mask = distances <= threshold
+        if not np.any(mask):
+            center = int(np.argmin(distances))
+            mask[max(0, center - 2): min(len(mask), center + 3)] = True
+        return mask
+
+    def route_corridor_cost(self, flat_points: np.ndarray) -> float:
+        route_enabled = self.lambda_route_corridor > 0.0 and self.route_family != "none"
+        side_z_enabled = (
+            self.lambda_side_z_corridor > 0.0
+            and self.route_family in {"base_side", "outer_side"}
+        )
+        if not route_enabled and not side_z_enabled:
+            return 0.0
+        points = np.asarray(flat_points, dtype=np.float64).reshape(self.inner_shape)
+        trajectory = self._trajectory(points)
+        samples = trajectory.sample(self.tcp_preference_times, max_derivative=0).q
+        xyz = np.asarray([self._tcp_xyz(q) for q in samples], dtype=np.float64)
+        active = xyz[self.corridor_mask]
+        if len(active) == 0:
+            return 0.0
+        cost = 0.0
+        if self.route_family in {"base_side", "outer_side"}:
+            if route_enabled:
+                direction = self.base_side_direction if self.route_family == "base_side" else self.outer_side_direction
+                required = self.obstacle_xy_radius + self.route_corridor_margin_m
+                signed = (active[:, :2] - self.obstacle_xy_center[None, :]) @ direction
+                violation = np.maximum(required - signed, 0.0)
+                cost += self.lambda_route_corridor * float(np.mean(violation * violation))
+            if side_z_enabled:
+                ref_active = self.reference_tcp_xyz[self.corridor_mask]
+                z_deviation = np.abs(active[:, 2] - ref_active[:, 2])
+                z_violation = np.maximum(z_deviation - self.side_z_tolerance_m, 0.0)
+                cost += self.lambda_side_z_corridor * float(np.mean(z_violation * z_violation))
+            return float(cost)
+        if self.route_family == "overpass":
+            if not route_enabled:
+                return 0.0
+            bbox_min = np.min(self.obstacle_points[:, :2], axis=0) - self.route_corridor_margin_m
+            bbox_max = np.max(self.obstacle_points[:, :2], axis=0) + self.route_corridor_margin_m
+            inside = (
+                (active[:, 0] >= bbox_min[0])
+                & (active[:, 0] <= bbox_max[0])
+                & (active[:, 1] >= bbox_min[1])
+                & (active[:, 1] <= bbox_max[1])
+            )
+            if not np.any(inside):
+                return 0.0
+            required_z = self.obstacle_top_p99_m + self.clearance_m + self.vertical_uncertainty_m
+            violation = np.maximum(required_z - active[inside, 2], 0.0)
+            return float(self.lambda_route_corridor * np.mean(violation * violation))
+        return 0.0
+
+    def route_corridor_report(self, trajectory: NUBSTrajectory6D) -> dict[str, Any]:
+        samples = trajectory.sample(self.tcp_preference_times, max_derivative=0).q
+        xyz = np.asarray([self._tcp_xyz(q) for q in samples], dtype=np.float64)
+        active = xyz[self.corridor_mask]
+        report: dict[str, Any] = {
+            "route_family": self.route_family,
+            "enabled": bool(self.lambda_route_corridor > 0.0 and self.route_family != "none"),
+            "lambda_route_corridor": self.lambda_route_corridor,
+            "route_corridor_margin_m": self.route_corridor_margin_m,
+            "route_corridor_influence_m": self.route_corridor_influence_m,
+            "active_sample_count": int(len(active)),
+            "obstacle_xy_center": self.obstacle_xy_center.tolist(),
+            "obstacle_xy_radius_p95_m": self.obstacle_xy_radius,
+            "accepted": True,
+            "max_violation_m": 0.0,
+        }
+        if not report["enabled"] or len(active) == 0:
+            return report
+        if self.route_family in {"base_side", "outer_side"}:
+            direction = self.base_side_direction if self.route_family == "base_side" else self.outer_side_direction
+            required = self.obstacle_xy_radius + self.route_corridor_margin_m
+            signed = (active[:, :2] - self.obstacle_xy_center[None, :]) @ direction
+            violation = np.maximum(required - signed, 0.0)
+            ref_active = self.reference_tcp_xyz[self.corridor_mask]
+            z_deviation = np.abs(active[:, 2] - ref_active[:, 2])
+            z_violation = np.maximum(z_deviation - self.side_z_tolerance_m, 0.0)
+            side_z_enabled = self.lambda_side_z_corridor > 0.0
+            side_z_accepted = bool((not side_z_enabled) or np.max(z_violation) <= 1.0e-3)
+            report.update(
+                {
+                    "direction_xy": direction.tolist(),
+                    "required_signed_distance_m": float(required),
+                    "min_signed_distance_m": float(np.min(signed)),
+                    "max_lateral_violation_m": float(np.max(violation)),
+                    "lambda_side_z_corridor": self.lambda_side_z_corridor,
+                    "side_z_tolerance_m": self.side_z_tolerance_m,
+                    "max_side_z_deviation_m": float(np.max(z_deviation)),
+                    "max_side_z_violation_m": float(np.max(z_violation)),
+                    "side_z_accepted": side_z_accepted,
+                    "max_violation_m": float(max(np.max(violation), np.max(z_violation))),
+                    "accepted": bool(np.max(violation) <= 1.0e-3 and side_z_accepted),
+                }
+            )
+        elif self.route_family == "overpass":
+            bbox_min = np.min(self.obstacle_points[:, :2], axis=0) - self.route_corridor_margin_m
+            bbox_max = np.max(self.obstacle_points[:, :2], axis=0) + self.route_corridor_margin_m
+            inside = (
+                (active[:, 0] >= bbox_min[0])
+                & (active[:, 0] <= bbox_max[0])
+                & (active[:, 1] >= bbox_min[1])
+                & (active[:, 1] <= bbox_max[1])
+            )
+            required_z = self.obstacle_top_p99_m + self.clearance_m + self.vertical_uncertainty_m
+            if np.any(inside):
+                violation = np.maximum(required_z - active[inside, 2], 0.0)
+                report.update(
+                    {
+                        "required_z_m": float(required_z),
+                        "inside_footprint_sample_count": int(np.count_nonzero(inside)),
+                        "min_z_inside_m": float(np.min(active[inside, 2])),
+                        "max_violation_m": float(np.max(violation)),
+                        "accepted": bool(np.max(violation) <= 1.0e-3),
+                    }
+                )
+            else:
+                report.update({"required_z_m": float(required_z), "inside_footprint_sample_count": 0})
+        return report
+
     def preference_cost(self, flat_points: np.ndarray) -> float:
         return float(
             self.lambda_tcp_z * self.tcp_z_preference_cost(flat_points)
             + self.lambda_tcp_xy * self.tcp_xy_preference_cost(flat_points)
             + self.lambda_joint_deviation * self.joint_deviation_preference_cost(flat_points)
+            + self.route_corridor_cost(flat_points)
         )
 
     def _preference_gradient(self, flat_points: np.ndarray, base_cost: float) -> np.ndarray:
@@ -161,6 +321,8 @@ class TabletopPreferenceStaticRiskNUBSOptimizer(StaticRiskNUBSOptimizer):
                 self.lambda_tcp_z <= 0.0
                 and self.lambda_tcp_xy <= 0.0
                 and self.lambda_joint_deviation <= 0.0
+                and self.lambda_route_corridor <= 0.0
+                and self.lambda_side_z_corridor <= 0.0
             )
         ):
             return np.zeros_like(flat_points)
@@ -231,6 +393,16 @@ def make_tabletop_optimizer(
         lambda_joint_deviation=args.lambda_joint_deviation,
         joint_deviation_tolerance_rad=args.joint_deviation_tolerance_rad,
         tcp_preference_samples=args.tcp_preference_samples,
+        route_family=args.route_family,
+        lambda_route_corridor=args.lambda_route_corridor,
+        route_corridor_margin_m=args.route_corridor_margin_m,
+        route_corridor_influence_m=args.route_corridor_influence_m,
+        lambda_side_z_corridor=args.lambda_side_z_corridor,
+        side_z_tolerance_m=args.side_z_tolerance_m,
+        obstacle_points=args._obstacle_points_for_corridor,
+        table_z_m=args._table_z_for_corridor,
+        clearance_m=args.clearance_m,
+        vertical_uncertainty_m=args.vertical_uncertainty_m,
     )
 
 
@@ -407,6 +579,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         rng = np.random.default_rng(args.seed)
         obstacle_points = obstacle_points[rng.choice(len(obstacle_points), args.max_obstacle_points, replace=False)]
     obstacle = StaticObstacleField.from_points(obstacle_points)
+    table_z = float(json.loads((trial_dir / "summary.json").read_text(encoding="utf-8")).get("table_z_m", np.percentile(obstacle_points[:, 2], 2)))
+    args._obstacle_points_for_corridor = obstacle_points
+    args._table_z_for_corridor = table_z
 
     surface_model = make_surface_model(config)
     evaluator, verifier, limits = make_evaluator_and_verifier(config, surface_model)
@@ -416,11 +591,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     legacy_lambda_tcp_xyz = float(args.lambda_tcp_xyz or 0.0)
     if legacy_lambda_tcp_xyz > 0.0 and args.lambda_tcp_xy <= 0.0:
         args.lambda_tcp_xy = legacy_lambda_tcp_xyz
-    if args.lambda_tcp_z > 0.0 or args.lambda_tcp_xy > 0.0 or args.lambda_joint_deviation > 0.0:
+    route_corridor_enabled = bool(args.route_family != "none" and args.lambda_route_corridor > 0.0)
+    side_z_corridor_enabled = bool(
+        args.route_family in {"base_side", "outer_side"} and args.lambda_side_z_corridor > 0.0
+    )
+    if (
+        args.lambda_tcp_z > 0.0
+        or args.lambda_tcp_xy > 0.0
+        or args.lambda_joint_deviation > 0.0
+        or route_corridor_enabled
+        or side_z_corridor_enabled
+    ):
         optimizer = make_tabletop_optimizer(
             config, head, tail, durations, limits, evaluator, obstacle, reference, surface_model, args
         )
-        optimizer_type = "joint_space_CCRO_NUBS_with_task_space_minimal_change_preference"
+        optimizer_type = "joint_space_CCRO_NUBS_with_task_space_route_family_preferences"
     else:
         optimizer = _risk_optimizer(config, head, tail, durations, limits, evaluator, obstacle, None)
         optimizer_type = "joint_space_CCRO_NUBS"
@@ -493,7 +678,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     times = np.linspace(0.0, candidate.total_duration, max(2, int(np.ceil(candidate.total_duration / args.urdf_dt)) + 1))
     q_path = candidate.sample(times, max_derivative=0).q
-    table_z = float(json.loads((trial_dir / "summary.json").read_text(encoding="utf-8")).get("table_z_m", np.percentile(obstacle_points[:, 2], 2)))
     plot_urdf_pose_sequence(
         output_dir / "figures" / "ccro_nubs_urdf_pose_sequence.png",
         surface_model,
@@ -505,7 +689,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     candidate_metrics = trajectory_preference_metrics(surface_model, reference, candidate, args.tcp_link)
     task_constraints = task_constraint_report(candidate_metrics, args)
-    accepted = bool(validation.accepted and (not task_constraints["enabled"] or task_constraints["accepted"]))
+    route_family_report = (
+        optimizer.route_corridor_report(candidate)
+        if isinstance(optimizer, TabletopPreferenceStaticRiskNUBSOptimizer)
+        else {
+            "route_family": args.route_family,
+            "enabled": False,
+            "accepted": True,
+            "max_violation_m": 0.0,
+        }
+    )
+    accepted = bool(
+        validation.accepted
+        and (not task_constraints["enabled"] or task_constraints["accepted"])
+        and (not route_family_report["enabled"] or route_family_report["accepted"])
+    )
     summary = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "robot_commanded": False,
@@ -539,11 +737,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "tcp_z_stats": tcp_path_z_stats(surface_model, candidate, args.tcp_link),
             "minimal_change_metrics": candidate_metrics,
             "task_constraints": task_constraints,
+            "route_family_constraints": route_family_report,
         },
         "reference_tcp_z_stats": tcp_path_z_stats(surface_model, reference, args.tcp_link),
         "reference_candidate_minimal_change_metrics": candidate_metrics,
         "tabletop_preference": {
-            "enabled": bool(args.lambda_tcp_z > 0.0 or args.lambda_tcp_xy > 0.0 or args.lambda_joint_deviation > 0.0),
+            "enabled": bool(
+                args.lambda_tcp_z > 0.0
+                or args.lambda_tcp_xy > 0.0
+                or args.lambda_joint_deviation > 0.0
+                or route_corridor_enabled
+                or side_z_corridor_enabled
+            ),
             "lambda_tcp_z": args.lambda_tcp_z,
             "tcp_z_tolerance_m": args.tcp_z_tolerance_m,
             "lambda_tcp_xy": args.lambda_tcp_xy,
@@ -553,7 +758,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "joint_deviation_tolerance_rad": args.joint_deviation_tolerance_rad,
             "tcp_preference_samples": args.tcp_preference_samples,
             "tcp_link": args.tcp_link,
+            "route_family": args.route_family,
+            "lambda_route_corridor": args.lambda_route_corridor,
+            "route_corridor_margin_m": args.route_corridor_margin_m,
+            "route_corridor_influence_m": args.route_corridor_influence_m,
+            "lambda_side_z_corridor": args.lambda_side_z_corridor,
+            "side_z_tolerance_m": args.side_z_tolerance_m,
+            "vertical_uncertainty_m": args.vertical_uncertainty_m,
+            "clearance_m": args.clearance_m,
         },
+        "route_family_constraints": route_family_report,
         "task_constraints": task_constraints,
         "files": [
             "reference_trajectory.csv",
@@ -631,6 +845,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="0 disables orientation as a hard task gate; keep it reported for audit",
     )
     parser.add_argument("--tcp-preference-samples", type=int, default=25)
+    parser.add_argument("--route-family", choices=["none", "base_side", "outer_side", "overpass"], default="none")
+    parser.add_argument(
+        "--lambda-route-corridor",
+        type=float,
+        default=0.0,
+        help="soft penalty weight used to preserve a geometric route family",
+    )
+    parser.add_argument("--route-corridor-margin-m", type=float, default=0.08)
+    parser.add_argument("--route-corridor-influence-m", type=float, default=0.25)
+    parser.add_argument(
+        "--lambda-side-z-corridor",
+        type=float,
+        default=0.0,
+        help="side-route-only penalty that keeps base/outer candidates near the reference TCP height",
+    )
+    parser.add_argument(
+        "--side-z-tolerance-m",
+        type=float,
+        default=0.05,
+        help="maximum obstacle-near TCP height deviation allowed for side route families",
+    )
+    parser.add_argument("--clearance-m", type=float, default=0.08)
+    parser.add_argument("--vertical-uncertainty-m", type=float, default=0.02)
     parser.add_argument("--max-iterations-override", type=int, default=None)
     parser.add_argument(
         "--initial-plan-dir",

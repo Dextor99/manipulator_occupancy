@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate formal 6.5.2 multi-start CCRO-NUBS candidates.
+"""Generate formal 6.5.2 multi-family CCRO-NUBS candidates.
 
-This wrapper keeps the formal objective consistent.  Any task-space or manual
-detour plan is treated only as an initial seed; each formal candidate is then
-re-optimized with the original joint-space CCRO-NUBS objective, i.e. all
-task-space preference weights are set to zero.
+This wrapper keeps candidate generation explicit: free, base-side, outer-side,
+and overpass candidates share the same CCRO-NUBS risk/smooth objective, while
+route-family candidates add a geometric corridor penalty and are hard-checked
+for route-family preservation after optimization.
 """
 
 from __future__ import annotations
@@ -37,8 +37,18 @@ def run_command(cmd: list[str]) -> dict[str, Any]:
     }
 
 
-def seed_items(args: argparse.Namespace) -> list[tuple[str, Path | None]]:
-    items: list[tuple[str, Path | None]] = [("seed_free", None)]
+def seed_items(args: argparse.Namespace) -> list[tuple[str, str, Path | None]]:
+    items: list[tuple[str, str, Path | None]] = []
+    for family in args.families.split(","):
+        family = family.strip()
+        if not family:
+            continue
+        if family == "free":
+            items.append(("seed_free", "none", None))
+        elif family in {"base_side", "outer_side", "overpass"}:
+            items.append((family, family, None))
+        else:
+            raise ValueError(f"unknown family: {family}")
     for item in args.seed:
         if "=" not in item:
             raise ValueError("--seed entries must use name=plan_dir")
@@ -46,11 +56,11 @@ def seed_items(args: argparse.Namespace) -> list[tuple[str, Path | None]]:
         name = name.strip()
         if not name:
             raise ValueError("--seed name cannot be empty")
-        items.append((name, Path(value).resolve()))
+        items.append((name, "none", Path(value).resolve()))
     return items
 
 
-def build_plan_command(args: argparse.Namespace, trial_dir: Path, name: str, seed_dir: Path | None, output_dir: Path) -> list[str]:
+def build_plan_command(args: argparse.Namespace, trial_dir: Path, name: str, route_family: str, seed_dir: Path | None, output_dir: Path) -> list[str]:
     cmd = [
         PYTHON,
         str(HERE / "plan_652_static_ccro_nubs_from_trial.py"),
@@ -71,6 +81,18 @@ def build_plan_command(args: argparse.Namespace, trial_dir: Path, name: str, see
         "0.0",
         "--lambda-joint-deviation",
         "0.0",
+        "--route-family",
+        route_family,
+        "--lambda-route-corridor",
+        "0.0" if route_family == "none" else str(args.lambda_route_corridor),
+        "--route-corridor-margin-m",
+        str(args.route_corridor_margin_m),
+        "--route-corridor-influence-m",
+        str(args.route_corridor_influence_m),
+        "--lambda-side-z-corridor",
+        str(args.lambda_side_z_corridor if route_family in {"base_side", "outer_side"} else 0.0),
+        "--side-z-tolerance-m",
+        str(args.side_z_tolerance_m),
         "--tcp-z-hard-tolerance-m",
         "0.0",
         "--tcp-orientation-hard-deg",
@@ -107,16 +129,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     plan_results = []
     plan_dirs = []
-    for name, seed_dir in seed_items(args):
+    for name, route_family, seed_dir in seed_items(args):
         plan_dir = output_dir / name
-        cmd = build_plan_command(args, trial_dir, name, seed_dir, output_dir)
+        cmd = build_plan_command(args, trial_dir, name, route_family, seed_dir, output_dir)
         result = run_command(cmd)
         plan_results.append(
             {
                 "candidate": name,
+                "route_family": route_family,
                 "formal_plan_dir": str(plan_dir),
                 "seed_plan_dir": None if seed_dir is None else str(seed_dir),
-                "formal_objective": "joint_space_CCRO_NUBS",
+                "formal_objective": (
+                    "joint_space_CCRO_NUBS"
+                    if route_family == "none"
+                    else "joint_space_CCRO_NUBS_plus_route_family_corridor"
+                ),
                 "result": result,
             }
         )
@@ -130,11 +157,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     payload = {
         "trial_dir": str(trial_dir),
         "output_dir": str(output_dir),
-        "formal_objective": "joint_space_CCRO_NUBS_for_all_candidates",
+        "formal_objective": "joint_space_CCRO_NUBS_with_optional_route_family_corridor",
         "note": (
-            "Seed plans may come from task-space preference or manual detours, "
-            "but all formal candidates are re-optimized with lambda_tcp_z=0, "
-            "lambda_tcp_xy=0, lambda_joint_deviation=0."
+            "All candidates use lambda_tcp_z=0, lambda_tcp_xy=0, and "
+            "lambda_joint_deviation=0. Route-family candidates add only the "
+            "specified corridor preservation penalty and are rejected if the "
+            "reported route-family constraint is not preserved."
         ),
         "plans": plan_results,
         "selection": selection_result,
@@ -148,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trial-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--families",
+        default="free,base_side,outer_side,overpass",
+        help="Comma-separated route families: free,base_side,outer_side,overpass.",
+    )
     parser.add_argument(
         "--seed",
         action="append",
@@ -163,6 +196,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--clearance-m", type=float, default=0.08)
     parser.add_argument("--clearance-pref-m", type=float, default=0.11)
     parser.add_argument("--time-near-optimal-ratio", type=float, default=1.05)
+    parser.add_argument("--lambda-route-corridor", type=float, default=5000.0)
+    parser.add_argument("--route-corridor-margin-m", type=float, default=0.08)
+    parser.add_argument("--route-corridor-influence-m", type=float, default=0.25)
+    parser.add_argument("--lambda-side-z-corridor", type=float, default=8000.0)
+    parser.add_argument("--side-z-tolerance-m", type=float, default=0.05)
     return parser
 
 

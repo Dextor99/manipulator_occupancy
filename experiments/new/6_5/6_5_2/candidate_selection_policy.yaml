@@ -8,9 +8,10 @@ task:
   tcp_orientation_hard_deg: 0.0
   note: >
     TCP height and orientation are reported as diagnostics. A true overpass is
-    defined by robot swept geometry crossing the inflated obstacle XY footprint
-    with sufficient vertical clearance over the robust obstacle top, not by TCP
-    z-change alone.
+    defined by the TCP/tool route crossing the core obstacle XY footprint with
+    sufficient vertical clearance over the robust obstacle top, not by TCP
+    z-change alone. Full robot swept geometry is still checked by the dense
+    verifier, but it is not used to label a TCP route as an overpass.
 
 safety:
   dense_accept_m: 0.080
@@ -23,10 +24,10 @@ safety:
     execution gates.
 
 candidate_families:
-  - reference_seed
-  - base_side_lateral
-  - outer_side_lateral
-  - overpass_seed
+  - free_reference_seed
+  - base_side_corridor
+  - outer_side_corridor
+  - overpass_corridor
 
 optimization:
   max_iterations: 300
@@ -40,6 +41,8 @@ selection:
   hard_gates:
     - solver_ok
     - dense_distance_ok
+    - route_geometry_ok
+    - route_family_preserved_if_enabled
     - joint_limits_ok
     - trajectory_continuity_ok
     - goal_ok
@@ -50,9 +53,23 @@ selection:
     vertical_uncertainty_m: 0.020
     robust_obstacle_top: p99
     true_overpass_definition: >
-      Robot swept surface enters the inflated obstacle XY footprint and the
-      minimum swept surface height over that footprint is no lower than
-      obstacle_top_p99 + d_accept + vertical_uncertainty.
+      TCP/tool samples enter the core obstacle XY footprint and both the TCP
+      height and the configured tool/end-effector surface bottom inside that
+      footprint are no lower than obstacle_top_p99 + d_accept +
+      vertical_uncertainty.
+    diagnostic_inflated_projection: >
+      TCP and full robot swept surface intersections with the inflated obstacle
+      footprint are recorded for analysis. These diagnostics do not by
+      themselves define a true overpass.
+  route_family_constraints:
+    base_side_outer_side: >
+      During the obstacle-near segment, TCP samples must remain on the requested
+      lateral side of the obstacle with the configured XY margin. Side-route
+      families additionally keep obstacle-near TCP height close to the reference
+      height, so a base-side seed cannot collapse back into a vertical overpass.
+    overpass: >
+      During the obstacle-near segment, TCP samples inside the obstacle footprint
+      must remain above obstacle_top_p99 + d_accept + vertical_uncertainty.
   time_scaling:
     use_velocity_and_acceleration_limits: true
     near_best_time_ratio: 1.050

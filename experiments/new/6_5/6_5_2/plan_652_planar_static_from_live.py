@@ -312,6 +312,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     table_z = float(np.percentile(obstacle_points[:, 2], 2)) if args.table_z == "auto" else float(args.table_z)
     base_tcp = tcp_position(surface_model, q, args.tcp_link)
     p_start = base_tcp.copy()
+    if args.x_offset is not None:
+        p_start[0] = base_tcp[0] + float(args.x_offset)
     if args.y_start is not None:
         p_start[1] = float(args.y_start)
     if args.x_start is not None:
@@ -509,6 +511,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--surface-density", choices=["coarse", "medium", "dense"], default="coarse")
 
     parser.add_argument("--tcp-link", default="gripper_base_link")
+    parser.add_argument(
+        "--x-offset",
+        type=float,
+        default=None,
+        help="set start/goal X to live TCP X plus this offset; overridden by --x-start/--x-goal",
+    )
     parser.add_argument("--x-start", type=float, default=None)
     parser.add_argument("--x-goal", type=float, default=None)
     parser.add_argument("--y-start", type=float, default=None)

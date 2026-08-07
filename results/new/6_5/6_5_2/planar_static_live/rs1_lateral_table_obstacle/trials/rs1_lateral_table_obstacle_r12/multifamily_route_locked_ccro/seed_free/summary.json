@@ -1,0 +1,232 @@
+{
+  "created_at": "2026-08-07T07:08:46.840394+00:00",
+  "robot_commanded": false,
+  "trajectory_type": "joint_space_NUBS_not_B_spline",
+  "trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r12",
+  "output_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r12/multifamily_route_locked_ccro/seed_free",
+  "status": "PLAN_REJECTED",
+  "accepted_for_real_execution": false,
+  "optimizer_type": "joint_space_CCRO_NUBS",
+  "q_start_rad": [
+    0.8698328984411139,
+    -0.4290020520749845,
+    1.0239593982696533,
+    -0.11782816013223246,
+    1.5707851899297613,
+    0.8698435802208749
+  ],
+  "q_goal_rad": [
+    -0.36184728145599365,
+    -0.22320318222045898,
+    1.315380573272705,
+    -0.03216493874788284,
+    1.5707743167877197,
+    -0.3618289530277252
+  ],
+  "q_goal_source_note": "Estimated from previous Y=-0.4 low-speed smoke execution; capture a fresh goal state before formal hardware execution.",
+  "durations": [
+    2.0,
+    2.0,
+    2.0,
+    2.0
+  ],
+  "initial_inner_source": "linear_reference_inner_points",
+  "reference": {
+    "solver_success": true,
+    "min_distance_m": 0.020532281032049005,
+    "nearest_link": "right_link",
+    "dense_verification": {
+      "accepted": false,
+      "reasons": [
+        "distance_ok"
+      ],
+      "checks": {
+        "solver_ok": true,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": false,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true
+      },
+      "goal_error": 0.0,
+      "min_distance": 0.020582768686009355,
+      "nearest_link": "right_link",
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0,
+      "continuity_q": 0.0,
+      "continuity_qd": 0.0,
+      "continuity_qdd": 0.0,
+      "validation_ms": 5751.346192002529,
+      "self_collision_checked": false
+    }
+  },
+  "candidate": {
+    "optimizer_success": true,
+    "optimizer_message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+    "elapsed_ms": 18137.111582007492,
+    "iterations": 36,
+    "initial_min_distance_m": 0.028137128576873824,
+    "final_min_distance_m": 0.06808774987323887,
+    "sampled_min_distance_m": 0.06736155639314713,
+    "nearest_link": "upperArm_Link",
+    "dense_verification": {
+      "accepted": false,
+      "reasons": [
+        "distance_ok"
+      ],
+      "checks": {
+        "solver_ok": true,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": false,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true
+      },
+      "goal_error": 0.0,
+      "min_distance": 0.0673602504885794,
+      "nearest_link": "upperArm_Link",
+      "max_q_violation": 0.0,
+      "max_qd_violation": 0.0,
+      "max_qdd_violation": 0.0,
+      "continuity_q": 0.0,
+      "continuity_qd": 0.0,
+      "continuity_qdd": 0.0,
+      "validation_ms": 6507.350847998168,
+      "self_collision_checked": false
+    },
+    "tcp_z_stats": {
+      "tcp_link": "gripper_base_link",
+      "z_min_m": 0.5395622972789456,
+      "z_max_m": 0.7362442187003492,
+      "z_range_m": 0.19668192142140362,
+      "z_start_m": 0.5395622972789456,
+      "z_goal_m": 0.5395878535522654
+    },
+    "minimal_change_metrics": {
+      "tcp_link": "gripper_base_link",
+      "max_tcp_xyz_deviation_m": 0.3081660099898767,
+      "mean_tcp_xyz_deviation_m": 0.13984687398706444,
+      "max_tcp_xy_deviation_m": 0.23915119802188373,
+      "mean_tcp_xy_deviation_m": 0.10659861732038356,
+      "max_tcp_z_deviation_m": 0.1945004135368381,
+      "mean_tcp_z_deviation_m": 0.09044569682757336,
+      "max_tcp_orientation_deviation_rad": 0.40218287406110653,
+      "mean_tcp_orientation_deviation_rad": 0.18307272538497454,
+      "max_tcp_orientation_deviation_deg": 23.043381276142917,
+      "mean_tcp_orientation_deviation_deg": 10.48929450851657,
+      "max_joint_deviation_rad": 0.4027726688698017,
+      "mean_joint_deviation_rad": 0.18324173676524969,
+      "joint_path_length_rad": 1.9599831819393607,
+      "tcp_path_length_m": 0.9212534596115125,
+      "tcp_xy_path_length_m": 0.8020382419859005
+    },
+    "task_constraints": {
+      "accepted": true,
+      "checks": {
+        "tcp_z_corridor_ok": true,
+        "tcp_orientation_ok": true,
+        "table_clearance_ok": true,
+        "base_self_clearance_ok": true
+      },
+      "reasons": [],
+      "enabled": false,
+      "tcp_z_hard_tolerance_m": 0.0,
+      "tcp_orientation_hard_deg": 0.0,
+      "table_clearance_checked": false,
+      "base_self_clearance_checked": false,
+      "note": "TCP height and orientation are enforced here. Table/base/self checks are reported as not independently implemented in this script and must remain covered by visual/dense safety review before hardware execution."
+    },
+    "route_family_constraints": {
+      "route_family": "none",
+      "enabled": false,
+      "accepted": true,
+      "max_violation_m": 0.0
+    }
+  },
+  "reference_tcp_z_stats": {
+    "tcp_link": "gripper_base_link",
+    "z_min_m": 0.5395622972789456,
+    "z_max_m": 0.5420060183998259,
+    "z_range_m": 0.0024437211208803156,
+    "z_start_m": 0.5395622972789456,
+    "z_goal_m": 0.5395878535522654
+  },
+  "reference_candidate_minimal_change_metrics": {
+    "tcp_link": "gripper_base_link",
+    "max_tcp_xyz_deviation_m": 0.3081660099898767,
+    "mean_tcp_xyz_deviation_m": 0.13984687398706444,
+    "max_tcp_xy_deviation_m": 0.23915119802188373,
+    "mean_tcp_xy_deviation_m": 0.10659861732038356,
+    "max_tcp_z_deviation_m": 0.1945004135368381,
+    "mean_tcp_z_deviation_m": 0.09044569682757336,
+    "max_tcp_orientation_deviation_rad": 0.40218287406110653,
+    "mean_tcp_orientation_deviation_rad": 0.18307272538497454,
+    "max_tcp_orientation_deviation_deg": 23.043381276142917,
+    "mean_tcp_orientation_deviation_deg": 10.48929450851657,
+    "max_joint_deviation_rad": 0.4027726688698017,
+    "mean_joint_deviation_rad": 0.18324173676524969,
+    "joint_path_length_rad": 1.9599831819393607,
+    "tcp_path_length_m": 0.9212534596115125,
+    "tcp_xy_path_length_m": 0.8020382419859005
+  },
+  "tabletop_preference": {
+    "enabled": false,
+    "lambda_tcp_z": 0.0,
+    "tcp_z_tolerance_m": 0.015,
+    "lambda_tcp_xy": 0.0,
+    "tcp_xy_tolerance_m": 0.03,
+    "legacy_lambda_tcp_xyz": 0.0,
+    "lambda_joint_deviation": 0.0,
+    "joint_deviation_tolerance_rad": 0.1,
+    "tcp_preference_samples": 25,
+    "tcp_link": "gripper_base_link",
+    "route_family": "none",
+    "lambda_route_corridor": 0.0,
+    "route_corridor_margin_m": 0.08,
+    "route_corridor_influence_m": 0.25,
+    "lambda_side_z_corridor": 0.0,
+    "side_z_tolerance_m": 0.05,
+    "vertical_uncertainty_m": 0.02,
+    "clearance_m": 0.08
+  },
+  "route_family_constraints": {
+    "route_family": "none",
+    "enabled": false,
+    "accepted": true,
+    "max_violation_m": 0.0
+  },
+  "task_constraints": {
+    "accepted": true,
+    "checks": {
+      "tcp_z_corridor_ok": true,
+      "tcp_orientation_ok": true,
+      "table_clearance_ok": true,
+      "base_self_clearance_ok": true
+    },
+    "reasons": [],
+    "enabled": false,
+    "tcp_z_hard_tolerance_m": 0.0,
+    "tcp_orientation_hard_deg": 0.0,
+    "table_clearance_checked": false,
+    "base_self_clearance_checked": false,
+    "note": "TCP height and orientation are enforced here. Table/base/self checks are reported as not independently implemented in this script and must remain covered by visual/dense safety review before hardware execution."
+  },
+  "files": [
+    "reference_trajectory.csv",
+    "ccro_nubs_candidate_trajectory.csv",
+    "ccro_nubs_trajectories.npz",
+    "figures/distance_risk_curve.png",
+    "figures/joint_trajectory_preview.png",
+    "figures/ccro_nubs_urdf_pose_sequence.png"
+  ],
+  "execution_note": "No robot command was sent. Execute only after inspecting URDF pose sequence, dense verification, and confirming a bounded joint trajectory execution interface."
+}

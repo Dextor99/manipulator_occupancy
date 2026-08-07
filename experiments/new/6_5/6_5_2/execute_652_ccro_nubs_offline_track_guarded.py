@@ -48,6 +48,7 @@ DEFAULT_PLAN_DIR = (
 )
 DEFAULT_OUTPUT = ROOT / "results" / "new" / "6_5" / "6_5_2" / "offline_track_execution"
 REQUIRED_OPERATOR_PHRASE = "CCRO_652_OFFLINE_TRACK_APPROVED"
+EMPTY_SCENE_PREVIEW_PHRASE = "EMPTY_SCENE_PREVIEW_APPROVED"
 
 
 def json_default(value: Any) -> Any:
@@ -195,6 +196,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     times_exec, qs_exec = maybe_downsample(times_exec, qs_exec, args.max_waypoints)
     accepted = bool(summary.get("accepted_for_real_execution", False))
+    empty_scene_preview_override = bool(
+        args.allow_rejected_plan_for_empty_scene_preview
+        and args.empty_scene_preview_phrase == EMPTY_SCENE_PREVIEW_PHRASE
+    )
 
     log: dict[str, Any] = {
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -202,6 +207,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "plan_dir": str(plan_dir),
         "plan_status": summary.get("status"),
         "accepted_for_real_execution": accepted,
+        "empty_scene_preview_override": empty_scene_preview_override,
+        "empty_scene_preview_phrase_ok": args.empty_scene_preview_phrase == EMPTY_SCENE_PREVIEW_PHRASE,
+        "execution_purpose": (
+            "empty_scene_motion_preview_only"
+            if empty_scene_preview_override and not accepted
+            else "accepted_obstacle_avoidance_execution"
+        ),
+        "not_valid_as_obstacle_avoidance_execution": bool(empty_scene_preview_override and not accepted),
         "candidate_min_distance_m": summary.get("candidate", {}).get("dense_verification", {}).get("min_distance"),
         "required_operator_phrase": REQUIRED_OPERATOR_PHRASE,
         "operator_phrase_ok": args.operator_phrase == REQUIRED_OPERATOR_PHRASE,
@@ -216,10 +229,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     }
 
     if not accepted:
-        log["status"] = "BLOCKED_PLAN_NOT_ACCEPTED"
-        write_json(output_dir / "offline_track_execution_log.json", log)
-        print(json.dumps(log, indent=2, ensure_ascii=False, default=json_default))
-        return log
+        if not empty_scene_preview_override:
+            log["status"] = "BLOCKED_PLAN_NOT_ACCEPTED"
+            log["override_hint"] = (
+                "For obstacle-removed motion preview only, rerun with "
+                "--allow-rejected-plan-for-empty-scene-preview and "
+                f"--empty-scene-preview-phrase {EMPTY_SCENE_PREVIEW_PHRASE}. "
+                "This must not be reported as real obstacle avoidance execution."
+            )
+            write_json(output_dir / "offline_track_execution_log.json", log)
+            print(json.dumps(log, indent=2, ensure_ascii=False, default=json_default))
+            return log
+        log["safety_override_warning"] = (
+            "Executing a rejected plan only because the operator declares the scene is empty. "
+            "This run is for motion-shape preview and is not valid as obstacle avoidance evidence."
+        )
 
     if not args.execute:
         log["status"] = "DRY_RUN_NO_ROBOT_COMMAND"
@@ -266,7 +290,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         print(f"  joint_velc limit: {args.joint_velc:.4f} rad/s")
         print(f"  joint_acc limit : {args.joint_acc:.4f} rad/s^2")
         print(f"  dense min clearance: {log['candidate_min_distance_m']}")
-        print("  The obstacle must be unchanged from the accepted plan.")
+        if empty_scene_preview_override and not accepted:
+            print("  WARNING: rejected plan preview override is active.")
+            print("  The workspace must be empty; this run is NOT obstacle-avoidance evidence.")
+        else:
+            print("  The obstacle must be unchanged from the accepted plan.")
         require_enter("Step 1/1: start AUBO Offline Track continuous CCRO-NUBS execution.")
 
         started = time.perf_counter()
@@ -322,6 +350,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sdk-dir", default=None)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--operator-phrase", default="")
+    parser.add_argument(
+        "--allow-rejected-plan-for-empty-scene-preview",
+        action="store_true",
+        help="dangerous override for obstacle-removed motion-shape preview; never counts as obstacle avoidance execution",
+    )
+    parser.add_argument(
+        "--empty-scene-preview-phrase",
+        default="",
+        help=f"must equal {EMPTY_SCENE_PREVIEW_PHRASE} when previewing a rejected plan in an empty workspace",
+    )
     parser.add_argument("--max-waypoints", type=int, default=0, help="0 means no cap after optional resampling")
     parser.add_argument(
         "--playback-duration-s",

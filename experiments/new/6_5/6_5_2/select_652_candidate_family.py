@@ -86,6 +86,32 @@ def geometric_dense_ok(checks: dict[str, bool]) -> bool:
     return bool(all(value for key, value in checks.items() if key != "solver_ok"))
 
 
+def standardized_hard_reject_reasons(
+    summary: dict[str, Any],
+    dense: dict[str, Any],
+    route_geometry_ok: bool,
+    route_family_ok: bool,
+    args: argparse.Namespace,
+) -> list[str]:
+    reasons: list[str] = []
+    checks = dense.get("checks", {}) if isinstance(dense, dict) else {}
+    if not bool(get_nested(summary, ["candidate", "optimizer_success"], False)):
+        reasons.append("optimizer_not_successful")
+    if not bool(checks.get("solver_ok", True)):
+        reasons.append("dense_solver_not_ok")
+    min_distance = dense.get("min_distance") if isinstance(dense, dict) else None
+    if min_distance is None or float(min_distance) < float(args.clearance_m):
+        reasons.append("dense_distance_below_acceptance")
+    for key in ("joint_limits_ok", "velocity_ok", "acceleration_ok", "continuity_ok", "goal_ok"):
+        if key in checks and not bool(checks[key]):
+            reasons.append(key.replace("_ok", "_violation"))
+    if not route_geometry_ok:
+        reasons.append("route_geometry_overpass_margin_not_satisfied")
+    if not route_family_ok:
+        reasons.append("route_family_not_preserved")
+    return reasons
+
+
 def clearance_penalty(distances: np.ndarray, args: argparse.Namespace) -> float:
     denom = max(args.clearance_pref_m - args.clearance_m, 1.0e-9)
     values = np.maximum((args.clearance_pref_m - distances) / denom, 0.0)
@@ -160,10 +186,20 @@ def route_geometry_audit(
         & (cand_tcp[:, 1] >= bbox_min[1] - xy_inflation)
         & (cand_tcp[:, 1] <= bbox_max[1] + xy_inflation)
     )
+    tcp_inside_core_xy = (
+        (cand_tcp[:, 0] >= bbox_min[0])
+        & (cand_tcp[:, 0] <= bbox_max[0])
+        & (cand_tcp[:, 1] >= bbox_min[1])
+        & (cand_tcp[:, 1] <= bbox_max[1])
+    )
 
     swept_inside_count = 0
     swept_min_z_inside = float("inf")
     swept_max_z_inside = -float("inf")
+    tool_inside_count = 0
+    tool_min_z_inside = float("inf")
+    tool_max_z_inside = -float("inf")
+    tool_links = {item.strip() for item in args.overpass_tool_links.split(",") if item.strip()}
     route_samples = max(2, int(args.route_samples))
     for t in np.linspace(0.0, candidate.total_duration, route_samples):
         q = candidate.evaluate(float(t))
@@ -180,14 +216,33 @@ def route_geometry_audit(
                 swept_inside_count += int(np.count_nonzero(inside))
                 swept_min_z_inside = min(swept_min_z_inside, float(np.min(z_inside)))
                 swept_max_z_inside = max(swept_max_z_inside, float(np.max(z_inside)))
+        if tool_links:
+            tool_by_link = surface_model.surface_by_link(q, density=args.route_density, links=tool_links)
+            for points in tool_by_link.values():
+                inside_core = (
+                    (points[:, 0] >= bbox_min[0])
+                    & (points[:, 0] <= bbox_max[0])
+                    & (points[:, 1] >= bbox_min[1])
+                    & (points[:, 1] <= bbox_max[1])
+                )
+                if np.any(inside_core):
+                    z_inside = points[inside_core, 2]
+                    tool_inside_count += int(np.count_nonzero(inside_core))
+                    tool_min_z_inside = min(tool_min_z_inside, float(np.min(z_inside)))
+                    tool_max_z_inside = max(tool_max_z_inside, float(np.max(z_inside)))
     swept_crosses = swept_inside_count > 0
+    tool_crosses = tool_inside_count > 0
     required_top_z = robust_top_z + float(args.clearance_m) + float(args.vertical_uncertainty_m)
-    overpass_clearance_ok = bool(swept_crosses and swept_min_z_inside >= required_top_z)
+    tcp_overpass_clearance_ok = bool(np.any(tcp_inside_core_xy) and np.min(cand_tcp[tcp_inside_core_xy, 2]) >= required_top_z)
+    tool_overpass_clearance_ok = bool(tool_crosses and tool_min_z_inside >= required_top_z)
+    swept_overpass_clearance_ok = bool(swept_crosses and swept_min_z_inside >= required_top_z)
     large_vertical_motion = bool(max_z_dev > args.overpass_z_deviation_m)
     lateral_motion = bool(max_xy_dev > args.lateral_xy_deviation_m)
-    if swept_crosses and large_vertical_motion and overpass_clearance_ok:
+    tcp_crosses = bool(np.any(tcp_inside_core_xy))
+    overpass_clearance_ok = bool(tcp_overpass_clearance_ok and (not tool_crosses or tool_overpass_clearance_ok))
+    if tcp_crosses and large_vertical_motion and overpass_clearance_ok:
         route_class = "true_overpass"
-    elif swept_crosses and large_vertical_motion:
+    elif tcp_crosses and large_vertical_motion:
         route_class = "footprint_crossing_vertical"
     elif lateral_motion and large_vertical_motion:
         route_class = "hybrid_vertical_lateral"
@@ -198,8 +253,8 @@ def route_geometry_audit(
     else:
         route_class = "near_reference"
 
-    if swept_crosses and not overpass_clearance_ok:
-        feasibility_note = "swept_footprint_crossing_without_required_vertical_margin"
+    if tcp_crosses and large_vertical_motion and not overpass_clearance_ok:
+        feasibility_note = "tcp_footprint_crossing_without_required_vertical_margin"
     elif route_class == "true_overpass":
         feasibility_note = "true_overpass_has_required_vertical_margin"
     else:
@@ -215,6 +270,14 @@ def route_geometry_audit(
         "xy_inflation_m": xy_inflation,
         "tcp_samples_inside_inflated_obstacle_xy": int(np.count_nonzero(tcp_inside_xy)),
         "tcp_crosses_inflated_obstacle_xy": bool(np.any(tcp_inside_xy)),
+        "tcp_samples_inside_core_obstacle_xy": int(np.count_nonzero(tcp_inside_core_xy)),
+        "tcp_crosses_core_obstacle_xy": tcp_crosses,
+        "tcp_min_z_inside_footprint_m": None if not tcp_crosses else float(np.min(cand_tcp[tcp_inside_core_xy, 2])),
+        "overpass_tool_links": sorted(tool_links),
+        "tool_surface_points_inside_core_obstacle_xy": tool_inside_count,
+        "tool_surface_crosses_core_obstacle_xy": tool_crosses,
+        "tool_surface_min_z_inside_core_footprint_m": None if not tool_crosses else tool_min_z_inside,
+        "tool_surface_max_z_inside_core_footprint_m": None if not tool_crosses else tool_max_z_inside,
         "robot_surface_points_inside_inflated_obstacle_xy": swept_inside_count,
         "robot_surface_crosses_inflated_obstacle_xy": swept_crosses,
         "robot_surface_min_z_inside_footprint_m": None if not swept_crosses else swept_min_z_inside,
@@ -223,6 +286,9 @@ def route_geometry_audit(
         "large_vertical_motion": large_vertical_motion,
         "lateral_motion": lateral_motion,
         "overpass_clearance_ok": overpass_clearance_ok,
+        "tcp_overpass_clearance_ok": tcp_overpass_clearance_ok,
+        "tool_overpass_clearance_ok": tool_overpass_clearance_ok,
+        "swept_surface_overpass_clearance_ok": swept_overpass_clearance_ok,
         "route_class": route_class,
         "route_feasibility_note": feasibility_note,
     }
@@ -333,6 +399,12 @@ def summarize_plan(plan_dir: Path, surface_model: Any, evaluator: Any, config: d
     z_stats = get_nested(summary, ["candidate", "tcp_z_stats"], {})
     strict_ok = bool(summary.get("accepted_for_real_execution", False))
     geometric_ok = geometric_dense_ok(checks)
+    family_report = (
+        get_nested(summary, ["candidate", "route_family_constraints"], None)
+        or summary.get("route_family_constraints")
+        or {"enabled": False, "accepted": True, "max_violation_m": 0.0}
+    )
+    route_family_ok = bool((not family_report.get("enabled", False)) or family_report.get("accepted", False))
     trajectory_energy = float(candidate.energy())
     obstacle_points = np.asarray(data["obstacle_points"], dtype=np.float64)
     clearance = dense_clearance_audit(candidate, obstacle_points, evaluator, config, args)
@@ -384,10 +456,33 @@ def summarize_plan(plan_dir: Path, surface_model: Any, evaluator: Any, config: d
         **clearance,
         **time_scale,
         "route_geometry_audit": route,
+        "route_family_constraints": family_report,
         **metrics,
     }
     item["route_class"] = route["route_class"]
-    item["hard_feasible_for_execution"] = bool(strict_ok)
+    route_geometry_ok = bool(
+        route["route_class"] != "footprint_crossing_vertical"
+        or route["overpass_clearance_ok"]
+    )
+    family_name = str(family_report.get("route_family", "none"))
+    family_geometry_ok = True
+    if family_report.get("enabled", False):
+        if family_name in {"base_side", "outer_side"}:
+            family_geometry_ok = route["route_class"] == "lateral"
+        elif family_name == "overpass":
+            family_geometry_ok = route["route_class"] == "true_overpass"
+    route_family_ok = bool(route_family_ok and family_geometry_ok)
+    item["route_geometry_ok"] = route_geometry_ok
+    item["route_family_geometry_ok"] = family_geometry_ok
+    item["route_family_ok"] = route_family_ok
+    item["hard_feasible_for_execution"] = bool(strict_ok and route_geometry_ok and route_family_ok)
+    item["hard_reject_reasons"] = standardized_hard_reject_reasons(
+        summary,
+        dense,
+        route_geometry_ok,
+        route_family_ok,
+        args,
+    )
     return item
 
 
@@ -452,15 +547,16 @@ def render_report(payload: dict[str, Any]) -> str:
         "",
         "## Ranked Candidates",
         "",
-        "| rank | candidate | route | feasible | near T | selected rank | min dist / m | T_req / s | L_TCP / m | L_TCP ratio | L_q / rad | jerk | J_clear | max z dev / m | p99 height / m | footprint pts | reasons |",
-        "| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| rank | candidate | route | feasible | route geom | family ok | near T | selected rank | min dist / m | T_req / s | L_TCP / m | L_TCP ratio | L_q / rad | jerk | J_clear | max z dev / m | p99 height / m | footprint pts | reasons |",
+        "| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for i, item in enumerate(payload["ranked_all"], 1):
         score_text = "NA" if item["selection_score"] is None else f"{float(item['selection_score']):.4f}"
         route = item.get("route_geometry_audit", {})
         lines.append(
             f"| {i} | `{item['name']}` | {item['route_class']} | "
-            f"{str(item['hard_feasible_for_execution'])} | {str(item['near_best_time'])} | "
+            f"{str(item['hard_feasible_for_execution'])} | {str(item.get('route_geometry_ok'))} | "
+            f"{str(item.get('route_family_ok'))} | {str(item['near_best_time'])} | "
             f"{score_text} | "
             f"{float(item['dense_min_distance_m'] or 0.0):.4f} | "
             f"{float(item['required_execution_time_s']):.3f} | "
@@ -472,7 +568,7 @@ def render_report(payload: dict[str, Any]) -> str:
             f"{float(item['max_tcp_z_deviation_m'] or 0.0):.4f} | "
             f"{float(route.get('robust_obstacle_height_p99_m') or 0.0):.4f} | "
             f"{int(route.get('robot_surface_points_inside_inflated_obstacle_xy') or 0)} | "
-            f"{','.join(item['dense_reasons']) or '-'} |"
+            f"{','.join(item.get('hard_reject_reasons', [])) or '-'} |"
         )
     lines.extend(
         [
@@ -573,6 +669,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--route-samples", type=int, default=81)
     parser.add_argument("--route-density", choices=["coarse", "medium", "dense"], default="medium")
+    parser.add_argument(
+        "--overpass-tool-links",
+        default="gripper_base_link,left_link,right_link",
+        help="comma-separated tool/end-effector links used for overpass bottom-surface audit",
+    )
     parser.add_argument("--time-scale-dt", type=float, default=0.02)
     parser.add_argument(
         "--time-near-optimal-ratio",
