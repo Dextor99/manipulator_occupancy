@@ -1,0 +1,130 @@
+{
+  "created_at": "2026-08-07T07:58:43.476749+00:00",
+  "robot_commanded": true,
+  "execute_requested": true,
+  "operator_phrase_ok": true,
+  "required_operator_phrase": "CCRO_652_PLANAR_Y_APPROVED",
+  "sequence": [
+    {
+      "label": "move_to_start",
+      "method": "movel_line",
+      "return_code": 0,
+      "target_pose": [
+        0.587499377539939,
+        0.4,
+        0.5394985752880416,
+        3.141582000945433,
+        3.770866151076173e-06,
+        1.5707854078344272
+      ],
+      "actual_pose_after": [
+        0.5871490452958595,
+        0.3979556183963536,
+        0.5394764472499755,
+        -3.141560961972821,
+        5.4695678675512515e-05,
+        1.570814702606418
+      ],
+      "actual_joint_after": [
+        0.8682992458343506,
+        -0.4254032373428345,
+        1.0295530557632446,
+        -0.11590234935283661,
+        1.5707852840423584,
+        0.8682809472084045
+      ],
+      "position_error_m": 0.0020742995137246188,
+      "reach_check": {
+        "reached": true,
+        "label": "move_to_start",
+        "actual_pose": [
+          0.5853257976546823,
+          0.38714449419449193,
+          0.5395157887209114,
+          3.1415796041004516,
+          1.6983310597658976e-06,
+          1.5707706272903772
+        ],
+        "position_error_m": 0.013037974357058535,
+        "wait_s": 19.88103750399023,
+        "sample_count": 198
+      },
+      "elapsed_s": 20.287174918994424
+    }
+  ],
+  "parameters": {
+    "execute": true,
+    "operator_phrase": "CCRO_652_PLANAR_Y_APPROVED",
+    "sdk_dir": null,
+    "output": "results/new/6_5/6_5_2/reset_to_planar_start_xp10_r14",
+    "home_joints_deg": "0,0,90,0,90,0",
+    "x_offset": 0.1,
+    "y_start": 0.4,
+    "y_goal": -0.4,
+    "line_velocity_m_s": 0.03,
+    "line_acc_m_s2": 0.08,
+    "settle_s": 0.4,
+    "poll_s": 0.1,
+    "motion_timeout_s": 80.0,
+    "pose_tolerance_m": 0.015,
+    "joint_tolerance_rad": 0.02,
+    "allow_movel_fallback": false,
+    "stop_after_start": true,
+    "min_x": -0.2,
+    "max_x": 0.9,
+    "min_y": -0.55,
+    "max_y": 0.55,
+    "min_z": 0.25,
+    "max_z": 0.9
+  },
+  "home_joints_deg": [
+    0.0,
+    0.0,
+    90.0,
+    0.0,
+    90.0,
+    0.0
+  ],
+  "home_joints_rad": [
+    0.0,
+    0.0,
+    1.5707963267948966,
+    0.0,
+    1.5707963267948966,
+    0.0
+  ],
+  "sdk_so": "/home/hzy/Code/manipulator_occupancy/robot/01_calibrate_robot/build/modules/pybind/robot.cpython-310-x86_64-linux-gnu.so",
+  "home_reach_check": {
+    "reached": true,
+    "label": "movej_home",
+    "actual_joint": [
+      -0.00044016336323693395,
+      -0.00037780689308419824,
+      1.5703964233398438,
+      -0.000399815064156428,
+      1.5707817077636719,
+      -0.0004254912491887808
+    ],
+    "joint_l2_error_rad": 0.0009151574798348879,
+    "wait_s": 0.0020741929911309853,
+    "sample_count": 1
+  },
+  "home_pose_after_movej": [
+    0.48749937753993894,
+    -0.19100039029703822,
+    0.5394985752880416,
+    3.141582000945433,
+    3.770866151076173e-06,
+    1.5707854078344272
+  ],
+  "home_joint_after_movej": [
+    0.0,
+    3.6680280572909396e-06,
+    1.5708073377609253,
+    1.834014074120205e-05,
+    1.570792555809021,
+    1.1004083717125468e-05
+  ],
+  "status": "STOPPED_AT_START",
+  "stop_note": "Robot moved to the planar start pose and the program exited before the goal stroke. It is now safe to run a separate perception/planning script after confirming the robot controller is not occupied by this process."
+}
