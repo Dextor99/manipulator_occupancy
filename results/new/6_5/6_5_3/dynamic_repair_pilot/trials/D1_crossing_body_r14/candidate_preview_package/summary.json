@@ -1,0 +1,100 @@
+{
+  "created_at": "2026-08-10T08:03:44.985814+00:00",
+  "source_trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r14",
+  "source_candidate_summary": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r14/candidate/candidate_summary.json",
+  "status": "DYNAMIC_SHADOW_CANDIDATE_PREVIEW_PACKAGE",
+  "accepted_for_real_execution": false,
+  "accepted_scope_note": "Accepted only for guarded low-speed preview of this validated local candidate. This does not prove online dynamic trajectory switching. If accepted_steps=0, the trajectory is only the local reference continuation and must not be reported as a repaired avoidance candidate.",
+  "accepted_for_switch_from_source": true,
+  "repair_step_ok": false,
+  "accepted_steps": 0,
+  "candidate_is_reference_continuation": true,
+  "trajectory_type": "fast_local_CCRO_NUBS_joint_space_candidate",
+  "q_start_rad": [
+    0.18178748,
+    -0.15643772,
+    1.3985604,
+    -0.01587156,
+    1.57080734,
+    0.18179114
+  ],
+  "q_goal_rad": [
+    0.14726752,
+    -0.16258633,
+    1.39094057,
+    -0.01716715,
+    1.57080734,
+    0.14738092
+  ],
+  "candidate": {
+    "dense_verification": {
+      "accepted": true,
+      "min_distance": 0.21262160783287898,
+      "checks": {
+        "solver_ok": true,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": true,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true,
+        "forecast_horizon_ok": true
+      },
+      "reasons": []
+    },
+    "fast_elapsed_ms": 324.4646009989083,
+    "fast_budget_ms": 500.0,
+    "obstacle_center": [
+      0.6084131623092516,
+      -0.57219589373267,
+      0.3734275384870885
+    ],
+    "obstacle_radius": 0.1423788401740321,
+    "risk_links": [
+      "foreArm_Link",
+      "upperArm_Link",
+      "wrist1_Link",
+      "wrist2_Link"
+    ]
+  },
+  "dynamic_trial": {
+    "status": "TRIGGERED",
+    "trigger_frame": 131,
+    "current_min_distance_m": 0.34797,
+    "predicted_min_distance_m": 0.232453,
+    "guard_min_distance_m": 0.360755
+  },
+  "tcp_stats": {
+    "tcp_link": "gripper_base_link",
+    "start": [
+      0.5874327408738419,
+      -0.08622131584988817,
+      0.5395502435143101
+    ],
+    "goal": [
+      0.5869988894467929,
+      -0.10601507942922038,
+      0.539646172161432
+    ],
+    "path_length_m": 0.019799690878124204,
+    "z_min_m": 0.5395502435143101,
+    "z_max_m": 0.539646172161432,
+    "z_range_m": 9.592864712182347e-05
+  },
+  "trajectory_csv_stats": {
+    "waypoints": 101,
+    "duration_s": 1.0,
+    "max_abs_joint_step_rad": 0.0005674300000000077
+  },
+  "files": [
+    "summary.json",
+    "ccro_nubs_candidate_trajectory.csv",
+    "preview_geometry.npz",
+    "figures/joint_trajectory_preview.png",
+    "figures/tcp_xyz_preview.png",
+    "figures/top_view_dynamic_candidate.png"
+  ]
+}

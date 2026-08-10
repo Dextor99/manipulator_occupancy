@@ -297,3 +297,54 @@ motion both contribute naturally through the 3D TCP path length.  Use
 `select_652_candidate_family.py` and `audit_652_objective_terms.py` to document
 the selected candidate, Pareto status, normalized score, and reasons for
 rejecting or deprioritizing alternatives.
+
+
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_2/execute_652_planar_y_guarded.py \
+  --execute \
+  --operator-phrase CCRO_652_PLANAR_Y_APPROVED \
+  --stop-after-start \
+  --x-offset 0.10 \
+  --y-start 0.4 \
+  --y-goal -0.4 \
+  --line-velocity-m-s 0.03 \
+  --line-acc-m-s2 0.08 \
+  --motion-timeout-s 80 \
+  --pose-tolerance-m 0.015 \
+  --joint-tolerance-rad 0.02 \
+  --output results/new/6_5/6_5_2/reset_to_planar_start_xp10_r12
+
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_2/plan_652_planar_static_from_live.py \
+  --scenario R-S1 \
+  --repeat 12 \
+  --x-offset 0.10 \
+  --y-start 0.4 \
+  --y-goal -0.4 \
+  --capture-duration-s 5 \
+  --self-filter-threshold 0.08 \
+  --cluster-min-points 30 \
+  --cluster-min-volume 0.001 \
+  --clearance-m 0.08 \
+  --detour-extra-m 0.05 \
+  --allow-overwrite \
+  --output results/new/6_5/6_5_2/planar_static_live
+
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_2/generate_652_multistart_candidates.py \
+  --trial-dir results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r15 \
+  --families free,base_side,outer_side,overpass \
+  --lambda-route-corridor 8000 \
+  --route-corridor-margin-m 0.08 \
+  --route-corridor-influence-m 0.25 \
+  --lambda-side-z-corridor 12000 \
+  --side-z-tolerance-m 0.05 \
+  --output results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r15/multifamily_route_locked_ccro
+
+
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_2/execute_652_ccro_nubs_offline_track_guarded.py \
+  --execute \
+  --operator-phrase CCRO_652_OFFLINE_TRACK_APPROVED \
+  --plan-dir results/new/6_5/6_5_2/planar_static_live/rs1_lateral_table_obstacle/trials/rs1_lateral_table_obstacle_r11/multifamily_route_locked_ccro/base_side \
+  --playback-duration-s 10 \
+  --joint-velc 0.008 \
+  --joint-acc 0.016 \
+  --motion-timeout-s 60 \
+  --output results/new/6_5/6_5_2/offline_track_execution/r11_base_side_execute_slow01

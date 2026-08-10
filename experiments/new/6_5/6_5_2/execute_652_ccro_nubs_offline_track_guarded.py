@@ -152,11 +152,12 @@ def wait_for_goal(robot, q_goal: np.ndarray, args: argparse.Namespace) -> tuple[
                 "goal_max_abs_error_rad": err["max_abs_rad"],
             }
         )
-        if err["max_abs_rad"] <= args.goal_tolerance_rad:
+        elapsed = now - started
+        if err["max_abs_rad"] <= args.goal_tolerance_rad and elapsed >= args.min_execution_wait_s:
             return (
                 {
                     "reached": True,
-                    "elapsed_s": now - started,
+                    "elapsed_s": elapsed,
                     "goal_error": err,
                     "actual_joint_rad": last.tolist(),
                     "sample_count": len(samples),
@@ -377,6 +378,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--joint-acc", type=float, default=0.04)
     parser.add_argument("--start-tolerance-rad", type=float, default=0.035)
     parser.add_argument("--goal-tolerance-rad", type=float, default=0.035)
+    parser.add_argument(
+        "--min-execution-wait-s",
+        type=float,
+        default=0.0,
+        help="minimum time to wait after Offline Track startup before accepting goal tolerance",
+    )
     parser.add_argument("--motion-timeout-s", type=float, default=90.0)
     parser.add_argument("--poll-s", type=float, default=0.05)
     return parser

@@ -1,0 +1,115 @@
+{
+  "created_at": "2026-08-10T07:03:05.696060+00:00",
+  "experiment": "6.5.3 stop interface validation",
+  "robot_commanded": true,
+  "execute_requested": true,
+  "operator_phrase_ok": true,
+  "required_operator_phrase": "CCRO_653_STOP_VALIDATION_APPROVED",
+  "parameters": {
+    "execute": true,
+    "operator_phrase": "CCRO_653_STOP_VALIDATION_APPROVED",
+    "sdk_dir": null,
+    "output": "results/new/6_5/6_5_3/stop_interface_validation/r03",
+    "home_joints_deg": "0,0,90,0,90,0",
+    "x_offset": 0.1,
+    "y_start": 0.4,
+    "y_goal": -0.4,
+    "line_velocity_m_s": 0.01,
+    "line_acc_m_s2": 0.025,
+    "start_line_velocity_m_s": 0.03,
+    "start_line_acc_m_s2": 0.08,
+    "stop_after_s": 3.0,
+    "record_after_stop_s": 4.0,
+    "start_settle_s": 0.5,
+    "settle_s": 0.4,
+    "poll_s": 0.04,
+    "motion_timeout_s": 60.0,
+    "pose_tolerance_m": 0.02,
+    "joint_tolerance_rad": 0.02,
+    "max_post_stop_drift_m": 0.01,
+    "skip_logout": true,
+    "min_x": -0.2,
+    "max_x": 0.9,
+    "min_y": -0.55,
+    "max_y": 0.55,
+    "min_z": 0.25,
+    "max_z": 0.9
+  },
+  "sdk_so": "/home/hzy/Code/manipulator_occupancy/robot/01_calibrate_robot/build/modules/pybind/robot.cpython-310-x86_64-linux-gnu.so",
+  "home_pose": [
+    0.48749861826435464,
+    -0.19100076044188227,
+    0.539497713297834,
+    3.141588925164267,
+    7.347294234772415e-06,
+    1.5708036504878944
+  ],
+  "start_pose": [
+    0.5874986182643547,
+    0.4,
+    0.539497713297834,
+    3.141588925164267,
+    7.347294234772415e-06,
+    1.5708036504878944
+  ],
+  "goal_pose": [
+    0.5874986182643547,
+    -0.4,
+    0.539497713297834,
+    3.141588925164267,
+    7.347294234772415e-06,
+    1.5708036504878944
+  ],
+  "move_to_start_return": 0,
+  "start_reach_check": {
+    "label": "move_to_start",
+    "reached": true,
+    "elapsed_s": 19.660410542972386,
+    "position_error_m": 0.019626701984372687,
+    "actual_pose": [
+      0.5842191543074908,
+      0.38064922478753044,
+      0.5395044672213136,
+      3.141558032495622,
+      -2.8436205688456383e-05,
+      1.570810974180892
+    ],
+    "sample_count": 482
+  },
+  "start_pose_actual": [
+    0.5842191543074908,
+    0.38064922478753044,
+    0.5395044672213136,
+    3.141558032495622,
+    -2.8436205688456383e-05,
+    1.570810974180892
+  ],
+  "start_error_m": 0.019626701984372687,
+  "reference_motion_return": 0,
+  "stop_called_at_s": 3.028899432043545,
+  "stop_info": {
+    "method": "move_control_stop",
+    "return": 0
+  },
+  "status": "STOP_VALIDATION_RECORDED",
+  "before_stop_motion": {
+    "sample_count": 74,
+    "max_tcp_speed_m_s": 0.011108638855075256,
+    "tail_tcp_speed_m_s": 0.009644278536411824,
+    "max_joint_l2_speed_rad_s": 0.03296767634595562,
+    "tail_joint_l2_speed_rad_s": 0.02700619152548983,
+    "tcp_path_length_m": 0.02690388975206057,
+    "joint_path_length_rad": 0.07842882990065038
+  },
+  "after_stop_motion": {
+    "sample_count": 82,
+    "max_tcp_speed_m_s": 9.982938955171431e-05,
+    "tail_tcp_speed_m_s": 0.0,
+    "max_joint_l2_speed_rad_s": 0.0003084413318940911,
+    "tail_joint_l2_speed_rad_s": 0.0,
+    "tcp_path_length_m": 2.5760654389625282e-05,
+    "joint_path_length_rad": 9.95591285939594e-05
+  },
+  "post_stop_tcp_drift_m": 1.0310974735725177e-05,
+  "stop_effective_by_drift": true
+}

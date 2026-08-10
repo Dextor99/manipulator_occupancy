@@ -1,0 +1,1227 @@
+#!/usr/bin/env python3
+"""Run a 6.5.3 dynamic-obstacle Fast CCRO-NUBS trial.
+
+This first real-system implementation is intentionally staged:
+
+* ``--mode shadow`` opens RealSense + AUBO feedback, detects/tracks dynamic
+  obstacles, triggers STRO/CCRO risk, generates a 1 s Fast CCRO-NUBS candidate,
+  validates it, and saves logs/figures.  It never commands the robot.
+* ``--mode moving-shadow-stop`` additionally commands the familiar 6.5.2
+  low-speed reference line and stops on trigger/hold.  It still does not switch
+  to the candidate trajectory; it is the required pilot before live switching.
+* ``--mode live-stop-replan-execute`` commands the same low-speed reference,
+  stops on trigger, generates a Fast CCRO-NUBS local candidate, and executes it
+  only when the candidate is accepted and an additional execution phrase is
+  supplied.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+from datetime import datetime, timezone
+import importlib
+import json
+import math
+from pathlib import Path
+import sys
+import time
+import traceback
+from typing import Any
+
+import numpy as np
+from scipy.spatial import cKDTree
+
+ROOT = Path(__file__).resolve().parents[4]
+EXP651 = ROOT / "experiments" / "new" / "6_5" / "6_5_1"
+EXP652 = ROOT / "experiments" / "new" / "6_5" / "6_5_2"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+for p in (EXP651, EXP652):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+
+EXP64 = ROOT / "experiments" / "new" / "6_4"
+common64 = importlib.import_module("experiments.new.6_4.common_64")
+repair_v3_mod = importlib.import_module("experiments.new.6_4.repair.repair_v3")
+constant_forecast = common64.constant_forecast
+load_stage4_config = common64.load_stage4_config
+load_stage4_surface_model = common64.load_surface_model
+make_risk_stack = common64.make_risk_stack
+run_repair_v3 = repair_v3_mod.run_repair_v3
+from execute_652_planar_y_guarded import (  # noqa: E402
+    call_cartesian_motion,
+    check_pose_limits,
+    make_pose,
+    parse_home_degrees,
+    require_confirmation,
+    wait_for_joints,
+)
+from execute_652_ccro_nubs_offline_track_guarded import (  # noqa: E402
+    joint_error,
+    maybe_downsample,
+    resample_for_offline_track,
+    trajectory_stats,
+)
+from perception.geometry_fit import make_occupancy_object  # noqa: E402
+from perception.occupancy_tracker import OccupancyTracker  # noqa: E402
+from planning.nubs_trajectory import NUBSTrajectory6D  # noqa: E402
+from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
+from risk.prediction import RiskSphere, predict_risk_spheres  # noqa: E402
+from risk.safety_policy import SafetyPolicy  # noqa: E402
+from robot.robot_commander import RobotCommander  # noqa: E402
+from robot.safety_guided_motion import (  # noqa: E402
+    AdaptiveSafetyController,
+    _find_nearest_cluster_distance_detail,
+    _is_obstacle_in_motion_direction,
+)
+from run_651_perception_capture import (  # noqa: E402
+    JOINT_NAMES,
+    load_surface_model as load_live_surface_model,
+    nearest_cluster_to_links,
+    nearest_sphere_to_links,
+    q_from_reader,
+    risk_color_level,
+)
+from robot.linear_move_debug import fmt_joints  # noqa: E402
+from test_clustering_filtering import FastClusteringFilter, TemporalDenoiser  # noqa: E402
+from test_remove_robot_points_fast import SceneProcessor  # noqa: E402
+from utils.config import load_config_dir  # noqa: E402
+
+
+DEFAULT_OUTPUT = ROOT / "results" / "new" / "6_5" / "6_5_3" / "dynamic_repair_formal"
+REQUIRED_OPERATOR_PHRASE = "CCRO_653_DYNAMIC_SHADOW_APPROVED"
+LIVE_CANDIDATE_EXECUTE_PHRASE = "CCRO_653_LIVE_CANDIDATE_EXECUTE_APPROVED"
+
+SCENARIOS = {
+    "D1": {
+        "name": "crossing_body",
+        "description": "hand-held foam obstacle crosses upper-arm/forearm region",
+        "prompt": "准备让泡沫障碍横向经过 upper-arm / forearm 区域",
+        "risk_links": {"upperArm_Link", "foreArm_Link", "wrist1_Link", "wrist2_Link"},
+    },
+    "D2": {
+        "name": "approaching_wrist",
+        "description": "hand-held foam obstacle obliquely approaches wrist/gripper region",
+        "prompt": "准备让泡沫障碍从侧前方斜向接近 wrist / gripper 区域",
+        "risk_links": {"foreArm_Link", "wrist1_Link", "wrist2_Link", "wrist3_Link", "gripper_base_link", "left_link", "right_link"},
+    },
+}
+
+FRAME_FIELDS = [
+    "frame",
+    "t_s",
+    "timestamp",
+    "scene_points",
+    "robot_points",
+    "cluster_count",
+    "stable_track_count",
+    "risk_sphere_count",
+    "nearest_distance_m",
+    "nearest_link",
+    "nearest_cluster_index",
+    "nearest_cluster_x",
+    "nearest_cluster_y",
+    "nearest_cluster_z",
+    "predicted_distance_m",
+    "predicted_nearest_link",
+    "predicted_tau_s",
+    "risk_state_current",
+    "risk_state_predicted",
+    "max_track_speed_m_s",
+    "motion_y_m",
+    "guard_distance_m",
+    "guard_object_id",
+    "guard_in_motion_direction",
+    "guard_speed_scale",
+    "guard_decision",
+    "guard_cluster_count",
+    "guard_robot_points_source",
+    "guard_robot_points_count",
+    "elapsed_ms",
+    *[f"q{j+1}_rad" for j in range(6)],
+    *[f"qd{j+1}_rad_s" for j in range(6)],
+]
+
+
+def json_default(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    return str(value)
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=json_default), encoding="utf-8")
+
+
+def write_csv(path: Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def build_trial_dir(args: argparse.Namespace) -> Path:
+    cfg = SCENARIOS[args.scene]
+    return args.output.resolve() / "trials" / f"{args.scene}_{cfg['name']}_r{args.repeat:02d}"
+
+
+def estimate_qd(history: list[tuple[float, np.ndarray]]) -> np.ndarray:
+    if len(history) < 2:
+        return np.zeros(6)
+    t1, q1 = history[-1]
+    for t0, q0 in reversed(history[:-1]):
+        dt = t1 - t0
+        if dt > 1.0e-3:
+            return (q1 - q0) / dt
+    return np.zeros(6)
+
+
+def radius_from_clusters(clusters: list[Any], cluster_index: int | None, fallback: float) -> float:
+    if cluster_index is None or cluster_index < 0 or cluster_index >= len(clusters):
+        return float(fallback)
+    pts = np.asarray(clusters[cluster_index].points, dtype=np.float64)
+    if len(pts) == 0:
+        return float(fallback)
+    center = np.asarray(clusters[cluster_index].center, dtype=np.float64)
+    return float(max(np.percentile(np.linalg.norm(pts - center[None, :], axis=1), 90), fallback))
+
+
+def object_track_id(obj: Any) -> int | None:
+    for name in ("object_id", "id", "track_id"):
+        value = getattr(obj, name, None)
+        if value is not None:
+            try:
+                return int(value)
+            except Exception:
+                return None
+    return None
+
+
+def select_stable_object(stable: list[Any], predicted_best: dict[str, Any], risk_spheres: list[RiskSphere]) -> Any:
+    if not stable:
+        raise RuntimeError("cannot select stable object from an empty track list")
+    target_id = predicted_best.get("object_id")
+    if target_id is not None:
+        for obj in stable:
+            if object_track_id(obj) == int(target_id):
+                return obj
+    target_center = None
+    if target_id is not None:
+        for sphere in risk_spheres:
+            if int(sphere.object_id) == int(target_id):
+                target_center = np.asarray(sphere.center, dtype=np.float64)
+                break
+    if target_center is None:
+        return max(stable, key=lambda obj: int(getattr(obj, "age", 0)))
+    return min(stable, key=lambda obj: float(np.linalg.norm(np.asarray(obj.center, dtype=np.float64) - target_center)))
+
+
+def make_local_reference(q_now: np.ndarray, qd_now: np.ndarray, args: argparse.Namespace, q_goal_hint: np.ndarray | None = None):
+    horizon = float(args.local_horizon_s)
+    segments = int(args.local_segments)
+    q_goal = q_goal_hint if q_goal_hint is not None else q_now + qd_now * horizon
+    if np.linalg.norm(q_goal - q_now) < args.min_local_motion_rad:
+        # In static shadow tests there may be almost no robot motion. Add a tiny
+        # continuation in the dominant reference direction so the repair pipeline
+        # still has a non-degenerate 1 s candidate.
+        direction = np.zeros(6)
+        direction[0] = args.shadow_joint_probe_rad
+        direction[1] = -0.5 * args.shadow_joint_probe_rad
+        q_goal = q_now + direction
+    qd_goal = np.zeros(6)
+    qdd = np.zeros(6)
+    head = NUBSTrajectory6D.make_boundary_state(q_now, qd_now, qdd)
+    tail = NUBSTrajectory6D.make_boundary_state(q_goal, qd_goal, qdd)
+    durations = np.full(segments, horizon / segments, dtype=np.float64)
+    p_inner = NUBSTrajectory6D.linear_inner_points(q_now, q_goal, durations)
+    return head, tail, durations, p_inner, q_goal
+
+
+def save_trajectory_csv(path: Path, trajectory: NUBSTrajectory6D, *, dt: float = 0.01) -> None:
+    samples = trajectory.dense_sample(dt)
+    rows: list[dict[str, Any]] = []
+    for i, t in enumerate(samples.times):
+        rows.append(
+            {
+                "t_s": f"{float(t):.6f}",
+                **{f"q{j+1}_rad": f"{samples.q[i, j]:.8f}" for j in range(6)},
+                **{f"qd{j+1}_rad_s": f"{samples.qd[i, j]:.8f}" for j in range(6)},
+                **{f"qdd{j+1}_rad_s2": f"{samples.qdd[i, j]:.8f}" for j in range(6)},
+            }
+        )
+    write_csv(path, rows, ["t_s", *[f"q{j+1}_rad" for j in range(6)], *[f"qd{j+1}_rad_s" for j in range(6)], *[f"qdd{j+1}_rad_s2" for j in range(6)]])
+
+
+def load_fast_candidate_csv(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    times: list[float] = []
+    qs: list[list[float]] = []
+    with path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            times.append(float(row["t_s"]))
+            qs.append([float(row[f"q{i}_rad"]) for i in range(1, 7)])
+    if len(qs) < 2:
+        raise RuntimeError(f"too few trajectory rows in {path}")
+    return np.asarray(times, dtype=np.float64), np.asarray(qs, dtype=np.float64)
+
+
+def wait_for_candidate_goal(
+    robot: Any,
+    q_goal: np.ndarray,
+    *,
+    goal_tolerance_rad: float,
+    min_execution_wait_s: float,
+    motion_timeout_s: float,
+    poll_s: float,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    started = time.perf_counter()
+    samples: list[dict[str, Any]] = []
+    last = np.asarray(robot.get_joint(), dtype=np.float64)
+    while time.perf_counter() - started <= motion_timeout_s:
+        now = time.perf_counter()
+        last = np.asarray(robot.get_joint(), dtype=np.float64)
+        err = joint_error(last, q_goal)
+        samples.append(
+            {
+                "t_s": now - started,
+                "actual_joint_rad": last.tolist(),
+                "goal_l2_error_rad": err["l2_rad"],
+                "goal_max_abs_error_rad": err["max_abs_rad"],
+            }
+        )
+        elapsed = now - started
+        if err["max_abs_rad"] <= goal_tolerance_rad and elapsed >= min_execution_wait_s:
+            return (
+                {
+                    "reached": True,
+                    "elapsed_s": elapsed,
+                    "goal_error": err,
+                    "actual_joint_rad": last.tolist(),
+                    "sample_count": len(samples),
+                },
+                samples,
+            )
+        time.sleep(poll_s)
+    err = joint_error(last, q_goal)
+    return (
+        {
+            "reached": False,
+            "elapsed_s": time.perf_counter() - started,
+            "goal_error": err,
+            "actual_joint_rad": last.tolist(),
+            "sample_count": len(samples),
+        },
+        samples,
+    )
+
+
+def execute_fast_candidate_offline_track(
+    robot: Any,
+    candidate_dir: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    candidate_csv = candidate_dir / "fast_ccro_nubs_candidate.csv"
+    times, qs = load_fast_candidate_csv(candidate_csv)
+    times_exec, qs_exec = resample_for_offline_track(
+        times,
+        qs,
+        playback_duration_s=args.candidate_playback_duration_s,
+        controller_period_s=args.candidate_controller_waypoint_period_s,
+    )
+    times_exec, qs_exec = maybe_downsample(times_exec, qs_exec, args.candidate_max_waypoints)
+    min_wait = args.candidate_min_execution_wait_s
+    if min_wait <= 0.0 and args.candidate_playback_duration_s > 0.0:
+        min_wait = 0.90 * args.candidate_playback_duration_s
+
+    log: dict[str, Any] = {
+        "candidate_csv": str(candidate_csv),
+        "robot_commanded": False,
+        "source_trajectory_stats": trajectory_stats(times, qs),
+        "execution_waypoint_stats": trajectory_stats(times_exec, qs_exec),
+        "playback_duration_s": args.candidate_playback_duration_s,
+        "controller_waypoint_period_s": args.candidate_controller_waypoint_period_s,
+        "joint_velc": args.candidate_joint_velc,
+        "joint_acc": args.candidate_joint_acc,
+        "min_execution_wait_s": min_wait,
+    }
+
+    if not hasattr(robot, "offline_track_execute_joints"):
+        raise RuntimeError("current robot .so does not expose offline_track_execute_joints")
+    actual_start = np.asarray(robot.get_joint(), dtype=np.float64)
+    start_err = joint_error(actual_start, qs_exec[0])
+    log["actual_start_joint_rad"] = actual_start.tolist()
+    log["candidate_start_joint_rad"] = qs_exec[0].tolist()
+    log["start_error"] = start_err
+    if start_err["max_abs_rad"] > args.candidate_start_tolerance_rad:
+        raise RuntimeError(
+            f"current joints are not near dynamic candidate start: "
+            f"{start_err['max_abs_rad']:.5f} rad > {args.candidate_start_tolerance_rad:.5f} rad"
+        )
+
+    if args.candidate_execute_confirm:
+        require_confirmation(
+            True,
+            "Step 2/2: candidate has passed software checks. "
+            "Confirm obstacle state and emergency stop, then press Enter to execute the local candidate.",
+        )
+
+    started = time.perf_counter()
+    ret_info = robot.offline_track_execute_joints(
+        qs_exec.tolist(),
+        args.candidate_joint_velc,
+        args.candidate_joint_acc,
+        False,
+        True,
+        True,
+    )
+    log["robot_commanded"] = True
+    log["offline_track_return"] = dict(ret_info)
+    if int(ret_info.get("startup_ret", -9999)) != 0:
+        raise RuntimeError(f"offline track startup failed: {ret_info}")
+    goal_check, feedback_samples = wait_for_candidate_goal(
+        robot,
+        qs_exec[-1],
+        goal_tolerance_rad=args.candidate_goal_tolerance_rad,
+        min_execution_wait_s=min_wait,
+        motion_timeout_s=args.candidate_motion_timeout_s,
+        poll_s=args.poll_s,
+    )
+    log["goal_check"] = goal_check
+    log["feedback_samples"] = feedback_samples
+    log["elapsed_s"] = time.perf_counter() - started
+    if not goal_check["reached"]:
+        raise RuntimeError(f"dynamic candidate offline track did not reach goal: {goal_check}")
+    log["status"] = "COMPLETED_DYNAMIC_CANDIDATE_EXECUTION"
+    return log
+
+
+def run_fast_repair(
+    args: argparse.Namespace,
+    stage4_config: dict[str, Any],
+    stage4_model: RobotSurfaceModel,
+    *,
+    q_now: np.ndarray,
+    qd_now: np.ndarray,
+    center: np.ndarray,
+    velocity: np.ndarray,
+    radius: float,
+    risk_links: set[str],
+    trial_dir: Path,
+    q_goal_hint: np.ndarray | None = None,
+) -> dict[str, Any]:
+    evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
+    forecast = constant_forecast(center, velocity, radius)
+    head, tail, durations, p_inner, q_goal = make_local_reference(q_now, qd_now, args, q_goal_hint=q_goal_hint)
+    started = time.perf_counter()
+    result = run_repair_v3(
+        evaluator,
+        forecast,
+        limits,
+        p_inner,
+        head,
+        tail,
+        durations,
+        dense_active=True,
+        v4_mode=True,
+    )
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    verification = verifier.verify(
+        result.trajectory,
+        forecast,
+        current_q=q_now,
+        current_qd=qd_now,
+        current_qdd=np.zeros(6),
+        q_goal=q_goal,
+        solver_success=True,
+    )
+    repair_step_ok = int(result.accepted_steps) > 0
+    accepted = bool(
+        elapsed_ms <= args.fast_budget_ms
+        and verification.min_distance >= args.online_accept_m
+        and all({**verification.checks, "solver_ok": True}.values())
+        and repair_step_ok
+    )
+    rejection_reasons = []
+    if elapsed_ms > args.fast_budget_ms:
+        rejection_reasons.append("fast_budget_exceeded")
+    if verification.min_distance < args.online_accept_m:
+        rejection_reasons.append("online_clearance_failed")
+    failed_checks = [name for name, ok in verification.checks.items() if not ok]
+    if failed_checks:
+        rejection_reasons.append("verification_checks_failed:" + ",".join(failed_checks))
+    if not repair_step_ok:
+        rejection_reasons.append("no_accepted_repair_step")
+    candidate_dir = trial_dir / "candidate"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    save_trajectory_csv(candidate_dir / "fast_ccro_nubs_candidate.csv", result.trajectory, dt=0.01)
+    payload = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "ACCEPTED_CANDIDATE" if accepted else "REJECTED_CANDIDATE",
+        "accepted_for_switch": accepted,
+        "repair_step_ok": repair_step_ok,
+        "rejection_reasons": rejection_reasons,
+        "candidate_is_reference_continuation": not repair_step_ok,
+        "fast_elapsed_ms": elapsed_ms,
+        "fast_budget_ms": args.fast_budget_ms,
+        "online_accept_m": args.online_accept_m,
+        "verification_min_distance_m": verification.min_distance,
+        "verification_reasons": verification.reasons,
+        "verification_checks": verification.checks,
+        "repair_iterations": result.iterations,
+        "accepted_steps": result.accepted_steps,
+        "active_constraints": result.active_constraints,
+        "qp_successes": result.qp_successes,
+        "risk_scan_ms": result.risk_scan_ms,
+        "linearization_ms": result.linearization_ms,
+        "qp_ms": result.qp_ms,
+        "messages": result.messages,
+        "q_now": q_now.tolist(),
+        "qd_now": qd_now.tolist(),
+        "q_goal": q_goal.tolist(),
+        "obstacle_center": center.tolist(),
+        "obstacle_velocity": velocity.tolist(),
+        "obstacle_radius": radius,
+        "risk_links": sorted(risk_links),
+        "candidate_csv": str(candidate_dir / "fast_ccro_nubs_candidate.csv"),
+    }
+    write_json(candidate_dir / "candidate_summary.json", payload)
+    return payload
+
+
+def maybe_move_stop(robot: Any) -> Any:
+    for name in (
+        "move_control_stop",
+        "offline_track_stop",
+        "teach_stop",
+        "move_stop",
+        "MoveStop",
+        "stop",
+        "robotServiceRobotMoveStop",
+    ):
+        if hasattr(robot, name):
+            try:
+                return {"method": name, "return": getattr(robot, name)(True)}
+            except TypeError:
+                try:
+                    return {"method": name, "return": getattr(robot, name)()}
+                except Exception:
+                    pass
+            except Exception:
+                try:
+                    return {"method": name, "return": getattr(robot, name)()}
+                except Exception:
+                    pass
+    return {"method": None, "return": None, "error": "no supported stop function found"}
+
+
+def filter_guard_clusters(clusters: list[Any], args: argparse.Namespace) -> list[Any]:
+    """Keep only obstacle clusters in the dynamic-test guard workspace.
+
+    The emergency point-cloud guard is intentionally more direct than CCRO/STRO,
+    but in the real setup it can see low table/base/self-filter residuals near
+    the shoulder. Those are not the handheld D1/D2 obstacles and can otherwise
+    cause a false stop before the operator introduces the foam target.
+    """
+    kept = []
+    for cluster in clusters:
+        center = np.asarray(cluster.center, dtype=np.float64)
+        if not np.all(np.isfinite(center)) or center.shape[0] < 3:
+            continue
+        if center[0] < args.guard_min_x or center[0] > args.guard_max_x:
+            continue
+        if center[1] < args.guard_min_y or center[1] > args.guard_max_y:
+            continue
+        if center[2] < args.guard_min_z or center[2] > args.guard_max_z:
+            continue
+        kept.append(cluster)
+    return kept
+
+
+def guided_guard_distance(
+    robot_points: np.ndarray,
+    clusters: list[Any],
+    tracked_objects: list[Any],
+    *,
+    motion_dir_y: float,
+) -> dict[str, Any]:
+    distance, obj, obj_id, robot_pt, obs_pt = _find_nearest_cluster_distance_detail(
+        robot_points,
+        clusters,
+        tracked_objects,
+    )
+    in_motion_dir = _is_obstacle_in_motion_direction(robot_pt, obs_pt, motion_dir_y)
+    return {
+        "distance": float(distance),
+        "object": obj if in_motion_dir or distance <= 0.08 else None,
+        "object_id": obj_id if in_motion_dir or distance <= 0.08 else None,
+        "raw_object_id": obj_id,
+        "in_motion_direction": bool(in_motion_dir),
+        "robot_point": None if robot_pt is None else np.asarray(robot_pt, dtype=np.float64).tolist(),
+        "obstacle_point": None if obs_pt is None else np.asarray(obs_pt, dtype=np.float64).tolist(),
+    }
+
+
+def run(args: argparse.Namespace) -> dict[str, Any]:
+    if args.scene not in SCENARIOS:
+        raise ValueError(f"unknown scene {args.scene}")
+    trial_dir = build_trial_dir(args)
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    config_live = load_config_dir(args.config_dir)
+    safety = config_live["safety"]
+    policy = SafetyPolicy(
+        d_safe=float(safety.get("d_safe", 0.15)),
+        d_slow=float(safety.get("d_slow", 0.10)),
+        d_stop=float(safety.get("d_stop", 0.05)),
+    )
+    live_model = load_live_surface_model(args.config_dir, args.urdf)
+    stage4_config = load_stage4_config(args.stage4_config)
+    stage4_model = load_stage4_surface_model(stage4_config)
+
+    log: dict[str, Any] = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "experiment": "6.5.3 real dynamic Fast CCRO-NUBS",
+        "scene": args.scene,
+        "scene_name": SCENARIOS[args.scene]["name"],
+        "repeat": args.repeat,
+        "mode": args.mode,
+        "robot_commanded": False,
+        "operator_phrase_ok": args.operator_phrase == REQUIRED_OPERATOR_PHRASE,
+        "required_operator_phrase": REQUIRED_OPERATOR_PHRASE,
+        "trial_dir": str(trial_dir),
+        "parameters": vars(args),
+        "events": [],
+    }
+    if args.mode != "shadow" and args.operator_phrase != REQUIRED_OPERATOR_PHRASE:
+        log["status"] = "BLOCKED_BAD_OPERATOR_PHRASE"
+        write_json(trial_dir / "summary.json", log)
+        raise RuntimeError(f"bad operator phrase; required: {REQUIRED_OPERATOR_PHRASE}")
+    if args.mode == "live-execute":
+        log["status"] = "BLOCKED_LIVE_SWITCH_NOT_ENABLED"
+        log["reason"] = "Use moving-shadow-stop first; online trajectory switch execution is intentionally not enabled in this first implementation."
+        write_json(trial_dir / "summary.json", log)
+        print(json.dumps(log, indent=2, ensure_ascii=False, default=json_default))
+        return log
+
+    processor = SceneProcessor(
+        config_dir=str(args.config_dir),
+        urdf_path=str(args.urdf),
+        width=args.width,
+        height=args.height,
+        threshold=args.self_filter_threshold,
+        voxel_size=args.voxel_size,
+        use_real_robot=True,
+        use_mock_camera=False,
+    )
+    state_reader = getattr(processor, "_state_reader", None)
+    if state_reader is None or type(state_reader).__name__ != "RealRobotStateReader":
+        processor.stop()
+        raise RuntimeError("real AUBO state reader is required")
+    robot = getattr(state_reader, "sdk_module", None)
+
+    tracker = OccupancyTracker(
+        association_distance=float(safety.get("association_distance", 0.20)),
+        alpha=float(safety.get("velocity_alpha", 0.3)),
+        pos_alpha=float(safety.get("pos_alpha", 0.3)),
+        motion_gate=float(safety.get("motion_gate", 0.005)),
+        velocity_dead_zone=float(safety.get("velocity_dead_zone", 0.01)),
+        shape_alpha=float(safety.get("shape_alpha", 0.4)),
+    )
+    denoiser = (
+        TemporalDenoiser(args.denoise_voxel, args.denoise_conf, args.denoise_decay)
+        if args.temporal_denoise
+        else None
+    )
+
+    rows: list[dict[str, Any]] = []
+    q_history: list[tuple[float, np.ndarray]] = []
+    candidate_summary: dict[str, Any] | None = None
+    candidate_execution_summary: dict[str, Any] | None = None
+    commander: RobotCommander | None = None
+    guided_controller: AdaptiveSafetyController | None = None
+    triggered = False
+    trigger_frame = None
+    guard_stopped = False
+    current_distance_stopped = False
+    t0_wall = time.time()
+    caught_error: dict[str, Any] | None = None
+    ref_robot_points: np.ndarray | None = None
+    ref_robot_motion_y: float | None = None
+    robot_motion_modes = {"moving-shadow-stop", "live-stop-replan-execute"}
+
+    try:
+        if args.mode in robot_motion_modes:
+            if robot is None:
+                raise RuntimeError("SceneProcessor state reader did not expose SDK module for guarded motion")
+            step_label = "Step 1/2" if args.mode == "live-stop-replan-execute" else "Step 1/1"
+            require_confirmation(
+                True,
+                f"{step_label}: workspace clear, operator at emergency stop. "
+                f"Press Enter to start Y oscillation and guarded logging together for {args.duration_s:.1f}s. "
+                "Only introduce the foam obstacle after the robot has started moving.",
+            )
+            commander = RobotCommander(ip=args.robot_ip, base_speed=args.line_velocity_m_s, robot_mod=robot)
+            if not commander.connect(home_joints_deg=[float(v) for v in args.home_joints_deg.split(",")]):
+                raise RuntimeError("RobotCommander failed to connect")
+            commander.start_y_oscillate(
+                range_m=args.guided_range_m,
+                base_omega=args.guided_base_omega,
+                x_offset=args.x_offset,
+            )
+            guided_controller = AdaptiveSafetyController(
+                d_safe=args.guided_d_safe_m,
+                d_slow=args.guided_d_slow_m,
+                d_stop=args.guided_d_stop_m,
+                max_decel=args.guided_max_decel,
+                max_accel=args.guided_max_accel,
+                dynamic_lookahead=args.guided_dynamic_lookahead_s,
+            )
+            log["robot_commanded"] = True
+            log["reference_motion_method"] = "RobotCommander.motion_worker_y_oscillate"
+            log["guided_range_m"] = args.guided_range_m
+            log["guided_base_omega"] = args.guided_base_omega
+        elif not args.no_prompt:
+            input(f"\n[{args.scene}] shadow 模式：{SCENARIOS[args.scene]['prompt']}。按 Enter 开始 {args.duration_s:.1f}s 采集...")
+
+        started = time.perf_counter()
+        frame_index = 0
+        while time.perf_counter() - started < args.duration_s:
+            frame_started = time.perf_counter()
+            frame = processor.process_frame()
+            timestamp = float(getattr(frame, "timestamp", time.time()))
+            scene_points = np.asarray(frame.scene_points, dtype=np.float64)
+            robot_points = np.asarray(frame.robot_points, dtype=np.float64)
+            if denoiser is not None:
+                scene_points = denoiser.filter(scene_points)
+            joints, q = q_from_reader(state_reader)
+            now_rel = time.perf_counter() - started
+            q_history.append((now_rel, q.copy()))
+            q_history = q_history[-20:]
+            qd = estimate_qd(q_history)
+            plane_removal = None
+            if args.remove_planes:
+                plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
+            cluster_result = FastClusteringFilter(
+                scene_points,
+                robot_points,
+                workspace=getattr(processor, "_workspace", None),
+                plane_removal=plane_removal,
+                eps=args.cluster_eps,
+                min_samples=args.cluster_min_samples,
+                min_points=args.cluster_min_points,
+                min_volume=args.cluster_min_volume,
+            )
+            clusters = list(cluster_result.clusters)
+            guard_clusters = filter_guard_clusters(clusters, args) if args.mode in robot_motion_modes else clusters
+            eval_clusters = guard_clusters if args.mode in robot_motion_modes else clusters
+            detections = [
+                make_occupancy_object(cluster.points, timestamp=timestamp, margin=float(safety.get("shape_margin", 0.02)))
+                for cluster in eval_clusters
+            ]
+            tracked = tracker.update(detections, timestamp=timestamp)
+            stable = [obj for obj in tracked if obj.age >= args.min_track_age]
+            risk_spheres = predict_risk_spheres(
+                stable,
+                horizon=args.prediction_horizon_s,
+                step=args.prediction_step_s,
+                margin=args.prediction_margin_m,
+                uncertainty=args.prediction_uncertainty_m,
+                static_speed_threshold=float(safety.get("prediction_static_speed_threshold", 0.08)),
+                static_margin=float(safety.get("prediction_static_margin", 0.0)),
+                velocity_radius_scale=float(safety.get("prediction_velocity_radius_scale", 0.1)),
+            )
+            current_best = nearest_cluster_to_links(live_model, q, eval_clusters, density=args.surface_density)
+            predicted_best = nearest_sphere_to_links(live_model, q, risk_spheres, density=args.surface_density)
+            center = current_best["cluster_center"]
+            speeds = [float(np.linalg.norm(obj.velocity)) for obj in stable]
+            guided_info = {
+                "guard_distance_m": math.inf,
+                "guard_object_id": None,
+                "guard_in_motion_direction": False,
+                "guard_speed_scale": 1.0,
+                "guard_decision": "",
+            }
+            if args.mode in robot_motion_modes and guided_controller is not None and commander is not None:
+                motion_y = commander.get_y_pos()
+                motion_dir_y = 1.0
+                if rows:
+                    try:
+                        prev_y = float(rows[-1].get("motion_y_m", "nan"))
+                        if np.isfinite(prev_y) and abs(motion_y - prev_y) > 1.0e-5:
+                            motion_dir_y = 1.0 if motion_y > prev_y else -1.0
+                    except Exception:
+                        pass
+                # Use raw current clusters for the emergency guard. This mirrors
+                # safety_guided_motion.py and intentionally does not wait for
+                # STRO stable-track age. When self-filtering leaves too few robot
+                # points during motion, fall back to the first reliable robot cloud
+                # translated by the commanded Y displacement, matching the proven
+                # guarded-motion script.
+                guard_robot_points_source = "current"
+                if len(robot_points) > 100:
+                    rob_pts_for_guard = robot_points
+                    if ref_robot_points is None:
+                        ref_robot_points = robot_points.copy()
+                        ref_robot_motion_y = motion_y
+                elif ref_robot_points is not None and ref_robot_motion_y is not None:
+                    dy = motion_y - ref_robot_motion_y
+                    rob_pts_for_guard = ref_robot_points + np.array([0.0, dy, 0.0], dtype=np.float64)
+                    guard_robot_points_source = "translated_reference"
+                else:
+                    rob_pts_for_guard = robot_points
+                    guard_robot_points_source = "insufficient"
+
+                guard = guided_guard_distance(rob_pts_for_guard, eval_clusters, tracked, motion_dir_y=motion_dir_y)
+                guard_distance = guard["distance"]
+                guard_obj = guard["object"]
+                guard_speed_scale = guided_controller.evaluate(
+                    guard_distance,
+                    guard_obj,
+                    None,
+                    max((time.perf_counter() - frame_started), 0.03),
+                )
+                commander.set_speed_scale(guard_speed_scale)
+                guided_info = {
+                    "motion_y_m": motion_y,
+                    "guard_distance_m": guard_distance,
+                    "guard_object_id": guard["object_id"],
+                    "guard_in_motion_direction": guard["in_motion_direction"],
+                    "guard_speed_scale": guard_speed_scale,
+                    "guard_decision": guided_controller.last_decision,
+                    "guard_cluster_count": int(len(guard_clusters)),
+                    "guard_robot_points_source": guard_robot_points_source,
+                    "guard_robot_points_count": int(len(rob_pts_for_guard)),
+                    "guard_robot_point": guard["robot_point"],
+                    "guard_obstacle_point": guard["obstacle_point"],
+                }
+                if (
+                    np.isfinite(guard_distance)
+                    and guard_distance <= args.guided_hard_stop_m
+                    and not guard_stopped
+                ):
+                    commander.set_speed_scale(0.0)
+                    guard_stopped = True
+                    log["events"].append(
+                        {
+                            "type": "GUIDED_POINTCLOUD_GUARD_STOP",
+                            "frame": frame_index,
+                            "t_s": now_rel,
+                            "guard_distance_m": guard_distance,
+                            "threshold_m": args.guided_hard_stop_m,
+                            "guard_decision": guided_controller.last_decision,
+                            "guard_cluster_count": len(guard_clusters),
+                        }
+                    )
+            row = {
+                "frame": frame_index,
+                "t_s": f"{now_rel:.6f}",
+                "timestamp": f"{timestamp:.6f}",
+                "scene_points": int(len(scene_points)),
+                "robot_points": int(len(robot_points)),
+                "cluster_count": int(len(clusters)),
+                "guard_cluster_count": int(len(eval_clusters)),
+                "stable_track_count": int(len(stable)),
+                "risk_sphere_count": int(len(risk_spheres)),
+                "nearest_distance_m": "" if math.isinf(current_best["distance"]) else f"{current_best['distance']:.6f}",
+                "nearest_link": current_best["link"] or "",
+                "nearest_cluster_index": "" if current_best["cluster_index"] is None else int(current_best["cluster_index"]),
+                "nearest_cluster_x": "" if center is None else f"{center[0]:.6f}",
+                "nearest_cluster_y": "" if center is None else f"{center[1]:.6f}",
+                "nearest_cluster_z": "" if center is None else f"{center[2]:.6f}",
+                "predicted_distance_m": "" if math.isinf(predicted_best["distance"]) else f"{predicted_best['distance']:.6f}",
+                "predicted_nearest_link": predicted_best["link"] or "",
+                "predicted_tau_s": "" if predicted_best["tau"] is None else f"{predicted_best['tau']:.3f}",
+                "risk_state_current": risk_color_level(policy, current_best["distance"]),
+                "risk_state_predicted": risk_color_level(policy, predicted_best["distance"]),
+                "max_track_speed_m_s": "" if not speeds else f"{max(speeds):.6f}",
+                "motion_y_m": "" if "motion_y_m" not in guided_info else f"{guided_info['motion_y_m']:.6f}",
+                "guard_distance_m": "" if math.isinf(guided_info["guard_distance_m"]) else f"{guided_info['guard_distance_m']:.6f}",
+                "guard_object_id": "" if guided_info["guard_object_id"] is None else int(guided_info["guard_object_id"]),
+                "guard_in_motion_direction": int(bool(guided_info["guard_in_motion_direction"])),
+                "guard_speed_scale": f"{guided_info['guard_speed_scale']:.6f}",
+                "guard_decision": guided_info["guard_decision"],
+                "guard_cluster_count": guided_info.get("guard_cluster_count", len(eval_clusters) if args.mode == "moving-shadow-stop" else ""),
+                "guard_robot_points_source": guided_info.get("guard_robot_points_source", ""),
+                "guard_robot_points_count": guided_info.get("guard_robot_points_count", ""),
+                "elapsed_ms": f"{(time.perf_counter() - frame_started) * 1000.0:.4f}",
+                **{f"q{j+1}_rad": f"{q[j]:.8f}" for j in range(6)},
+                **{f"qd{j+1}_rad_s": f"{qd[j]:.8f}" for j in range(6)},
+            }
+            rows.append(row)
+
+            trigger_distance = float(predicted_best["distance"])
+            trigger_threshold = (
+                float(args.moving_shadow_replan_in_m)
+                if args.mode in robot_motion_modes
+                else float(args.replan_in_m)
+            )
+            current_distance = float(current_best["distance"])
+            current_link = current_best["link"] or ""
+            scene_risk_links = set(SCENARIOS[args.scene]["risk_links"])
+            if (
+                args.mode in robot_motion_modes
+                and np.isfinite(current_distance)
+                and current_distance <= args.moving_shadow_current_stop_m
+            ):
+                link_allowed = current_link in scene_risk_links
+                hard_any_link = current_distance <= args.moving_shadow_any_link_hard_stop_m
+                if not link_allowed and not hard_any_link:
+                    log["events"].append(
+                        {
+                            "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+                            "frame": frame_index,
+                            "t_s": now_rel,
+                            "distance_m": current_distance,
+                            "nearest_link": current_link,
+                            "allowed_links": sorted(scene_risk_links),
+                            "threshold_m": args.moving_shadow_current_stop_m,
+                            "any_link_hard_stop_m": args.moving_shadow_any_link_hard_stop_m,
+                        }
+                    )
+                    frame_index += 1
+                    continue
+                if commander is not None:
+                    commander.set_speed_scale(0.0)
+                    stop_ret = {"method": "RobotCommander.set_speed_scale", "return": 0}
+                else:
+                    stop_ret = maybe_move_stop(robot)
+                log["events"].append(
+                    {
+                        "type": "IMMEDIATE_CURRENT_DISTANCE_STOP",
+                        "frame": frame_index,
+                        "t_s": now_rel,
+                        "distance_m": current_distance,
+                        "nearest_link": current_link,
+                        "threshold_m": args.moving_shadow_current_stop_m,
+                        "return": stop_ret,
+                    }
+                )
+                current_distance_stopped = True
+                break
+            if (
+                not triggered
+                and len(stable) > 0
+                and np.isfinite(trigger_distance)
+                and trigger_distance < trigger_threshold
+                and now_rel >= args.arm_delay_s
+            ):
+                triggered = True
+                trigger_frame = frame_index
+                log["events"].append({"type": "TRIGGER", "frame": frame_index, "t_s": now_rel, "predicted_distance_m": trigger_distance})
+                if args.mode == "moving-shadow-stop":
+                    # Pilot mode is for validating sensing/trigger timing during
+                    # motion. Stop first; candidate generation is recorded only
+                    # after the stop command so optimization latency cannot eat
+                    # into the safety margin.
+                    if commander is not None:
+                        commander.set_speed_scale(0.0)
+                        stop_ret = {"method": "RobotCommander.set_speed_scale", "return": 0}
+                    else:
+                        stop_ret = maybe_move_stop(robot)
+                    log["events"].append(
+                        {
+                            "type": "IMMEDIATE_STOP_AFTER_TRIGGER",
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "predicted_distance_m": trigger_distance,
+                            "threshold_m": trigger_threshold,
+                            "return": stop_ret,
+                        }
+                    )
+                elif args.mode == "live-stop-replan-execute":
+                    if commander is not None:
+                        commander.set_speed_scale(0.0)
+                        stop_ret = {"method": "RobotCommander.set_speed_scale", "return": 0}
+                    else:
+                        stop_ret = maybe_move_stop(robot)
+                    log["events"].append(
+                        {
+                            "type": "IMMEDIATE_STOP_BEFORE_LIVE_REPLAN",
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "predicted_distance_m": trigger_distance,
+                            "threshold_m": trigger_threshold,
+                            "return": stop_ret,
+                        }
+                    )
+                selected_obj = select_stable_object(stable, predicted_best, risk_spheres)
+                radius = radius_from_clusters(clusters, current_best["cluster_index"], args.default_obstacle_radius_m)
+                q_goal_hint = None
+                if args.mode == "live-stop-replan-execute":
+                    q_goal_hint = q + qd * args.local_goal_lookahead_s
+                candidate_summary = run_fast_repair(
+                    args,
+                    stage4_config,
+                    stage4_model,
+                    q_now=q,
+                    qd_now=qd,
+                    center=np.asarray(selected_obj.center, dtype=np.float64),
+                    velocity=np.asarray(selected_obj.velocity, dtype=np.float64),
+                    radius=radius,
+                    risk_links=set(SCENARIOS[args.scene]["risk_links"]),
+                    trial_dir=trial_dir,
+                    q_goal_hint=q_goal_hint,
+                )
+                log["events"].append({"type": candidate_summary["status"], "frame": frame_index, "t_s": now_rel, "candidate": candidate_summary})
+                if args.mode == "moving-shadow-stop":
+                    break
+                if args.mode == "live-stop-replan-execute":
+                    if not candidate_summary["accepted_for_switch"]:
+                        log["events"].append(
+                            {
+                                "type": "LIVE_CANDIDATE_NOT_EXECUTED",
+                                "reason": "candidate_rejected",
+                                "candidate_status": candidate_summary["status"],
+                                "rejection_reasons": candidate_summary.get("rejection_reasons", []),
+                            }
+                        )
+                        break
+                    if not args.allow_live_candidate_execution:
+                        log["events"].append(
+                            {
+                                "type": "LIVE_CANDIDATE_EXECUTION_BLOCKED_BY_DEFAULT",
+                                "reason": "rerun with --allow-live-candidate-execution and exact live candidate phrase after a successful dry pilot",
+                                "required_live_candidate_phrase": LIVE_CANDIDATE_EXECUTE_PHRASE,
+                            }
+                        )
+                        break
+                    if args.live_execute_candidate_phrase != LIVE_CANDIDATE_EXECUTE_PHRASE:
+                        log["events"].append(
+                            {
+                                "type": "LIVE_CANDIDATE_EXECUTION_BLOCKED_BAD_PHRASE",
+                                "required_live_candidate_phrase": LIVE_CANDIDATE_EXECUTE_PHRASE,
+                            }
+                        )
+                        break
+                    if commander is not None:
+                        commander.stop()
+                        commander = None
+                    time.sleep(max(args.candidate_pre_execute_settle_s, 0.0))
+                    candidate_dir = trial_dir / "candidate"
+                    try:
+                        candidate_execution_summary = execute_fast_candidate_offline_track(robot, candidate_dir, args)
+                        write_json(candidate_dir / "live_candidate_execution_log.json", candidate_execution_summary)
+                        log["events"].append({"type": "LIVE_CANDIDATE_EXECUTED", "execution": candidate_execution_summary})
+                    except Exception as exc:
+                        stop_ret = maybe_move_stop(robot)
+                        candidate_execution_summary = {
+                            "status": "FAILED_DYNAMIC_CANDIDATE_EXECUTION",
+                            "error": str(exc),
+                            "traceback": traceback.format_exc(limit=20),
+                            "stop_return": stop_ret,
+                        }
+                        write_json(candidate_dir / "live_candidate_execution_log.json", candidate_execution_summary)
+                        log["events"].append({"type": "LIVE_CANDIDATE_EXECUTION_FAILED", "execution": candidate_execution_summary})
+                    break
+            if (
+                args.mode in robot_motion_modes
+                and np.isfinite(float(current_best["distance"]))
+                and float(current_best["distance"]) <= args.stop_distance_m
+            ):
+                stop_ret = maybe_move_stop(robot)
+                log["events"].append({"type": "SAFETY_HOLD_DISTANCE", "frame": frame_index, "t_s": now_rel, "distance_m": float(current_best["distance"]), "return": stop_ret})
+                break
+            frame_index += 1
+    except Exception as exc:
+        caught_error = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": traceback.format_exc(limit=20),
+        }
+        log["events"].append({"type": "ERROR", "error": caught_error})
+    finally:
+        if commander is not None:
+            try:
+                commander.stop()
+            except Exception:
+                pass
+        processor.stop()
+
+    write_csv(trial_dir / "frames.csv", rows, FRAME_FIELDS)
+    pred_vals = [float(r["predicted_distance_m"]) for r in rows if r["predicted_distance_m"] != ""]
+    cur_vals = [float(r["nearest_distance_m"]) for r in rows if r["nearest_distance_m"] != ""]
+    guard_vals = [float(r["guard_distance_m"]) for r in rows if r.get("guard_distance_m", "") != ""]
+    final_status = "TRIGGERED" if triggered else "NO_TRIGGER"
+    if guard_stopped and not triggered:
+        final_status = "GUIDED_GUARD_STOPPED_NO_CCRO_TRIGGER"
+    elif guard_stopped and triggered:
+        final_status = "TRIGGERED_AND_GUIDED_GUARD_STOPPED"
+    elif current_distance_stopped and not triggered:
+        final_status = "CURRENT_DISTANCE_STOPPED_NO_CCRO_TRIGGER"
+    elif current_distance_stopped and triggered:
+        final_status = "TRIGGERED_AND_CURRENT_DISTANCE_STOPPED"
+    if candidate_execution_summary is not None:
+        if candidate_execution_summary.get("status") == "COMPLETED_DYNAMIC_CANDIDATE_EXECUTION":
+            final_status = "TRIGGERED_AND_DYNAMIC_CANDIDATE_EXECUTED"
+        else:
+            final_status = "TRIGGERED_AND_DYNAMIC_CANDIDATE_EXECUTION_FAILED"
+    if caught_error is not None:
+        final_status = "FAILED"
+    log.update(
+        {
+            "status": final_status,
+            "error": caught_error,
+            "trigger_frame": trigger_frame,
+            "candidate_status": None if candidate_summary is None else candidate_summary["status"],
+            "candidate_accepted": None if candidate_summary is None else candidate_summary["accepted_for_switch"],
+            "candidate_execution_status": None if candidate_execution_summary is None else candidate_execution_summary.get("status"),
+            "candidate_execution": candidate_execution_summary,
+            "frame_count": len(rows),
+            "duration_wall_s": time.time() - t0_wall,
+            "current_min_distance_m": None if not cur_vals else float(np.min(cur_vals)),
+            "predicted_min_distance_m": None if not pred_vals else float(np.min(pred_vals)),
+            "guard_min_distance_m": None if not guard_vals else float(np.min(guard_vals)),
+            "guard_stopped": guard_stopped,
+            "current_distance_stopped": current_distance_stopped,
+        }
+    )
+    write_json(trial_dir / "summary.json", log)
+    print(json.dumps({"status": log["status"], "candidate_status": log.get("candidate_status"), "trial_dir": str(trial_dir)}, indent=2, ensure_ascii=False))
+    return log
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scene", choices=sorted(SCENARIOS), required=True)
+    parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument(
+        "--mode",
+        choices=["shadow", "moving-shadow-stop", "live-stop-replan-execute", "live-execute"],
+        default="shadow",
+    )
+    parser.add_argument("--operator-phrase", default="")
+    parser.add_argument("--robot-ip", default="192.168.123.96")
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--config-dir", type=Path, default=ROOT / "config")
+    parser.add_argument("--stage4-config", type=Path, default=ROOT / "config" / "ccro_stage4.yaml")
+    parser.add_argument("--urdf", type=Path, default=ROOT / "urdf" / "aubo_i16_gripper.urdf")
+    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--duration-s", type=float, default=18.0)
+    parser.add_argument("--arm-delay-s", type=float, default=1.0)
+    parser.add_argument("--no-prompt", action="store_true")
+    parser.add_argument("--remove-planes", action="store_true", default=True)
+    parser.add_argument("--no-remove-planes", dest="remove_planes", action="store_false")
+    parser.add_argument("--plane-dist", type=float, default=0.02)
+    parser.add_argument("--max-planes", type=int, default=1)
+    parser.add_argument("--voxel-size", type=float, default=0.02)
+    parser.add_argument("--self-filter-threshold", type=float, default=0.08)
+    parser.add_argument("--cluster-eps", type=float, default=0.06)
+    parser.add_argument("--cluster-min-samples", type=int, default=15)
+    parser.add_argument(
+        "--cluster-min-points",
+        type=int,
+        default=15,
+        help="match safety_guided_motion.py default so small hand-held foam obstacles are not filtered out",
+    )
+    parser.add_argument(
+        "--cluster-min-volume",
+        type=float,
+        default=0.0005,
+        help="match safety_guided_motion.py default; larger values can suppress partially visible dynamic obstacles",
+    )
+    parser.add_argument("--surface-density", choices=["coarse", "medium", "dense"], default="coarse")
+    parser.add_argument("--temporal-denoise", action="store_true", default=True)
+    parser.add_argument("--no-temporal-denoise", dest="temporal_denoise", action="store_false")
+    parser.add_argument("--denoise-voxel", type=float, default=0.04)
+    parser.add_argument("--denoise-conf", type=int, default=2)
+    parser.add_argument("--denoise-decay", type=float, default=0.4)
+    parser.add_argument("--min-track-age", type=int, default=3)
+    parser.add_argument("--prediction-horizon-s", type=float, default=0.4)
+    parser.add_argument("--prediction-step-s", type=float, default=0.1)
+    parser.add_argument("--prediction-margin-m", type=float, default=0.035)
+    parser.add_argument("--prediction-uncertainty-m", type=float, default=0.02)
+    parser.add_argument("--replan-in-m", type=float, default=0.14)
+    parser.add_argument(
+        "--moving-shadow-replan-in-m",
+        type=float,
+        default=0.20,
+        help="earlier predicted-distance trigger for moving-shadow-stop pilot; stop is sent before candidate generation",
+    )
+    parser.add_argument("--stop-distance-m", type=float, default=0.08)
+    parser.add_argument(
+        "--moving-shadow-current-stop-m",
+        type=float,
+        default=0.18,
+        help="immediate current-distance stop threshold for moving-shadow-stop pilot",
+    )
+    parser.add_argument(
+        "--moving-shadow-any-link-hard-stop-m",
+        type=float,
+        default=0.03,
+        help="absolute all-link hard stop; above this, current-distance stops are limited to the scene risk links",
+    )
+    parser.add_argument("--online-accept-m", type=float, default=0.09)
+    parser.add_argument("--fast-budget-ms", type=float, default=150.0)
+    parser.add_argument("--local-horizon-s", type=float, default=1.0)
+    parser.add_argument(
+        "--local-goal-lookahead-s",
+        type=float,
+        default=2.5,
+        help="for live-stop-replan-execute, set the local candidate target from q + qd * this lookahead before Fast CCRO-NUBS",
+    )
+    parser.add_argument("--local-segments", type=int, default=5)
+    parser.add_argument("--default-obstacle-radius-m", type=float, default=0.055)
+    parser.add_argument("--min-local-motion-rad", type=float, default=0.002)
+    parser.add_argument("--shadow-joint-probe-rad", type=float, default=0.025)
+    parser.add_argument("--home-joints-deg", default="0,0,90,0,90,0")
+    parser.add_argument("--x-offset", type=float, default=0.10)
+    parser.add_argument("--y-start", type=float, default=0.4)
+    parser.add_argument("--y-goal", type=float, default=-0.4)
+    parser.add_argument("--line-velocity-m-s", type=float, default=0.020)
+    parser.add_argument("--line-acc-m-s2", type=float, default=0.05)
+    parser.add_argument("--guided-range-m", type=float, default=0.20)
+    parser.add_argument("--guided-base-omega", type=float, default=0.15)
+    parser.add_argument("--guided-d-safe-m", type=float, default=0.22)
+    parser.add_argument("--guided-d-slow-m", type=float, default=0.14)
+    parser.add_argument("--guided-d-stop-m", type=float, default=0.08)
+    parser.add_argument("--guided-hard-stop-m", type=float, default=0.10)
+    parser.add_argument("--guided-max-decel", type=float, default=2.0)
+    parser.add_argument("--guided-max-accel", type=float, default=0.5)
+    parser.add_argument("--guided-dynamic-lookahead-s", type=float, default=0.15)
+    parser.add_argument("--guard-min-x", type=float, default=0.25)
+    parser.add_argument("--guard-max-x", type=float, default=0.95)
+    parser.add_argument("--guard-min-y", type=float, default=-0.65)
+    parser.add_argument("--guard-max-y", type=float, default=0.65)
+    parser.add_argument("--guard-min-z", type=float, default=0.30)
+    parser.add_argument("--guard-max-z", type=float, default=1.10)
+    parser.add_argument("--settle-s", type=float, default=0.4)
+    parser.add_argument("--poll-s", type=float, default=0.04)
+    parser.add_argument("--motion-timeout-s", type=float, default=90.0)
+    parser.add_argument("--pose-tolerance-m", type=float, default=0.015)
+    parser.add_argument("--joint-tolerance-rad", type=float, default=0.02)
+    parser.add_argument("--allow-movel-fallback", action="store_true")
+    parser.add_argument("--min-x", type=float, default=-0.2)
+    parser.add_argument("--max-x", type=float, default=0.9)
+    parser.add_argument("--min-y", type=float, default=-0.55)
+    parser.add_argument("--max-y", type=float, default=0.55)
+    parser.add_argument("--min-z", type=float, default=0.25)
+    parser.add_argument("--max-z", type=float, default=0.9)
+    parser.add_argument("--allow-live-candidate-execution", action="store_true")
+    parser.add_argument("--live-execute-candidate-phrase", default="")
+    parser.add_argument("--candidate-playback-duration-s", type=float, default=6.0)
+    parser.add_argument("--candidate-controller-waypoint-period-s", type=float, default=0.005)
+    parser.add_argument("--candidate-max-waypoints", type=int, default=0)
+    parser.add_argument("--candidate-joint-velc", type=float, default=0.006)
+    parser.add_argument("--candidate-joint-acc", type=float, default=0.012)
+    parser.add_argument("--candidate-start-tolerance-rad", type=float, default=0.035)
+    parser.add_argument("--candidate-goal-tolerance-rad", type=float, default=0.012)
+    parser.add_argument("--candidate-min-execution-wait-s", type=float, default=0.0)
+    parser.add_argument("--candidate-motion-timeout-s", type=float, default=45.0)
+    parser.add_argument("--candidate-pre-execute-settle-s", type=float, default=0.35)
+    parser.add_argument("--candidate-execute-confirm", action="store_true", default=True)
+    parser.add_argument("--no-candidate-execute-confirm", dest="candidate_execute_confirm", action="store_false")
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    run(args)
+
+
+if __name__ == "__main__":
+    main()

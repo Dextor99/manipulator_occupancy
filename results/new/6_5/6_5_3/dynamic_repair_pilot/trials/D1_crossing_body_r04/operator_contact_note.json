@@ -1,0 +1,12 @@
+{
+  "trial": "D1_crossing_body_r04",
+  "operator_observation": "Obstacle approached/contact occurred before effective safety stop.",
+  "classification": "failed_moving_shadow_pilot_not_for_formal_success_statistics",
+  "root_cause_from_log": [
+    "trigger occurred late: predicted_distance_m=0.1085 at frame 92",
+    "old implementation generated candidate before sending stop in moving-shadow-stop mode",
+    "candidate computation took about 312 ms, consuming safety margin",
+    "candidate was safe by distance but rejected by 150 ms online budget"
+  ],
+  "software_fix": "moving-shadow-stop now sends immediate stop before candidate generation and uses more conservative pilot thresholds."
+}

@@ -1,0 +1,268 @@
+{
+  "created_at": "2026-08-10T06:47:41.759292+00:00",
+  "experiment": "6.5.3 real dynamic Fast CCRO-NUBS",
+  "scene": "D1",
+  "scene_name": "crossing_body",
+  "repeat": 4,
+  "mode": "moving-shadow-stop",
+  "robot_commanded": true,
+  "operator_phrase_ok": true,
+  "required_operator_phrase": "CCRO_653_DYNAMIC_SHADOW_APPROVED",
+  "trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r04",
+  "parameters": {
+    "scene": "D1",
+    "repeat": 4,
+    "mode": "moving-shadow-stop",
+    "operator_phrase": "CCRO_653_DYNAMIC_SHADOW_APPROVED",
+    "output": "results/new/6_5/6_5_3/dynamic_repair_pilot",
+    "config_dir": "/home/hzy/Code/manipulator_occupancy/config",
+    "stage4_config": "/home/hzy/Code/manipulator_occupancy/config/ccro_stage4.yaml",
+    "urdf": "/home/hzy/Code/manipulator_occupancy/urdf/aubo_i16_gripper.urdf",
+    "width": 1280,
+    "height": 720,
+    "duration_s": 18.0,
+    "arm_delay_s": 1.0,
+    "no_prompt": false,
+    "remove_planes": true,
+    "plane_dist": 0.02,
+    "max_planes": 1,
+    "voxel_size": 0.02,
+    "self_filter_threshold": 0.08,
+    "cluster_eps": 0.045,
+    "cluster_min_samples": 15,
+    "cluster_min_points": 40,
+    "cluster_min_volume": 0.0005,
+    "surface_density": "coarse",
+    "temporal_denoise": true,
+    "denoise_voxel": 0.04,
+    "denoise_conf": 3,
+    "denoise_decay": 0.4,
+    "min_track_age": 3,
+    "prediction_horizon_s": 0.4,
+    "prediction_step_s": 0.1,
+    "prediction_margin_m": 0.035,
+    "prediction_uncertainty_m": 0.02,
+    "replan_in_m": 0.14,
+    "stop_distance_m": 0.08,
+    "online_accept_m": 0.09,
+    "fast_budget_ms": 150.0,
+    "local_horizon_s": 1.0,
+    "local_segments": 5,
+    "default_obstacle_radius_m": 0.055,
+    "min_local_motion_rad": 0.002,
+    "shadow_joint_probe_rad": 0.025,
+    "home_joints_deg": "0,0,90,0,90,0",
+    "x_offset": 0.1,
+    "y_start": 0.4,
+    "y_goal": -0.4,
+    "line_velocity_m_s": 0.02,
+    "line_acc_m_s2": 0.05,
+    "settle_s": 0.4,
+    "poll_s": 0.04,
+    "motion_timeout_s": 90.0,
+    "pose_tolerance_m": 0.015,
+    "joint_tolerance_rad": 0.02,
+    "allow_movel_fallback": false,
+    "min_x": -0.2,
+    "max_x": 0.9,
+    "min_y": -0.55,
+    "max_y": 0.55,
+    "min_z": 0.25,
+    "max_z": 0.9
+  },
+  "events": [
+    {
+      "type": "TRIGGER",
+      "frame": 92,
+      "t_s": 12.191472116974182,
+      "predicted_distance_m": 0.10853547301255101
+    },
+    {
+      "type": "REJECTED_CANDIDATE",
+      "frame": 92,
+      "t_s": 12.191472116974182,
+      "candidate": {
+        "created_at": "2026-08-10T06:48:48.217857+00:00",
+        "status": "REJECTED_CANDIDATE",
+        "accepted_for_switch": false,
+        "fast_elapsed_ms": 312.373629945796,
+        "fast_budget_ms": 150.0,
+        "online_accept_m": 0.09,
+        "verification_min_distance_m": 0.09218346171245498,
+        "verification_reasons": [],
+        "verification_checks": {
+          "solver_ok": true,
+          "finite_ok": true,
+          "goal_ok": true,
+          "distance_ok": true,
+          "position_ok": true,
+          "velocity_ok": true,
+          "acceleration_ok": true,
+          "continuity_q_ok": true,
+          "continuity_qd_ok": true,
+          "continuity_qdd_ok": true,
+          "forecast_horizon_ok": true
+        },
+        "repair_iterations": 1,
+        "accepted_steps": 0,
+        "active_constraints": 8,
+        "qp_successes": 1,
+        "risk_scan_ms": 43.84773998754099,
+        "linearization_ms": 3.0861750128678977,
+        "qp_ms": 3.367614990565926,
+        "messages": [
+          "projected_qp max_violation=0.000e+00 clearance_reward=0",
+          "scale 0.85 rejected: no monotonic distance improvement",
+          "scale 0.65 rejected: no monotonic distance improvement",
+          "scale 0.45 rejected: no monotonic distance improvement",
+          "scale 0.30 rejected: no monotonic distance improvement",
+          "scale 0.20 rejected: no monotonic distance improvement",
+          "scale 0.10 rejected: no monotonic distance improvement",
+          "rejected: no feasible monotonic step"
+        ],
+        "q_now": [
+          0.5889532566070557,
+          -0.1928795874118805,
+          1.3538508415222168,
+          -0.0245317704975605,
+          1.571111798286438,
+          0.5889312624931335
+        ],
+        "qd_now": [
+          -0.028346890319930776,
+          0.011976429458957069,
+          0.014789719764825885,
+          0.00292040638596566,
+          0.0,
+          -0.028319897013324383
+        ],
+        "q_goal": [
+          0.5606063662871249,
+          -0.18090315795292342,
+          1.3686405612870427,
+          -0.021611364111594842,
+          1.571111798286438,
+          0.5606113654798092
+        ],
+        "obstacle_center": [
+          0.5872176395278811,
+          -0.21860407708706747,
+          0.37707738433780547
+        ],
+        "obstacle_velocity": [
+          -0.014505129049442048,
+          0.012391843812870824,
+          -0.0064593149957819194
+        ],
+        "obstacle_radius": 0.14670253826847346,
+        "risk_links": [
+          "foreArm_Link",
+          "upperArm_Link",
+          "wrist1_Link",
+          "wrist2_Link"
+        ]
+      }
+    },
+    {
+      "type": "MOVE_STOP_AFTER_TRIGGER",
+      "frame": 92,
+      "t_s": 12.579850386013277,
+      "return": null
+    }
+  ],
+  "home_pose": [
+    0.4878303271844857,
+    -0.19070045297801178,
+    0.5394412294444785,
+    -3.1410349876575308,
+    -6.986237417528951e-06,
+    1.5708182978738898
+  ],
+  "start_pose": [
+    0.5878303271844857,
+    0.4,
+    0.5394412294444785,
+    -3.1410349876575308,
+    -6.986237417528951e-06,
+    1.5708182978738898
+  ],
+  "goal_pose": [
+    0.5878303271844857,
+    -0.4,
+    0.5394412294444785,
+    -3.1410349876575308,
+    -6.986237417528951e-06,
+    1.5708182978738898
+  ],
+  "move_home_reach": {
+    "reached": true,
+    "label": "movej_home",
+    "actual_joint": [
+      0.0006125606596469879,
+      -0.0005648763035424054,
+      1.5702130794525146,
+      -0.0005758804036304355,
+      1.5708036422729492,
+      0.0005905525176785886
+    ],
+    "joint_l2_error_rad": 0.0013095561439234505,
+    "wait_s": 0.0011104050208814442,
+    "sample_count": 1
+  },
+  "move_start": {
+    "label": "move_to_start",
+    "method": "movel_line",
+    "return_code": 0,
+    "target_pose": [
+      0.5878303271844857,
+      0.4,
+      0.5394412294444785,
+      -3.1410349876575308,
+      -6.986237417528951e-06,
+      1.5708182978738898
+    ],
+    "actual_pose_after": [
+      0.586682735898935,
+      0.39319191349578936,
+      0.5394597993819874,
+      -3.1410648150617395,
+      -3.111227906241582e-05,
+      1.5707814130927922
+    ],
+    "actual_joint_after": [
+      0.8642277121543884,
+      -0.4178800880908966,
+      1.0410597324371338,
+      -0.11217563599348068,
+      1.5712181329727173,
+      0.864242434501648
+    ],
+    "position_error_m": 0.0069041547237924964,
+    "reach_check": {
+      "reached": true,
+      "label": "move_to_start",
+      "actual_pose": [
+        0.5853395429111574,
+        0.3853066164188203,
+        0.5394235250280965,
+        -3.141007823414412,
+        4.260888289449266e-05,
+        1.5707888699438444
+      ],
+      "position_error_m": 0.014903014487220385,
+      "wait_s": 29.657793912047055,
+      "sample_count": 730
+    },
+    "elapsed_s": 30.06168789899675
+  },
+  "reference_motion_method": "movel_line",
+  "reference_motion_return_code": 0,
+  "status": "TRIGGERED",
+  "trigger_frame": 92,
+  "candidate_status": "REJECTED_CANDIDATE",
+  "candidate_accepted": false,
+  "frame_count": 93,
+  "duration_wall_s": 63.41622257232666,
+  "current_min_distance_m": 0.205038,
+  "predicted_min_distance_m": 0.108535
+}

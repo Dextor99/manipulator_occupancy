@@ -1,0 +1,12 @@
+{
+  "trial": "D1_crossing_body_r05",
+  "operator_observation": "Obstacle contact occurred during moving-shadow-stop despite conservative thresholds.",
+  "classification": "failed_moving_shadow_pilot_not_for_formal_success_statistics",
+  "root_cause_from_log": [
+    "logged current_min_distance_m stayed at 0.3335 m while operator observed contact",
+    "logged predicted_min_distance_m only reached 0.1880 m at trigger",
+    "this indicates observed obstacle/robot geometry did not match the physical contact condition",
+    "stop call returned None, so the current generic stop wrapper did not confirm a real controller stop API result"
+  ],
+  "decision": "Suspend all real moving dynamic-obstacle trials. Continue with no-motion shadow or offline replay until perception geometry and stop interface are validated."
+}
