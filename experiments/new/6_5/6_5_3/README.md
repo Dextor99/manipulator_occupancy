@@ -27,6 +27,22 @@ The moving modes fail closed unless `--reference-feedback-csv` is supplied.
 The same recorded reference drives future STRO evaluation and supplies the
 candidate endpoint at `t + H_local`; `q + qd * lookahead` is no longer used.
 
+Before the next dynamic trial, run an empty-workspace alignment audit. The
+point-cloud hard guard remains active, while `--reference-audit-only` prevents
+all STRO/Fast triggers:
+
+```bash
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_3/run_653_dynamic_repair_trial.py \
+  --scene D1 --repeat 1 --mode moving-shadow-stop --reference-audit-only \
+  --operator-phrase CCRO_653_DYNAMIC_SHADOW_APPROVED \
+  --reference-feedback-csv results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv \
+  --x-offset 0.10 --y-start 0.40 --y-goal -0.40 \
+  --line-velocity-m-s 0.020 --line-acc-m-s2 0.05 --duration-s 45 \
+  --output results/new/6_5/6_5_3/reference_alignment_validation
+```
+
+Proceed only when the summary status is `REFERENCE_ALIGNMENT_PASS`.
+
 ## 1. Optional Reference Recording
 
 Dry run:

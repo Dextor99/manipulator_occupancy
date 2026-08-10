@@ -127,6 +127,24 @@ FRAME_FIELDS = [
     "predicted_tau_s",
     "predicted_object_id",
     "trigger_block_reason",
+    "reference_state",
+    "reference_armed",
+    "reference_index",
+    "reference_index_step",
+    "reference_step_clamped",
+    "reference_time_s",
+    "reference_tcp_y_m",
+    "reference_actual_y_error_m",
+    "reference_joint_match_max_rad",
+    "reference_future_time_s",
+    "reference_future_index",
+    "reference_future_delta_q_max_rad",
+    "predicted_object_speed_m_s",
+    "predicted_object_radius_m",
+    "predicted_object_age",
+    "predicted_object_association_error_m",
+    "dynamic_object_valid",
+    "dynamic_object_block_reason",
     "risk_state_current",
     "risk_state_predicted",
     "max_track_speed_m_s",
@@ -153,7 +171,7 @@ class RecordedReference:
     same physical reference instead of extrapolating the measured velocity.
     """
 
-    def __init__(self, times: np.ndarray, q: np.ndarray, qd: np.ndarray):
+    def __init__(self, times: np.ndarray, q: np.ndarray, qd: np.ndarray, y: np.ndarray | None = None):
         if len(times) < 2 or q.shape != qd.shape or q.shape != (len(times), 6):
             raise ValueError("invalid recorded 6.5.3 reference")
         if np.any(np.diff(times) <= 0.0):
@@ -162,7 +180,12 @@ class RecordedReference:
         self.q = q
         self.qd = qd
         self.qdd = np.gradient(qd, self.times, axis=0, edge_order=1)
+        self.y = None if y is None else np.asarray(y, dtype=np.float64)
+        if self.y is not None and self.y.shape != (len(times),):
+            raise ValueError("reference TCP Y shape mismatch")
         self.index = 0
+        self.dt_median = float(np.median(np.diff(self.times)))
+        self._increment_p99_cache: dict[float, float] = {}
 
     @classmethod
     def load(cls, path: Path) -> "RecordedReference":
@@ -180,13 +203,62 @@ class RecordedReference:
         times = np.asarray([float(row["t_s"]) for row in rows], dtype=np.float64)
         q = np.asarray([[float(row[f"q{j}_rad"]) for j in range(1, 7)] for row in rows], dtype=np.float64)
         qd = np.asarray([[float(row[f"qd{j}_rad_s"]) for j in range(1, 7)] for row in rows], dtype=np.float64)
-        return cls(times, q, qd)
+        y = None if "pose_y" not in rows[0] else np.asarray([float(row["pose_y"]) for row in rows], dtype=np.float64)
+        return cls(times, q, qd, y)
 
-    def locate(self, q_actual: np.ndarray, *, forward_window: int = 250) -> int:
-        stop = min(len(self.q), self.index + max(2, int(forward_window)))
-        local = np.linalg.norm(self.q[self.index:stop] - q_actual[None, :], axis=1)
-        self.index += int(np.argmin(local))
-        return self.index
+    def reset(self) -> None:
+        self.index = 0
+
+    def locate(
+        self,
+        q_actual: np.ndarray,
+        *,
+        y_actual: float | None,
+        max_forward_step: int,
+        joint_refine_window: int = 8,
+    ) -> dict[str, Any]:
+        """Locate progress by monotonic TCP Y, refine by joints, and clamp jumps."""
+        previous = self.index
+        if self.y is not None and y_actual is not None and np.isfinite(y_actual):
+            y_index = int(np.argmin(np.abs(self.y - float(y_actual))))
+            lo = max(previous, y_index - int(joint_refine_window))
+            hi = min(len(self.q), y_index + int(joint_refine_window) + 1)
+        else:
+            lo = previous
+            hi = min(len(self.q), previous + max(2, int(max_forward_step)) + 1)
+        if hi <= lo:
+            candidate = previous
+        else:
+            candidate = lo + int(np.argmin(np.max(np.abs(self.q[lo:hi] - q_actual[None, :]), axis=1)))
+        unclamped_step = max(0, candidate - previous)
+        step = min(unclamped_step, max(0, int(max_forward_step)))
+        self.index = min(len(self.q) - 1, previous + step)
+        return {
+            "index": self.index,
+            "step": step,
+            "candidate_index": candidate,
+            "step_was_clamped": unclamped_step > step,
+            "time_s": float(self.times[self.index]),
+            "tcp_y_m": None if self.y is None else float(self.y[self.index]),
+            "actual_y_error_m": None if self.y is None or y_actual is None else abs(float(self.y[self.index]) - float(y_actual)),
+            "joint_match_max_rad": float(np.max(np.abs(self.q[self.index] - q_actual))),
+        }
+
+    def index_after(self, delta_s: float) -> int:
+        target = min(self.times[-1], self.times[self.index] + max(0.0, float(delta_s)))
+        return int(np.searchsorted(self.times, target, side="left"))
+
+    def local_increment_p99(self, delta_s: float) -> float:
+        cache_key = round(float(delta_s), 6)
+        if cache_key in self._increment_p99_cache:
+            return self._increment_p99_cache[cache_key]
+        increments = []
+        for i, t in enumerate(self.times):
+            j = min(len(self.times) - 1, int(np.searchsorted(self.times, t + delta_s, side="left")))
+            increments.append(float(np.max(np.abs(self.q[j] - self.q[i]))))
+        value = float(np.percentile(increments, 99))
+        self._increment_p99_cache[cache_key] = value
+        return value
 
     def state_after(self, delta_s: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         target = min(self.times[-1], self.times[self.index] + max(0.0, float(delta_s)))
@@ -278,6 +350,58 @@ def track_geometry(obj: Any, clusters: list[Any], fallback: float) -> dict[str, 
         "associated_cluster_center": cluster_center,
         "association_error_m": association_error,
     }
+
+
+def update_dynamic_track_validity(
+    stable: list[Any],
+    clusters: list[Any],
+    speed_history: dict[int, list[float]],
+    valid_streak: dict[int, int],
+    args: argparse.Namespace,
+) -> tuple[list[Any], dict[int, dict[str, Any]]]:
+    """Separate dynamic-trigger tracks from the broader safety-object pool."""
+    valid: list[Any] = []
+    audits: dict[int, dict[str, Any]] = {}
+    active_ids: set[int] = set()
+    for obj in stable:
+        geometry = track_geometry(obj, clusters, args.default_obstacle_radius_m)
+        track_id = geometry["track_id"]
+        if track_id is None:
+            continue
+        active_ids.add(track_id)
+        history = speed_history.setdefault(track_id, [])
+        history.append(float(geometry["speed"]))
+        del history[:-args.dynamic_speed_window]
+        median_speed = float(np.median(history))
+        checks = {
+            "age_ok": int(getattr(obj, "age", 0)) >= args.min_track_age,
+            "speed_history_ready": len(history) >= args.dynamic_speed_window,
+            "speed_ok": median_speed >= args.min_dynamic_trigger_speed_m_s,
+            "radius_ok": args.dynamic_radius_min_m <= geometry["raw_radius"] <= args.dynamic_radius_max_m,
+            "association_ok": geometry["association_error_m"] <= args.max_track_cluster_association_m,
+        }
+        instant_valid = bool(all(checks.values()))
+        valid_streak[track_id] = valid_streak.get(track_id, 0) + 1 if instant_valid else 0
+        is_valid = instant_valid and valid_streak[track_id] >= args.dynamic_valid_streak_frames
+        audit = {
+            **geometry,
+            "age": int(getattr(obj, "age", 0)),
+            "median_speed_m_s": median_speed,
+            "speed_samples": len(history),
+            "valid_streak": valid_streak[track_id],
+            "valid": is_valid,
+            "checks": checks,
+            "block_reasons": [name for name, ok in checks.items() if not ok]
+            + ([] if valid_streak[track_id] >= args.dynamic_valid_streak_frames else ["valid_streak_not_ready"]),
+        }
+        audits[track_id] = audit
+        if is_valid:
+            valid.append(obj)
+    for mapping in (speed_history, valid_streak):
+        for track_id in list(mapping):
+            if track_id not in active_ids:
+                del mapping[track_id]
+    return valid, audits
 
 
 def object_track_id(obj: Any) -> int | None:
@@ -802,6 +926,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         reference = RecordedReference.load(args.reference_feedback_csv.resolve())
         log["reference_feedback_csv"] = str(args.reference_feedback_csv.resolve())
         log["reference_samples"] = len(reference.times)
+        log["reference_local_increment_1s_p99_rad"] = reference.local_increment_p99(args.local_horizon_s)
     if args.mode in robot_motion_modes and reference is None:
         processor.stop()
         raise RuntimeError(
@@ -846,9 +971,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             input(f"\n[{args.scene}] shadow 模式：{SCENARIOS[args.scene]['prompt']}。按 Enter 开始 {args.duration_s:.1f}s 采集...")
 
         started = time.perf_counter()
+        reference_armed = args.mode not in robot_motion_modes
+        reference_state = "RUNNING" if reference_armed else "WAIT_REFERENCE_START"
+        reference_arm_perf: float | None = started if reference_armed else None
+        reference_start_streak = 0
+        reference_audit: dict[str, Any] = {
+            "index": 0,
+            "step": 0,
+            "step_was_clamped": False,
+            "time_s": 0.0,
+            "tcp_y_m": None if reference is None or reference.y is None else float(reference.y[0]),
+            "actual_y_error_m": None,
+            "joint_match_max_rad": math.inf,
+        }
+        previous_frame_perf = started
+        dynamic_speed_history: dict[int, list[float]] = {}
+        dynamic_valid_streak: dict[int, int] = {}
         frame_index = 0
-        while time.perf_counter() - started < args.duration_s:
+        while True:
             frame_started = time.perf_counter()
+            if not reference_armed and frame_started - started > args.reference_preparation_timeout_s:
+                raise RuntimeError("reference start was not reached before preparation timeout")
+            if reference_armed and reference_arm_perf is not None and frame_started - reference_arm_perf >= args.duration_s:
+                break
             frame = processor.process_frame()
             timestamp = float(getattr(frame, "timestamp", time.time()))
             scene_points = np.asarray(frame.scene_points, dtype=np.float64)
@@ -857,11 +1002,64 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 scene_points = denoiser.filter(scene_points)
             joints, q = q_from_reader(state_reader)
             now_rel = time.perf_counter() - started
+            actual_pose = list(robot.get_status()) if robot is not None else [math.nan] * 6
+            actual_y = float(actual_pose[1])
             q_history.append((now_rel, q.copy()))
             q_history = q_history[-20:]
             qd = estimate_qd(q_history)
-            if reference is not None:
-                reference.locate(q)
+            if reference is not None and not reference_armed and args.mode in robot_motion_modes:
+                start_y_error = math.inf if reference.y is None else abs(actual_y - float(reference.y[0]))
+                start_joint_error = float(np.max(np.abs(q - reference.q[0])))
+                start_ok = (
+                    start_y_error <= args.reference_start_y_tolerance_m
+                    and start_joint_error <= args.reference_start_joint_tolerance_rad
+                )
+                reference_start_streak = reference_start_streak + 1 if start_ok else 0
+                reference_audit.update(
+                    {
+                        "actual_y_error_m": start_y_error,
+                        "joint_match_max_rad": start_joint_error,
+                    }
+                )
+                if reference_start_streak >= args.reference_start_consecutive_frames:
+                    reference.reset()
+                    reference_armed = True
+                    reference_state = "REFERENCE_ARMED"
+                    reference_arm_perf = time.perf_counter()
+                    q_history.clear()
+                    dynamic_speed_history.clear()
+                    dynamic_valid_streak.clear()
+                    tracker = OccupancyTracker(
+                        association_distance=float(safety.get("association_distance", 0.20)),
+                        alpha=float(safety.get("velocity_alpha", 0.3)),
+                        pos_alpha=float(safety.get("pos_alpha", 0.3)),
+                        motion_gate=float(safety.get("motion_gate", 0.005)),
+                        velocity_dead_zone=float(safety.get("velocity_dead_zone", 0.01)),
+                        shape_alpha=float(safety.get("shape_alpha", 0.4)),
+                    )
+                    log["events"].append(
+                        {
+                            "type": "REFERENCE_ARMED",
+                            "frame": frame_index,
+                            "t_s": now_rel,
+                            "tcp_y": actual_y,
+                            "reference_index": 0,
+                            "max_joint_error_rad": start_joint_error,
+                        }
+                    )
+                    print("[REFERENCE ARMED] introduce D1 foam obstacle now", flush=True)
+            elif reference is not None and reference_armed:
+                loop_dt = max(frame_started - previous_frame_perf, 1.0e-3)
+                time_based_step = int(math.ceil(args.reference_step_slack * loop_dt / reference.dt_median))
+                max_step = min(args.max_reference_step, max(1, time_based_step))
+                reference_audit = reference.locate(
+                    q,
+                    y_actual=actual_y,
+                    max_forward_step=max_step,
+                    joint_refine_window=args.reference_joint_refine_window,
+                )
+                reference_state = "RUNNING"
+            previous_frame_perf = frame_started
             plane_removal = None
             if args.remove_planes:
                 plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
@@ -884,8 +1082,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ]
             tracked = tracker.update(detections, timestamp=timestamp)
             stable = [obj for obj in tracked if obj.age >= args.min_track_age]
-            risk_spheres = predict_risk_spheres(
+            dynamic_tracks, dynamic_audits = update_dynamic_track_validity(
                 stable,
+                eval_clusters,
+                dynamic_speed_history,
+                dynamic_valid_streak,
+                args,
+            )
+            risk_spheres = predict_risk_spheres(
+                dynamic_tracks,
                 horizon=args.prediction_horizon_s,
                 step=args.prediction_step_s,
                 margin=args.prediction_margin_m,
@@ -897,9 +1102,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             current_best = nearest_cluster_to_links(live_model, q, eval_clusters, density=args.surface_density)
             predicted_best = (
                 future_reference_sphere_distance(live_model, reference, risk_spheres, density=args.surface_density)
-                if reference is not None
+                if reference is not None and reference_armed
                 else nearest_sphere_to_links(live_model, q, risk_spheres, density=args.surface_density)
             )
+            predicted_audit = dynamic_audits.get(predicted_best.get("object_id"))
             center = current_best["cluster_center"]
             speeds = [float(np.linalg.norm(obj.velocity)) for obj in stable]
             guided_info = {
@@ -980,6 +1186,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "guard_cluster_count": len(guard_clusters),
                         }
                     )
+            future_index = 0
+            future_time = 0.0
+            future_delta_q = math.inf
+            reference_match_ok = reference is None or not reference_armed
+            local_reference_sanity_ok = False
+            if reference is not None and reference_armed:
+                future_index = reference.index_after(args.local_horizon_s)
+                future_time = float(reference.times[future_index])
+                future_delta_q = float(np.max(np.abs(reference.q[future_index] - q)))
+                reference_match_ok = reference_audit["joint_match_max_rad"] <= args.reference_match_max_rad
+                sanity_limit = args.local_reference_sanity_scale * reference.local_increment_p99(args.local_horizon_s)
+                local_reference_sanity_ok = future_delta_q <= sanity_limit
+            fallback_dynamic_audit = None
+            if dynamic_audits:
+                fallback_dynamic_audit = max(dynamic_audits.values(), key=lambda item: (item["valid_streak"], item["age"]))
+            row_dynamic_audit = predicted_audit or fallback_dynamic_audit
+            dynamic_block_reason = ""
+            if row_dynamic_audit is not None and not row_dynamic_audit["valid"]:
+                dynamic_block_reason = ",".join(row_dynamic_audit["block_reasons"])
             row = {
                 "frame": frame_index,
                 "t_s": f"{now_rel:.6f}",
@@ -1001,6 +1226,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "predicted_tau_s": "" if predicted_best["tau"] is None else f"{predicted_best['tau']:.3f}",
                 "predicted_object_id": "" if predicted_best["object_id"] is None else int(predicted_best["object_id"]),
                 "trigger_block_reason": "",
+                "reference_state": reference_state,
+                "reference_armed": int(reference_armed),
+                "reference_index": reference_audit["index"],
+                "reference_index_step": reference_audit["step"],
+                "reference_step_clamped": int(bool(reference_audit.get("step_was_clamped", False))),
+                "reference_time_s": f"{float(reference_audit['time_s']):.6f}",
+                "reference_tcp_y_m": "" if reference_audit["tcp_y_m"] is None else f"{float(reference_audit['tcp_y_m']):.6f}",
+                "reference_actual_y_error_m": "" if reference_audit["actual_y_error_m"] is None else f"{float(reference_audit['actual_y_error_m']):.6f}",
+                "reference_joint_match_max_rad": "" if not np.isfinite(reference_audit["joint_match_max_rad"]) else f"{float(reference_audit['joint_match_max_rad']):.6f}",
+                "reference_future_time_s": f"{future_time:.6f}",
+                "reference_future_index": future_index,
+                "reference_future_delta_q_max_rad": "" if not np.isfinite(future_delta_q) else f"{future_delta_q:.6f}",
+                "predicted_object_speed_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['median_speed_m_s']):.6f}",
+                "predicted_object_radius_m": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['raw_radius']):.6f}",
+                "predicted_object_age": "" if row_dynamic_audit is None else int(row_dynamic_audit["age"]),
+                "predicted_object_association_error_m": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['association_error_m']):.6f}",
+                "dynamic_object_valid": int(bool(predicted_audit and predicted_audit["valid"])),
+                "dynamic_object_block_reason": dynamic_block_reason,
                 "risk_state_current": risk_color_level(policy, current_best["distance"]),
                 "risk_state_predicted": risk_color_level(policy, predicted_best["distance"]),
                 "max_track_speed_m_s": "" if not speeds else f"{max(speeds):.6f}",
@@ -1031,13 +1274,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             trigger_block_reason = ""
             if triggered:
                 trigger_block_reason = "already_triggered"
+            elif not reference_armed:
+                trigger_block_reason = "reference_not_armed"
+            elif args.reference_audit_only:
+                trigger_block_reason = "reference_audit_only"
+            elif reference_audit.get("step_was_clamped", False):
+                trigger_block_reason = "reference_step_jump"
+            elif not reference_match_ok:
+                trigger_block_reason = "reference_match_error"
+            elif not local_reference_sanity_ok:
+                trigger_block_reason = "local_reference_sanity_failed"
             elif len(stable) == 0:
                 trigger_block_reason = "no_stable_track"
+            elif len(dynamic_tracks) == 0:
+                trigger_block_reason = "predicted_track_not_dynamic"
             elif not np.isfinite(trigger_distance):
                 trigger_block_reason = "no_finite_future_reference_risk"
+            elif predicted_best["link"] not in scene_risk_links:
+                trigger_block_reason = "predicted_non_scene_link"
             elif trigger_distance >= trigger_threshold:
                 trigger_block_reason = "future_reference_clearance_above_threshold"
-            elif now_rel < args.arm_delay_s:
+            elif current_distance <= args.moving_shadow_current_stop_m:
+                trigger_block_reason = "current_distance_in_stop_zone"
+            elif reference_arm_perf is not None and time.perf_counter() - reference_arm_perf < args.arm_delay_s:
                 trigger_block_reason = "arm_delay"
             row["trigger_block_reason"] = trigger_block_reason
             if (
@@ -1082,10 +1341,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 break
             if (
                 not triggered
-                and len(stable) > 0
-                and np.isfinite(trigger_distance)
-                and trigger_distance < trigger_threshold
-                and now_rel >= args.arm_delay_s
+                and trigger_block_reason == ""
             ):
                 triggered = True
                 trigger_frame = frame_index
@@ -1142,7 +1398,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     _, q_repair_start = q_from_reader(state_reader)
                     q_repair_start = np.asarray(q_repair_start, dtype=np.float64)
                     qd_repair_start = np.zeros(6, dtype=np.float64)
-                    reference.locate(q_repair_start)
+                    stopped_pose = list(robot.get_status()) if robot is not None else actual_pose
+                    stop_audit = reference.locate(
+                        q_repair_start,
+                        y_actual=float(stopped_pose[1]),
+                        max_forward_step=args.max_reference_step,
+                        joint_refine_window=args.reference_joint_refine_window,
+                    )
+                    if stop_audit["joint_match_max_rad"] > args.reference_match_max_rad:
+                        raise RuntimeError(
+                            f"stopped state/reference mismatch {stop_audit['joint_match_max_rad']:.4f} rad"
+                        )
                 else:
                     q_repair_start = q
                     qd_repair_start = qd
@@ -1266,6 +1532,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             final_status = "TRIGGERED_AND_DYNAMIC_CANDIDATE_EXECUTION_FAILED"
     if caught_error is not None:
         final_status = "FAILED"
+    alignment_rows = [row for row in rows if int(row.get("reference_armed", 0)) == 1]
+    alignment_checks = {
+        "reference_armed": any(event.get("type") == "REFERENCE_ARMED" for event in log["events"])
+        or args.mode not in robot_motion_modes,
+        "armed_rows_present": len(alignment_rows) > 0,
+        "index_steps_bounded": bool(alignment_rows)
+        and max(int(row["reference_index_step"]) for row in alignment_rows) <= args.max_reference_step,
+        "no_clamped_step": bool(alignment_rows)
+        and not any(int(row.get("reference_step_clamped", 0)) for row in alignment_rows),
+        "reference_match_ok": bool(alignment_rows)
+        and max(float(row["reference_joint_match_max_rad"]) for row in alignment_rows if row["reference_joint_match_max_rad"] != "")
+        <= args.reference_match_max_rad,
+        "reference_progress_complete": bool(alignment_rows)
+        and int(alignment_rows[-1]["reference_index"]) >= int(0.95 * (len(reference.times) - 1)) if reference is not None else True,
+        "no_dynamic_trigger": not triggered,
+    }
+    if args.reference_audit_only and caught_error is None:
+        final_status = "REFERENCE_ALIGNMENT_PASS" if all(alignment_checks.values()) else "REFERENCE_ALIGNMENT_FAIL"
     log.update(
         {
             "status": final_status,
@@ -1282,6 +1566,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "guard_min_distance_m": None if not guard_vals else float(np.min(guard_vals)),
             "guard_stopped": guard_stopped,
             "current_distance_stopped": current_distance_stopped,
+            "reference_alignment": {
+                "accepted": bool(all(alignment_checks.values())),
+                "checks": alignment_checks,
+                "armed_rows": len(alignment_rows),
+                "final_reference_index": None if not alignment_rows else int(alignment_rows[-1]["reference_index"]),
+                "max_reference_index_step": None if not alignment_rows else max(int(row["reference_index_step"]) for row in alignment_rows),
+                "max_reference_joint_match_rad": None if not alignment_rows else max(
+                    float(row["reference_joint_match_max_rad"])
+                    for row in alignment_rows
+                    if row["reference_joint_match_max_rad"] != ""
+                ),
+            },
         }
     )
     write_json(trial_dir / "summary.json", log)
@@ -1308,6 +1604,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--duration-s", type=float, default=18.0)
     parser.add_argument("--arm-delay-s", type=float, default=1.0)
+    parser.add_argument("--reference-audit-only", action="store_true")
+    parser.add_argument("--reference-preparation-timeout-s", type=float, default=60.0)
+    parser.add_argument("--reference-start-y-tolerance-m", type=float, default=0.015)
+    parser.add_argument("--reference-start-joint-tolerance-rad", type=float, default=0.025)
+    parser.add_argument("--reference-start-consecutive-frames", type=int, default=3)
+    parser.add_argument("--max-reference-step", type=int, default=5)
+    parser.add_argument("--reference-step-slack", type=float, default=2.0)
+    parser.add_argument("--reference-joint-refine-window", type=int, default=8)
+    parser.add_argument("--reference-match-max-rad", type=float, default=0.05)
+    parser.add_argument("--local-reference-sanity-scale", type=float, default=1.5)
     parser.add_argument("--no-prompt", action="store_true")
     parser.add_argument("--remove-planes", action="store_true", default=True)
     parser.add_argument("--no-remove-planes", dest="remove_planes", action="store_false")
@@ -1336,7 +1642,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--denoise-conf", type=int, default=2)
     parser.add_argument("--denoise-decay", type=float, default=0.4)
     parser.add_argument("--min-track-age", type=int, default=3)
-    parser.add_argument("--prediction-horizon-s", type=float, default=0.4)
+    parser.add_argument("--prediction-horizon-s", type=float, default=0.5)
     parser.add_argument("--prediction-step-s", type=float, default=0.1)
     parser.add_argument("--prediction-margin-m", type=float, default=0.035)
     parser.add_argument("--prediction-uncertainty-m", type=float, default=0.02)
@@ -1344,8 +1650,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--moving-shadow-replan-in-m",
         type=float,
-        default=0.20,
-        help="earlier predicted-distance trigger for moving-shadow-stop pilot; stop is sent before candidate generation",
+        default=0.14,
+        help="frozen predicted-distance trigger for moving-shadow-stop",
     )
     parser.add_argument("--stop-distance-m", type=float, default=0.08)
     parser.add_argument(
@@ -1374,6 +1680,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--local-segments", type=int, default=5)
     parser.add_argument("--default-obstacle-radius-m", type=float, default=0.055)
     parser.add_argument("--max-track-cluster-association-m", type=float, default=0.08)
+    parser.add_argument("--min-dynamic-trigger-speed-m-s", type=float, default=0.08)
+    parser.add_argument("--dynamic-speed-window", type=int, default=3)
+    parser.add_argument("--dynamic-valid-streak-frames", type=int, default=2)
+    parser.add_argument("--dynamic-radius-min-m", type=float, default=0.03)
+    parser.add_argument("--dynamic-radius-max-m", type=float, default=0.10)
     parser.add_argument("--min-local-motion-rad", type=float, default=0.002)
     parser.add_argument("--shadow-joint-probe-rad", type=float, default=0.025)
     parser.add_argument("--home-joints-deg", default="0,0,90,0,90,0")

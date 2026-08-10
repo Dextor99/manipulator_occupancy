@@ -1,0 +1,2911 @@
+{
+  "created_at": "2026-08-10T11:40:51.923362+00:00",
+  "experiment": "6.5.3 real dynamic Fast CCRO-NUBS",
+  "scene": "D1",
+  "scene_name": "crossing_body",
+  "repeat": 17,
+  "mode": "moving-shadow-stop",
+  "robot_commanded": true,
+  "operator_phrase_ok": true,
+  "required_operator_phrase": "CCRO_653_DYNAMIC_SHADOW_APPROVED",
+  "trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r17",
+  "parameters": {
+    "scene": "D1",
+    "repeat": 17,
+    "mode": "moving-shadow-stop",
+    "operator_phrase": "CCRO_653_DYNAMIC_SHADOW_APPROVED",
+    "robot_ip": "192.168.123.96",
+    "output": "results/new/6_5/6_5_3/dynamic_repair_pilot",
+    "config_dir": "/home/hzy/Code/manipulator_occupancy/config",
+    "stage4_config": "/home/hzy/Code/manipulator_occupancy/config/ccro_stage4.yaml",
+    "urdf": "/home/hzy/Code/manipulator_occupancy/urdf/aubo_i16_gripper.urdf",
+    "width": 1280,
+    "height": 720,
+    "duration_s": 45.0,
+    "arm_delay_s": 1.0,
+    "reference_audit_only": false,
+    "reference_preparation_timeout_s": 60.0,
+    "reference_start_y_tolerance_m": 0.015,
+    "reference_start_joint_tolerance_rad": 0.025,
+    "reference_start_consecutive_frames": 3,
+    "max_reference_step": 5,
+    "reference_step_slack": 2.0,
+    "reference_joint_refine_window": 8,
+    "reference_match_max_rad": 0.05,
+    "local_reference_sanity_scale": 1.5,
+    "no_prompt": false,
+    "remove_planes": true,
+    "plane_dist": 0.02,
+    "max_planes": 1,
+    "voxel_size": 0.02,
+    "self_filter_threshold": 0.08,
+    "cluster_eps": 0.06,
+    "cluster_min_samples": 15,
+    "cluster_min_points": 15,
+    "cluster_min_volume": 0.0005,
+    "surface_density": "coarse",
+    "temporal_denoise": true,
+    "denoise_voxel": 0.04,
+    "denoise_conf": 2,
+    "denoise_decay": 0.4,
+    "min_track_age": 3,
+    "prediction_horizon_s": 0.5,
+    "prediction_step_s": 0.1,
+    "prediction_margin_m": 0.035,
+    "prediction_uncertainty_m": 0.02,
+    "replan_in_m": 0.14,
+    "moving_shadow_replan_in_m": 0.14,
+    "stop_distance_m": 0.08,
+    "moving_shadow_current_stop_m": 0.18,
+    "moving_shadow_any_link_hard_stop_m": 0.03,
+    "online_accept_m": 0.09,
+    "min_clearance_improvement_m": 0.003,
+    "min_candidate_delta_q_rad": 0.0001,
+    "fast_budget_ms": 150.0,
+    "local_horizon_s": 1.0,
+    "reference_feedback_csv": "results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv",
+    "local_segments": 5,
+    "default_obstacle_radius_m": 0.055,
+    "max_track_cluster_association_m": 0.08,
+    "min_dynamic_trigger_speed_m_s": 0.08,
+    "dynamic_speed_window": 3,
+    "dynamic_valid_streak_frames": 2,
+    "dynamic_radius_min_m": 0.03,
+    "dynamic_radius_max_m": 0.1,
+    "min_local_motion_rad": 0.002,
+    "shadow_joint_probe_rad": 0.025,
+    "home_joints_deg": "0,0,90,0,90,0",
+    "x_offset": 0.1,
+    "y_start": 0.4,
+    "y_goal": -0.4,
+    "line_velocity_m_s": 0.02,
+    "line_acc_m_s2": 0.05,
+    "guided_range_m": 0.2,
+    "guided_base_omega": 0.15,
+    "guided_d_safe_m": 0.22,
+    "guided_d_slow_m": 0.14,
+    "guided_d_stop_m": 0.08,
+    "guided_hard_stop_m": 0.1,
+    "guided_max_decel": 2.0,
+    "guided_max_accel": 0.5,
+    "guided_dynamic_lookahead_s": 0.15,
+    "guard_min_x": 0.25,
+    "guard_max_x": 0.95,
+    "guard_min_y": -0.65,
+    "guard_max_y": 0.65,
+    "guard_min_z": 0.3,
+    "guard_max_z": 1.1,
+    "settle_s": 0.4,
+    "poll_s": 0.04,
+    "motion_timeout_s": 90.0,
+    "pose_tolerance_m": 0.015,
+    "joint_tolerance_rad": 0.02,
+    "allow_movel_fallback": false,
+    "min_x": -0.2,
+    "max_x": 0.9,
+    "min_y": -0.55,
+    "max_y": 0.55,
+    "min_z": 0.25,
+    "max_z": 0.9,
+    "allow_live_candidate_execution": false,
+    "live_execute_candidate_phrase": "",
+    "candidate_playback_duration_s": 6.0,
+    "candidate_controller_waypoint_period_s": 0.005,
+    "candidate_max_waypoints": 0,
+    "candidate_joint_velc": 0.006,
+    "candidate_joint_acc": 0.012,
+    "candidate_start_tolerance_rad": 0.035,
+    "candidate_goal_tolerance_rad": 0.012,
+    "candidate_min_observed_motion_rad": 0.003,
+    "candidate_min_execution_wait_s": 0.0,
+    "candidate_motion_timeout_s": 45.0,
+    "candidate_pre_execute_settle_s": 0.35,
+    "post_stop_settle_s": 0.25,
+    "candidate_execute_confirm": true
+  },
+  "events": [
+    {
+      "type": "REFERENCE_ARMED",
+      "frame": 38,
+      "t_s": 5.293181019999963,
+      "tcp_y": 0.3999747021720726,
+      "reference_index": 0,
+      "max_joint_error_rad": 7.700937057497637e-05
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 154,
+      "t_s": 22.114022374,
+      "distance_m": 0.17475703657057376,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 155,
+      "t_s": 22.263522234999982,
+      "distance_m": 0.16590780776811118,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 156,
+      "t_s": 22.425316323999994,
+      "distance_m": 0.15180432070178856,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 157,
+      "t_s": 22.591063833999954,
+      "distance_m": 0.14108758466438398,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 158,
+      "t_s": 22.735076213999946,
+      "distance_m": 0.13296929492339218,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 159,
+      "t_s": 22.888362262999976,
+      "distance_m": 0.1304865562595324,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 160,
+      "t_s": 23.033641821999993,
+      "distance_m": 0.12877341550948385,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 161,
+      "t_s": 23.197448707999968,
+      "distance_m": 0.1285519225038011,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 162,
+      "t_s": 23.36360768199995,
+      "distance_m": 0.12954740188865582,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 163,
+      "t_s": 23.514181788999963,
+      "distance_m": 0.12882563608329545,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 164,
+      "t_s": 23.671200228999965,
+      "distance_m": 0.12953895881752459,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 165,
+      "t_s": 23.86785210399995,
+      "distance_m": 0.1267972901863716,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 166,
+      "t_s": 24.020319513999993,
+      "distance_m": 0.12839613021252178,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 167,
+      "t_s": 24.174619264,
+      "distance_m": 0.12860349484800604,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 168,
+      "t_s": 24.34318207299998,
+      "distance_m": 0.12890219447442688,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 169,
+      "t_s": 24.491422199,
+      "distance_m": 0.12425934195330865,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 170,
+      "t_s": 24.65314581299998,
+      "distance_m": 0.13052608346612554,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 171,
+      "t_s": 24.815389296999967,
+      "distance_m": 0.12732426908251818,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 172,
+      "t_s": 24.963675853999973,
+      "distance_m": 0.1268639277771144,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 173,
+      "t_s": 25.113590728999952,
+      "distance_m": 0.12615573020806722,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 174,
+      "t_s": 25.278656121999973,
+      "distance_m": 0.12384114993798291,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 175,
+      "t_s": 25.441460701999972,
+      "distance_m": 0.12570116069637233,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 176,
+      "t_s": 25.593620518999955,
+      "distance_m": 0.12504765243488156,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 177,
+      "t_s": 25.755431439999995,
+      "distance_m": 0.12576511047613098,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 178,
+      "t_s": 25.894004833999986,
+      "distance_m": 0.1259389129951054,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 179,
+      "t_s": 26.04570487799998,
+      "distance_m": 0.1269333960888794,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 180,
+      "t_s": 26.200567855999964,
+      "distance_m": 0.1229610520441593,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 181,
+      "t_s": 26.358984856999996,
+      "distance_m": 0.12479290666575558,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 182,
+      "t_s": 26.51786417699998,
+      "distance_m": 0.12512432887010297,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 183,
+      "t_s": 26.68549939899998,
+      "distance_m": 0.12383001396451777,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 184,
+      "t_s": 26.856933856999945,
+      "distance_m": 0.12493180636775919,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 185,
+      "t_s": 27.03996222799998,
+      "distance_m": 0.1248476137346445,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 186,
+      "t_s": 27.17427145299996,
+      "distance_m": 0.12043284625447884,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 187,
+      "t_s": 27.309751194,
+      "distance_m": 0.12081418480710039,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 188,
+      "t_s": 27.46080561699995,
+      "distance_m": 0.11999176824118997,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 189,
+      "t_s": 27.613374461999967,
+      "distance_m": 0.12344656979510991,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 190,
+      "t_s": 27.757834154999955,
+      "distance_m": 0.12049921070192865,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 191,
+      "t_s": 27.90415057399997,
+      "distance_m": 0.12237924933124116,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 192,
+      "t_s": 28.070970415999966,
+      "distance_m": 0.12100822041988404,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 193,
+      "t_s": 28.23994822399999,
+      "distance_m": 0.12065327136153182,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 194,
+      "t_s": 28.40458241899995,
+      "distance_m": 0.11656867014948773,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 195,
+      "t_s": 28.55810823799999,
+      "distance_m": 0.11342898314697779,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 196,
+      "t_s": 28.69710858899998,
+      "distance_m": 0.11213991558913868,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 197,
+      "t_s": 28.85601234699999,
+      "distance_m": 0.1089197662466449,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 198,
+      "t_s": 29.02413369499999,
+      "distance_m": 0.10951752034133352,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 199,
+      "t_s": 29.174300148999976,
+      "distance_m": 0.10822479121950351,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 200,
+      "t_s": 29.330881593999948,
+      "distance_m": 0.10433537667018274,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 201,
+      "t_s": 29.51019561299995,
+      "distance_m": 0.09937660005972604,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 202,
+      "t_s": 29.65229319499997,
+      "distance_m": 0.09820715284371591,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 203,
+      "t_s": 29.808306905999984,
+      "distance_m": 0.0997461659869901,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 204,
+      "t_s": 29.96363057299999,
+      "distance_m": 0.09407139393079088,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 205,
+      "t_s": 30.123096696999994,
+      "distance_m": 0.089827871668937,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 206,
+      "t_s": 30.276182240999958,
+      "distance_m": 0.08999479457475655,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 207,
+      "t_s": 30.428239666999957,
+      "distance_m": 0.09221479769110016,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 208,
+      "t_s": 30.59147977599997,
+      "distance_m": 0.09221972859827955,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "GUIDED_POINTCLOUD_GUARD_STOP",
+      "frame": 209,
+      "t_s": 30.74415262699995,
+      "guard_distance_m": 0.0980184694124025,
+      "threshold_m": 0.1,
+      "guard_decision": "STATIC",
+      "guard_cluster_count": 1
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 209,
+      "t_s": 30.74415262699995,
+      "distance_m": 0.08334615161125894,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 210,
+      "t_s": 30.89860882299996,
+      "distance_m": 0.0901332736138136,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 211,
+      "t_s": 31.044573051999976,
+      "distance_m": 0.08136720419730487,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 212,
+      "t_s": 31.19608128799996,
+      "distance_m": 0.08409205591872311,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 213,
+      "t_s": 31.362201239,
+      "distance_m": 0.0891635695065283,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 214,
+      "t_s": 31.526851937999993,
+      "distance_m": 0.08982236633492227,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 215,
+      "t_s": 31.667944798999997,
+      "distance_m": 0.08027836545073473,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 216,
+      "t_s": 31.819863588999965,
+      "distance_m": 0.08655225345556085,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 217,
+      "t_s": 31.986280567999984,
+      "distance_m": 0.08374157116196285,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 218,
+      "t_s": 32.147204224999996,
+      "distance_m": 0.0819357947163762,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 219,
+      "t_s": 32.294304274999945,
+      "distance_m": 0.08291049444686394,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 220,
+      "t_s": 32.446909708999954,
+      "distance_m": 0.08228268939812186,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 221,
+      "t_s": 32.602448461999984,
+      "distance_m": 0.08254970792965596,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 222,
+      "t_s": 32.74324523599995,
+      "distance_m": 0.08270312297306169,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 223,
+      "t_s": 32.91022554699998,
+      "distance_m": 0.08183459553811451,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 224,
+      "t_s": 33.065038406999975,
+      "distance_m": 0.08222968243253041,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 225,
+      "t_s": 33.22896803499998,
+      "distance_m": 0.08363943262587836,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 226,
+      "t_s": 33.379560640999955,
+      "distance_m": 0.08118496017794394,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 227,
+      "t_s": 33.527601748999984,
+      "distance_m": 0.07863481776087893,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 228,
+      "t_s": 33.68355876299995,
+      "distance_m": 0.08417751278152902,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 229,
+      "t_s": 33.84231120499999,
+      "distance_m": 0.07941863182592009,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 230,
+      "t_s": 33.995085399999994,
+      "distance_m": 0.07943435102545494,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 231,
+      "t_s": 34.16886793699996,
+      "distance_m": 0.043853232848596435,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 232,
+      "t_s": 34.32537199899997,
+      "distance_m": 0.04425171911280262,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 233,
+      "t_s": 34.472324252999954,
+      "distance_m": 0.0796060231385493,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 234,
+      "t_s": 34.632238707,
+      "distance_m": 0.08031574749816368,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 235,
+      "t_s": 34.78925389699998,
+      "distance_m": 0.0458679770991718,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 236,
+      "t_s": 34.946092373,
+      "distance_m": 0.07897315593290809,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 237,
+      "t_s": 35.10220441499996,
+      "distance_m": 0.07952162638538844,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 238,
+      "t_s": 35.254120959999966,
+      "distance_m": 0.046296590984095165,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 239,
+      "t_s": 35.42695161199998,
+      "distance_m": 0.04400100826704399,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 240,
+      "t_s": 35.58311718499999,
+      "distance_m": 0.0819148492876121,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 241,
+      "t_s": 35.74150725099997,
+      "distance_m": 0.07829507609185521,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 242,
+      "t_s": 35.90029434899998,
+      "distance_m": 0.04128810760189586,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 243,
+      "t_s": 36.05911083699999,
+      "distance_m": 0.04620891367702123,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 244,
+      "t_s": 36.205906235999976,
+      "distance_m": 0.04176606693168507,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 245,
+      "t_s": 36.36803995599996,
+      "distance_m": 0.07480091248921396,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 246,
+      "t_s": 36.51226355,
+      "distance_m": 0.04318865403317349,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 247,
+      "t_s": 36.686651600999994,
+      "distance_m": 0.0461133677149899,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 248,
+      "t_s": 36.83570800599995,
+      "distance_m": 0.041502186442096266,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 249,
+      "t_s": 36.99762197599995,
+      "distance_m": 0.07829710857384135,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 250,
+      "t_s": 37.154999964999945,
+      "distance_m": 0.042090738482118396,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 251,
+      "t_s": 37.31763069599998,
+      "distance_m": 0.04349530814260681,
+      "nearest_link": "gripper_base_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 252,
+      "t_s": 37.48539423,
+      "distance_m": 0.07865971277193727,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 253,
+      "t_s": 37.65192313299997,
+      "distance_m": 0.07679324256098574,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 254,
+      "t_s": 37.803676919,
+      "distance_m": 0.07646259326076808,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 255,
+      "t_s": 37.95976957399995,
+      "distance_m": 0.07495155403635183,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 256,
+      "t_s": 38.11411702099997,
+      "distance_m": 0.07191476349097486,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 257,
+      "t_s": 38.26570938599997,
+      "distance_m": 0.07378139578951808,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 258,
+      "t_s": 38.41589585599996,
+      "distance_m": 0.07097390644868863,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 259,
+      "t_s": 38.58179731199999,
+      "distance_m": 0.07663152967482251,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 260,
+      "t_s": 38.729142639999964,
+      "distance_m": 0.07456675659080166,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 261,
+      "t_s": 38.883558121999954,
+      "distance_m": 0.07556191956095132,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 262,
+      "t_s": 39.05430191199997,
+      "distance_m": 0.07351762386387743,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 263,
+      "t_s": 39.20903744499998,
+      "distance_m": 0.07214375240623108,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 264,
+      "t_s": 39.37071287699996,
+      "distance_m": 0.07305984149194741,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 265,
+      "t_s": 39.51381990699997,
+      "distance_m": 0.07401697982898062,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 266,
+      "t_s": 39.66288930799999,
+      "distance_m": 0.07503542459772344,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 267,
+      "t_s": 39.817077420999965,
+      "distance_m": 0.07068329176034824,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 268,
+      "t_s": 39.96094283399998,
+      "distance_m": 0.07292784578667962,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 269,
+      "t_s": 40.122109268999964,
+      "distance_m": 0.07056921713718559,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 270,
+      "t_s": 40.28593033599998,
+      "distance_m": 0.07002767299901612,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 271,
+      "t_s": 40.44649116399995,
+      "distance_m": 0.0755084246934767,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 272,
+      "t_s": 40.59450682199997,
+      "distance_m": 0.07529590824210004,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 273,
+      "t_s": 40.75302629799995,
+      "distance_m": 0.07118443094131949,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 274,
+      "t_s": 40.90890037499997,
+      "distance_m": 0.07715836333449339,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 275,
+      "t_s": 41.08173107599998,
+      "distance_m": 0.07211997874462973,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 276,
+      "t_s": 41.22975196699997,
+      "distance_m": 0.07210898785254917,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 277,
+      "t_s": 41.39543919899995,
+      "distance_m": 0.06724714979774385,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 278,
+      "t_s": 41.54800446099995,
+      "distance_m": 0.06843626613456075,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 279,
+      "t_s": 41.705654222999954,
+      "distance_m": 0.07147886803765548,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 280,
+      "t_s": 41.85965523599998,
+      "distance_m": 0.07252935777041779,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 281,
+      "t_s": 42.02009938399999,
+      "distance_m": 0.07833080535284095,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 282,
+      "t_s": 42.18477527699997,
+      "distance_m": 0.07018858831175737,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 283,
+      "t_s": 42.33855136,
+      "distance_m": 0.06888563207692208,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 284,
+      "t_s": 42.48927507899998,
+      "distance_m": 0.06935831136798222,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 285,
+      "t_s": 42.64161508999996,
+      "distance_m": 0.06858721895483949,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 286,
+      "t_s": 42.793929841999955,
+      "distance_m": 0.06963518517583145,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 287,
+      "t_s": 42.94557538599997,
+      "distance_m": 0.06829575467318426,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 288,
+      "t_s": 43.10056991099998,
+      "distance_m": 0.07346830860502074,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 289,
+      "t_s": 43.26390443699995,
+      "distance_m": 0.06814937454674981,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 290,
+      "t_s": 43.43872899099995,
+      "distance_m": 0.07303577779401473,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 291,
+      "t_s": 43.59070134999996,
+      "distance_m": 0.06940154608011319,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 292,
+      "t_s": 43.745168256,
+      "distance_m": 0.0690711917868768,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 293,
+      "t_s": 43.893847978,
+      "distance_m": 0.07259298367037975,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 294,
+      "t_s": 44.04121700899998,
+      "distance_m": 0.06711319521844851,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 295,
+      "t_s": 44.19863306499997,
+      "distance_m": 0.06924470403209511,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 296,
+      "t_s": 44.35831284899996,
+      "distance_m": 0.069918717568541,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 297,
+      "t_s": 44.507978109999954,
+      "distance_m": 0.06713362891609966,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 298,
+      "t_s": 44.66252217599998,
+      "distance_m": 0.07177263037336205,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 299,
+      "t_s": 44.80964841299999,
+      "distance_m": 0.0666576537140044,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 300,
+      "t_s": 44.978947345999984,
+      "distance_m": 0.06928984205330246,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 301,
+      "t_s": 45.13643243199999,
+      "distance_m": 0.06959601516842435,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 302,
+      "t_s": 45.29870413699996,
+      "distance_m": 0.0646853928543073,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 303,
+      "t_s": 45.44954917299998,
+      "distance_m": 0.06816231935914036,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 304,
+      "t_s": 45.599441956999954,
+      "distance_m": 0.0659552175071587,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 305,
+      "t_s": 45.749839607999945,
+      "distance_m": 0.06662080531155247,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 306,
+      "t_s": 45.90262303399999,
+      "distance_m": 0.06829606473123727,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 307,
+      "t_s": 46.048582032999946,
+      "distance_m": 0.06963668528004167,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 308,
+      "t_s": 46.20596885499998,
+      "distance_m": 0.06566335807863288,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 309,
+      "t_s": 46.358923009999955,
+      "distance_m": 0.06611045354470188,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 310,
+      "t_s": 46.52073084299997,
+      "distance_m": 0.06845350963718147,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 311,
+      "t_s": 46.67031077199999,
+      "distance_m": 0.06548091761236431,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 312,
+      "t_s": 46.824282410999956,
+      "distance_m": 0.06579090370223942,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 313,
+      "t_s": 46.97556243299999,
+      "distance_m": 0.06389969307229933,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 314,
+      "t_s": 47.12758950699998,
+      "distance_m": 0.06800924943510477,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 315,
+      "t_s": 47.29372288799999,
+      "distance_m": 0.06641878998751191,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 316,
+      "t_s": 47.44933212699999,
+      "distance_m": 0.06389674929790191,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 317,
+      "t_s": 47.606676455999946,
+      "distance_m": 0.0647013918661924,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 318,
+      "t_s": 47.759243406999985,
+      "distance_m": 0.06042778227048207,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 319,
+      "t_s": 47.90687052099997,
+      "distance_m": 0.0695668434229852,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 320,
+      "t_s": 48.072846297999945,
+      "distance_m": 0.06342817332012005,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 321,
+      "t_s": 48.22403381299995,
+      "distance_m": 0.063947382750151,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 322,
+      "t_s": 48.37414985199996,
+      "distance_m": 0.06493116132977819,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 323,
+      "t_s": 48.514466838999965,
+      "distance_m": 0.06765846920958535,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 324,
+      "t_s": 48.664705108999954,
+      "distance_m": 0.0671844373838659,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 325,
+      "t_s": 48.81651502899996,
+      "distance_m": 0.06292573577726537,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 326,
+      "t_s": 48.968356508,
+      "distance_m": 0.06419235940910836,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 327,
+      "t_s": 49.12083891499998,
+      "distance_m": 0.06347419793762304,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 328,
+      "t_s": 49.272013493999964,
+      "distance_m": 0.0682174508155975,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 329,
+      "t_s": 49.41051884299998,
+      "distance_m": 0.06813428582841805,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 330,
+      "t_s": 49.571388421999984,
+      "distance_m": 0.06311648202042323,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 331,
+      "t_s": 49.71814919799999,
+      "distance_m": 0.06563775087587038,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 332,
+      "t_s": 49.86643658699995,
+      "distance_m": 0.06437447496573896,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 333,
+      "t_s": 50.020250261,
+      "distance_m": 0.06674918050668183,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 334,
+      "t_s": 50.16887026699999,
+      "distance_m": 0.06216284201911918,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    },
+    {
+      "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
+      "frame": 335,
+      "t_s": 50.317584161999946,
+      "distance_m": 0.06354523339484422,
+      "nearest_link": "left_link",
+      "allowed_links": [
+        "foreArm_Link",
+        "upperArm_Link",
+        "wrist1_Link",
+        "wrist2_Link"
+      ],
+      "threshold_m": 0.18,
+      "any_link_hard_stop_m": 0.03
+    }
+  ],
+  "reference_feedback_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv",
+  "reference_samples": 981,
+  "reference_local_increment_1s_p99_rad": 0.04181110999999987,
+  "reference_motion_method": "RobotCommander.motion_worker_y_one_way_reference",
+  "guided_range_m": 0.2,
+  "reference_line_velocity_m_s": 0.02,
+  "status": "GUIDED_GUARD_STOPPED_NO_CCRO_TRIGGER",
+  "error": null,
+  "trigger_frame": null,
+  "candidate_status": null,
+  "candidate_accepted": null,
+  "candidate_execution_status": null,
+  "candidate_execution": null,
+  "frame_count": 336,
+  "duration_wall_s": 58.90304446220398,
+  "current_min_distance_m": 0.041288,
+  "predicted_min_distance_m": null,
+  "guard_min_distance_m": 0.036758,
+  "guard_stopped": true,
+  "current_distance_stopped": false,
+  "reference_alignment": {
+    "accepted": false,
+    "checks": {
+      "reference_armed": true,
+      "armed_rows_present": true,
+      "index_steps_bounded": true,
+      "no_clamped_step": false,
+      "reference_match_ok": true,
+      "reference_progress_complete": false,
+      "no_dynamic_trigger": true
+    },
+    "armed_rows": 298,
+    "final_reference_index": 475,
+    "max_reference_index_step": 5,
+    "max_reference_joint_match_rad": 0.001562
+  }
+}

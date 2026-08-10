@@ -28,7 +28,7 @@ def test_recorded_reference_state_after_uses_future_reference_not_velocity_extra
     q[:, 0] = [0.0, 0.3, 1.0]
     qd = np.zeros_like(q)
     ref = trial.RecordedReference(times, q, qd)
-    ref.locate(np.array([0.3, 0, 0, 0, 0, 0]))
+    ref.locate(np.array([0.3, 0, 0, 0, 0, 0]), y_actual=None, max_forward_step=5)
     q_future, _, _ = ref.state_after(1.0)
     assert ref.index == 1
     assert q_future[0] == 1.0
@@ -84,3 +84,33 @@ def test_reference_completeness_requires_full_stroke():
     result = prepare.reference_completeness(rows, args)
     assert not result["accepted"]
     assert "starts_near_reference_start" in result["reasons"]
+
+
+def test_reference_locator_clamps_large_forward_jump():
+    times = np.arange(20, dtype=float) * 0.04
+    q = np.zeros((20, 6))
+    q[:, 0] = np.arange(20)
+    y = np.linspace(0.4, -0.4, 20)
+    ref = trial.RecordedReference(times, q, np.zeros_like(q), y)
+    audit = ref.locate(q[-1], y_actual=float(y[-1]), max_forward_step=5, joint_refine_window=2)
+    assert audit["index"] == 5
+    assert audit["step_was_clamped"]
+
+
+def test_static_large_track_cannot_enter_dynamic_trigger_pool():
+    obj = SimpleNamespace(id=9, center=np.array([0.59, -0.59, 0.36]), velocity=np.zeros(3), radius=0.203, age=8)
+    cluster = SimpleNamespace(center=np.array([0.60, -0.59, 0.36]))
+    args = SimpleNamespace(
+        default_obstacle_radius_m=0.055,
+        dynamic_speed_window=3,
+        min_track_age=3,
+        min_dynamic_trigger_speed_m_s=0.08,
+        dynamic_radius_min_m=0.03,
+        dynamic_radius_max_m=0.10,
+        max_track_cluster_association_m=0.08,
+        dynamic_valid_streak_frames=2,
+    )
+    valid, audits = trial.update_dynamic_track_validity([obj], [cluster], {}, {}, args)
+    assert valid == []
+    assert not audits[9]["checks"]["speed_ok"]
+    assert not audits[9]["checks"]["radius_ok"]
