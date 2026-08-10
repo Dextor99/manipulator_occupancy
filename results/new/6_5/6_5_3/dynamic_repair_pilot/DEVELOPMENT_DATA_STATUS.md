@@ -59,5 +59,21 @@ was `left_link`/`gripper_base_link` (gripper finger), not the D1
 upper-arm/forearm risk links. The raw-cloud hard guard then stopped the robot
 at 0.085–0.099 m (`GUIDED_GUARD_STOPPED_NO_CCRO_TRIGGER`), which is correct
 fail-safe behaviour but not the intended pilot outcome (the pilot wanted
-predicted risk at 0.14 m while current clearance stayed above 0.12 m).
+predicted risk at 0.14 m while current clearance stayed above 0.12 m). r18
+motivated the scene-independent protocol: `risk_links` no longer gate stops,
+and the measured most-at-risk link decides.
+
+D1 r19 is the first development `moving-shadow-stop` pilot under the unified
+`653_unified_d1_d2_v1` protocol that reached `TRIGGERED`. Track 1 became
+prediction-ready at frame 90 (0.081 m/s window), was blocked for 34 frames as
+`future_reference_clearance_above_threshold` (predicted distance 0.18–0.30 m),
+then at frame 124 `D_predicted = 0.128 m < 0.14 m` with `D_current = 0.238 m`
+and `D_guard = 0.247 m` — exactly the intended evidence signature. The
+immediate stop was sent ~76 ms after the trigger frame. The trial then produced
+a `REJECTED_CANDIDATE`: `fast_elapsed_ms = 341.7 > 150 ms` budget,
+`max_delta_q = 0`, `clearance_improvement = 0`, verification min distance
+`−0.018 m` — the candidate is a reference continuation with no improving SCvx
+step. Sensing → dynamic-track → predicted-risk → trigger → stop is now proven
+end to end; the Fast local repair still fails to produce an acceptable
+candidate within budget, so r19 is not formal 6.5.3 avoidance evidence.
 

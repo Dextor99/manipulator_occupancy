@@ -17,6 +17,7 @@ This first real-system implementation is intentionally staged:
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 from datetime import datetime, timezone
 import importlib
@@ -91,21 +92,87 @@ from utils.config import load_config_dir  # noqa: E402
 DEFAULT_OUTPUT = ROOT / "results" / "new" / "6_5" / "6_5_3" / "dynamic_repair_formal"
 REQUIRED_OPERATOR_PHRASE = "CCRO_653_DYNAMIC_SHADOW_APPROVED"
 LIVE_CANDIDATE_EXECUTE_PHRASE = "CCRO_653_LIVE_CANDIDATE_EXECUTE_APPROVED"
+FORMAL_PROTOCOL_ID = "653_unified_d1_d2_v1"
 
 SCENARIOS = {
     "D1": {
         "name": "crossing_body",
-        "description": "hand-held foam obstacle crosses upper-arm/forearm region",
-        "prompt": "准备让泡沫障碍横向经过 upper-arm / forearm 区域",
-        "risk_links": {"upperArm_Link", "foreArm_Link", "wrist1_Link", "wrist2_Link"},
+        "description": "lateral obstacle crossing of the future robot swept region",
+        "prompt": "准备让障碍从侧面垂直/斜交 reference，横穿机器人未来扫掠区域（不要沿轨迹迎面接近）",
     },
     "D2": {
-        "name": "approaching_wrist",
-        "description": "hand-held foam obstacle obliquely approaches wrist/gripper region",
-        "prompt": "准备让泡沫障碍从侧前方斜向接近 wrist / gripper 区域",
-        "risk_links": {"foreArm_Link", "wrist1_Link", "wrist2_Link", "wrist3_Link", "gripper_base_link", "left_link", "right_link"},
+        "name": "opposing_approach",
+        "description": "opposing or oblique obstacle approach to the future robot swept region",
+        "prompt": "准备让障碍沿相向或斜向路径接近机器人未来扫掠区域",
     },
 }
+
+# One scene-independent protocol for every formal D1/D2 robot-motion trial.
+# Scene labels describe obstacle geometry only and have no control authority.
+FORMAL_PROTOCOL = {
+    "remove_planes": True,
+    "plane_dist": 0.02,
+    "cluster_eps": 0.05,
+    "cluster_min_samples": 15,
+    "cluster_min_points": 15,
+    "cluster_min_volume": 0.0005,
+    "surface_density": "coarse",
+    "temporal_denoise": True,
+    "denoise_voxel": 0.04,
+    "denoise_conf": 2,
+    "denoise_decay": 0.4,
+    "min_track_age": 3,
+    "min_dynamic_trigger_speed_m_s": 0.08,
+    "dynamic_exit_speed_m_s": 0.04,
+    "dynamic_exit_streak_frames": 3,
+    "dynamic_speed_window": 5,
+    "dynamic_valid_streak_frames": 2,
+    "dynamic_tracker_association_distance_m": 0.12,
+    "dynamic_tracker_motion_gate_speed_m_s": 0.03,
+    "dynamic_tracker_max_miss": 2,
+    "max_track_cluster_association_m": 0.08,
+    "prediction_horizon_s": 0.5,
+    "prediction_step_s": 0.1,
+    "prediction_margin_m": 0.035,
+    "prediction_uncertainty_m": 0.02,
+    "replan_in_m": 0.14,
+    "moving_shadow_replan_in_m": 0.14,
+    "moving_shadow_current_stop_m": 0.12,
+    "guided_d_safe_m": 0.12,
+    "guided_d_slow_m": 0.12,
+    "guided_d_stop_m": 0.08,
+    "guided_hard_stop_m": 0.10,
+    "guided_max_decel": 2.0,
+    "guided_max_accel": 0.5,
+    "guided_dynamic_lookahead_s": 0.15,
+    "local_horizon_s": 1.0,
+    "local_segments": 5,
+    "online_accept_m": 0.09,
+    "min_clearance_improvement_m": 0.003,
+    "fast_budget_ms": 150.0,
+    "line_velocity_m_s": 0.020,
+    "line_acc_m_s2": 0.05,
+}
+ROBOT_MOTION_MODES = {"moving-shadow-stop", "live-stop-replan-execute"}
+
+
+def formal_protocol_violations(args: argparse.Namespace) -> list[str]:
+    violations: list[str] = []
+    for name, expected in FORMAL_PROTOCOL.items():
+        actual = getattr(args, name)
+        if isinstance(expected, bool):
+            matches = actual is expected
+        elif isinstance(expected, (int, float)):
+            matches = math.isclose(float(actual), float(expected), rel_tol=0.0, abs_tol=1.0e-12)
+        else:
+            matches = actual == expected
+        if not matches:
+            violations.append(f"{name}={actual!r} (formal={expected!r})")
+    return violations
+
+
+def formal_protocol_signature(args: argparse.Namespace) -> dict[str, Any]:
+    return {name: getattr(args, name) for name in FORMAL_PROTOCOL}
 
 FRAME_FIELDS = [
     "frame",
@@ -140,9 +207,13 @@ FRAME_FIELDS = [
     "reference_future_index",
     "reference_future_delta_q_max_rad",
     "predicted_object_speed_m_s",
+    "predicted_object_velocity_x_m_s",
+    "predicted_object_velocity_y_m_s",
+    "predicted_object_velocity_z_m_s",
     "predicted_object_radius_m",
     "predicted_object_age",
     "predicted_object_association_error_m",
+    "dynamic_object_prediction_ready",
     "dynamic_object_valid",
     "dynamic_object_block_reason",
     "risk_state_current",
@@ -171,8 +242,9 @@ CLUSTER_FIELDS = [
 TRACK_FIELDS = [
     "frame", "t_s", "track_id", "age", "center_x", "center_y", "center_z",
     "instant_speed_m_s", "window_speed_m_s", "median_speed_m_s", "raw_cluster_speed_m_s",
+    "window_velocity_x_m_s", "window_velocity_y_m_s", "window_velocity_z_m_s",
     "cluster_radius_raw_m", "tracked_radius_m", "risk_radius_m", "raw_radius_m",
-    "association_error_m", "valid_streak", "dynamic_state", "dynamic_valid",
+    "association_error_m", "valid_streak", "dynamic_state", "prediction_ready", "dynamic_valid",
     "block_reason",
 ]
 
@@ -425,6 +497,10 @@ def update_dynamic_track_validity(
             float(np.linalg.norm(history[-1][1] - history[0][1]) / elapsed)
             if elapsed > 1.0e-6 else 0.0
         )
+        window_velocity = (
+            (history[-1][1] - history[0][1]) / elapsed
+            if elapsed > 1.0e-6 else np.zeros(3, dtype=np.float64)
+        )
         exit_speed = float(getattr(args, "dynamic_exit_speed_m_s", 0.04))
         exit_frames = int(getattr(args, "dynamic_exit_streak_frames", 3))
         if dynamic_state.get(track_id, False):
@@ -450,11 +526,13 @@ def update_dynamic_track_validity(
             + float(getattr(args, "prediction_uncertainty_m", 0.0)),
             "age": int(getattr(obj, "age", 0)),
             "window_speed_m_s": window_speed,
+            "window_velocity": np.asarray(window_velocity, dtype=np.float64),
             # Kept as a compatibility alias for existing result readers.
             "median_speed_m_s": window_speed,
             "speed_samples": len(history),
             "valid_streak": valid_streak[track_id],
             "dynamic_state": dynamic_state.get(track_id, False),
+            "prediction_ready": instant_valid,
             "valid": is_valid,
             "checks": checks,
             "block_reasons": [name for name, ok in checks.items() if not ok]
@@ -464,6 +542,21 @@ def update_dynamic_track_validity(
         if is_valid:
             valid.append(obj)
     return valid, audits
+
+
+def make_prediction_ready_objects(objects: list[Any], audits: dict[int, dict[str, Any]]) -> list[Any]:
+    """Snapshot prediction-ready tracks with the same window velocity used by gating."""
+    ready: list[Any] = []
+    for obj in objects:
+        track_id = object_track_id(obj)
+        audit = audits.get(track_id)
+        if audit is None or not audit["prediction_ready"]:
+            continue
+        snapshot = copy.copy(obj)
+        snapshot.center = np.asarray(obj.center, dtype=np.float64).copy()
+        snapshot.velocity = np.asarray(audit["window_velocity"], dtype=np.float64).copy()
+        ready.append(snapshot)
+    return ready
 
 
 def object_track_id(obj: Any) -> int | None:
@@ -907,6 +1000,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(f"unknown scene {args.scene}")
     trial_dir = build_trial_dir(args)
     trial_dir.mkdir(parents=True, exist_ok=True)
+    protocol_violations = formal_protocol_violations(args) if args.mode in ROBOT_MOTION_MODES else []
+    if protocol_violations:
+        blocked = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "experiment": "6.5.3 real dynamic Fast CCRO-NUBS",
+            "scene": args.scene,
+            "scene_name": SCENARIOS[args.scene]["name"],
+            "repeat": args.repeat,
+            "mode": args.mode,
+            "status": "BLOCKED_NONFORMAL_PROTOCOL",
+            "robot_commanded": False,
+            "formal_protocol": FORMAL_PROTOCOL,
+            "formal_protocol_id": FORMAL_PROTOCOL_ID,
+            "violations": protocol_violations,
+            "parameters": vars(args),
+        }
+        write_json(trial_dir / "summary.json", blocked)
+        raise RuntimeError("formal D1/D2 protocol mismatch: " + "; ".join(protocol_violations))
     config_live = load_config_dir(args.config_dir)
     safety = config_live["safety"]
     policy = SafetyPolicy(
@@ -930,6 +1041,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "required_operator_phrase": REQUIRED_OPERATOR_PHRASE,
         "trial_dir": str(trial_dir),
         "parameters": vars(args),
+        "formal_protocol": formal_protocol_signature(args),
+        "formal_protocol_id": FORMAL_PROTOCOL_ID,
+        "protocol_scene_independent": True,
         "events": [],
     }
     if args.mode not in {"shadow", "dynamic-track-audit"} and args.operator_phrase != REQUIRED_OPERATOR_PHRASE:
@@ -1003,7 +1117,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     caught_error: dict[str, Any] | None = None
     ref_robot_points: np.ndarray | None = None
     ref_robot_motion_y: float | None = None
-    robot_motion_modes = {"moving-shadow-stop", "live-stop-replan-execute"}
+    robot_motion_modes = ROBOT_MOTION_MODES
     reference: RecordedReference | None = None
     if args.reference_feedback_csv is not None:
         reference = RecordedReference.load(args.reference_feedback_csv.resolve())
@@ -1076,6 +1190,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         frame_index = 0
         while True:
             frame_started = time.perf_counter()
+            guard_stop_this_frame = False
             if not reference_armed and frame_started - started > args.reference_preparation_timeout_s:
                 raise RuntimeError("reference start was not reached before preparation timeout")
             if reference_armed and reference_arm_perf is not None and frame_started - reference_arm_perf >= args.duration_s:
@@ -1210,7 +1325,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             tracked = safety_tracker.update(safety_detections, timestamp=timestamp)
             dynamic_tracked = dynamic_tracker.update(dynamic_detections, timestamp=timestamp)
             stable = [obj for obj in dynamic_tracked if obj.age >= args.min_track_age]
-            dynamic_tracks, dynamic_audits = update_dynamic_track_validity(
+            dynamic_valid_tracks, dynamic_audits = update_dynamic_track_validity(
                 dynamic_tracked,
                 dynamic_clusters,
                 dynamic_speed_history,
@@ -1220,6 +1335,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 dynamic_low_speed_streak,
                 timestamp,
             )
+            prediction_tracks = make_prediction_ready_objects(dynamic_tracked, dynamic_audits)
             for track_id, audit in dynamic_audits.items():
                 cluster_center = audit["associated_cluster_center"]
                 raw_cluster_speed = math.nan
@@ -1237,17 +1353,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         "window_speed_m_s": f"{audit['window_speed_m_s']:.6f}",
                         "median_speed_m_s": f"{audit['median_speed_m_s']:.6f}",
                         "raw_cluster_speed_m_s": "" if not np.isfinite(raw_cluster_speed) else f"{raw_cluster_speed:.6f}",
+                        "window_velocity_x_m_s": f"{audit['window_velocity'][0]:.6f}",
+                        "window_velocity_y_m_s": f"{audit['window_velocity'][1]:.6f}",
+                        "window_velocity_z_m_s": f"{audit['window_velocity'][2]:.6f}",
                         "cluster_radius_raw_m": f"{audit['raw_radius']:.6f}",
                         "tracked_radius_m": f"{audit['track_radius']:.6f}",
                         "risk_radius_m": f"{audit['risk_radius_m']:.6f}",
                         "raw_radius_m": f"{audit['raw_radius']:.6f}", "association_error_m": f"{audit['association_error_m']:.6f}",
                         "valid_streak": audit["valid_streak"], "dynamic_valid": int(audit["valid"]),
                         "dynamic_state": int(audit["dynamic_state"]),
+                        "prediction_ready": int(audit["prediction_ready"]),
                         "block_reason": ",".join(audit["block_reasons"]),
                     }
                 )
             risk_spheres = predict_risk_spheres(
-                dynamic_tracks,
+                prediction_tracks,
                 horizon=args.prediction_horizon_s,
                 step=args.prediction_step_s,
                 margin=args.prediction_margin_m,
@@ -1332,6 +1452,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 ):
                     commander.set_speed_scale(0.0)
                     guard_stopped = True
+                    guard_stop_this_frame = True
                     log["events"].append(
                         {
                             "type": "GUIDED_POINTCLOUD_GUARD_STOP",
@@ -1396,9 +1517,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "reference_future_index": future_index,
                 "reference_future_delta_q_max_rad": "" if not np.isfinite(future_delta_q) else f"{future_delta_q:.6f}",
                 "predicted_object_speed_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['median_speed_m_s']):.6f}",
+                "predicted_object_velocity_x_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['window_velocity'][0]):.6f}",
+                "predicted_object_velocity_y_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['window_velocity'][1]):.6f}",
+                "predicted_object_velocity_z_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['window_velocity'][2]):.6f}",
                 "predicted_object_radius_m": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['raw_radius']):.6f}",
                 "predicted_object_age": "" if row_dynamic_audit is None else int(row_dynamic_audit["age"]),
                 "predicted_object_association_error_m": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['association_error_m']):.6f}",
+                "dynamic_object_prediction_ready": int(bool(predicted_audit and predicted_audit["prediction_ready"])),
                 "dynamic_object_valid": int(bool(predicted_audit and predicted_audit["valid"])),
                 "dynamic_object_block_reason": dynamic_block_reason,
                 "risk_state_current": risk_color_level(policy, current_best["distance"]),
@@ -1427,7 +1552,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
             current_distance = float(current_best["distance"])
             current_link = current_best["link"] or ""
-            scene_risk_links = set(SCENARIOS[args.scene]["risk_links"])
             trigger_block_reason = ""
             if triggered:
                 trigger_block_reason = "already_triggered"
@@ -1445,12 +1569,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 trigger_block_reason = "local_reference_sanity_failed"
             elif len(stable) == 0:
                 trigger_block_reason = "no_stable_track"
-            elif len(dynamic_tracks) == 0:
+            elif len(prediction_tracks) == 0:
                 trigger_block_reason = "predicted_track_not_dynamic"
             elif not np.isfinite(trigger_distance):
                 trigger_block_reason = "no_finite_future_reference_risk"
-            elif predicted_best["link"] not in scene_risk_links:
-                trigger_block_reason = "predicted_non_scene_link"
+            elif guard_stop_this_frame:
+                trigger_block_reason = "guided_hard_guard_stop"
             elif trigger_distance >= trigger_threshold:
                 trigger_block_reason = "future_reference_clearance_above_threshold"
             elif current_distance <= args.moving_shadow_current_stop_m:
@@ -1458,28 +1582,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             elif reference_arm_perf is not None and time.perf_counter() - reference_arm_perf < args.arm_delay_s:
                 trigger_block_reason = "arm_delay"
             row["trigger_block_reason"] = trigger_block_reason
+            if guard_stop_this_frame:
+                time.sleep(max(args.post_stop_settle_s, 0.0))
+                break
             if (
                 args.mode in robot_motion_modes
                 and np.isfinite(current_distance)
                 and current_distance <= args.moving_shadow_current_stop_m
             ):
-                link_allowed = current_link in scene_risk_links
-                hard_any_link = current_distance <= args.moving_shadow_any_link_hard_stop_m
-                if not link_allowed and not hard_any_link:
-                    log["events"].append(
-                        {
-                            "type": "CURRENT_DISTANCE_IGNORED_NON_SCENE_LINK",
-                            "frame": frame_index,
-                            "t_s": now_rel,
-                            "distance_m": current_distance,
-                            "nearest_link": current_link,
-                            "allowed_links": sorted(scene_risk_links),
-                            "threshold_m": args.moving_shadow_current_stop_m,
-                            "any_link_hard_stop_m": args.moving_shadow_any_link_hard_stop_m,
-                        }
-                    )
-                    frame_index += 1
-                    continue
                 if commander is not None:
                     commander.set_speed_scale(0.0)
                     stop_ret = {"method": "RobotCommander.set_speed_scale", "return": 0}
@@ -1504,7 +1614,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ):
                 triggered = True
                 trigger_frame = frame_index
-                log["events"].append({"type": "TRIGGER", "frame": frame_index, "t_s": now_rel, "predicted_distance_m": trigger_distance})
+                trigger_audit = dynamic_audits.get(predicted_best.get("object_id"))
+                log["events"].append(
+                    {
+                        "type": "TRIGGER",
+                        "frame": frame_index,
+                        "t_s": now_rel,
+                        "track_id": predicted_best.get("object_id"),
+                        "predicted_distance_m": trigger_distance,
+                        "predicted_tau_s": predicted_best.get("tau"),
+                        "predicted_link": predicted_best.get("link"),
+                        "current_distance_m": current_distance,
+                        "current_link": current_link,
+                        "guard_distance_m": guided_info["guard_distance_m"],
+                        "window_velocity_m_s": None if trigger_audit is None else trigger_audit["window_velocity"].tolist(),
+                        "window_speed_m_s": None if trigger_audit is None else trigger_audit["window_speed_m_s"],
+                        "tracked_radius_m": None if trigger_audit is None else trigger_audit["track_radius"],
+                    }
+                )
                 if args.mode == "moving-shadow-stop":
                     # Pilot mode is for validating sensing/trigger timing during
                     # motion. Stop first; candidate generation is recorded only
@@ -1541,8 +1668,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "return": stop_ret,
                         }
                     )
-                selected_obj = select_stable_object(stable, predicted_best, risk_spheres)
+                selected_obj = select_stable_object(prediction_tracks, predicted_best, risk_spheres)
                 obstacle = track_geometry(selected_obj, eval_clusters, args.default_obstacle_radius_m)
+                trigger_audit = dynamic_audits.get(obstacle["track_id"])
+                if trigger_audit is None or not trigger_audit["prediction_ready"]:
+                    raise RuntimeError("selected Fast obstacle is not the frozen prediction-ready track")
+                obstacle["window_velocity"] = np.asarray(trigger_audit["window_velocity"], dtype=np.float64).copy()
+                obstacle["prediction_ready"] = True
                 if obstacle["association_error_m"] > args.max_track_cluster_association_m:
                     raise RuntimeError(
                         f"selected track/cluster association error {obstacle['association_error_m']:.4f} m "
@@ -1579,9 +1711,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     q_now=q_repair_start,
                     qd_now=qd_repair_start,
                     center=obstacle["center"],
-                    velocity=obstacle["velocity"],
+                    velocity=obstacle["window_velocity"],
                     radius=obstacle["inflated_radius"],
-                    risk_links=set(SCENARIOS[args.scene]["risk_links"]),
+                    risk_links=set(stage4_model.surface_by_link(q_repair_start, density="coarse")),
                     trial_dir=trial_dir,
                     reference_goal=reference_goal,
                     obstacle_audit=obstacle,
@@ -1859,13 +1991,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--moving-shadow-current-stop-m",
         type=float,
         default=0.12,
-        help="scene-link current-distance fallback stop; predicted STRO trigger remains at 0.14 m",
-    )
-    parser.add_argument(
-        "--moving-shadow-any-link-hard-stop-m",
-        type=float,
-        default=0.03,
-        help="absolute all-link hard stop; above this, current-distance stops are limited to the scene risk links",
+        help="all-link current-distance fallback stop; predicted STRO trigger remains at 0.14 m",
     )
     parser.add_argument("--online-accept-m", type=float, default=0.09)
     parser.add_argument("--min-clearance-improvement-m", type=float, default=0.003)
@@ -1903,8 +2029,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--line-acc-m-s2", type=float, default=0.05)
     parser.add_argument("--guided-range-m", type=float, default=0.20)
     parser.add_argument("--guided-base-omega", type=float, default=0.15)
-    parser.add_argument("--guided-d-safe-m", type=float, default=0.22)
-    parser.add_argument("--guided-d-slow-m", type=float, default=0.14)
+    parser.add_argument("--guided-d-safe-m", type=float, default=0.12)
+    parser.add_argument("--guided-d-slow-m", type=float, default=0.12)
     parser.add_argument("--guided-d-stop-m", type=float, default=0.08)
     parser.add_argument("--guided-hard-stop-m", type=float, default=0.10)
     parser.add_argument("--guided-max-decel", type=float, default=2.0)

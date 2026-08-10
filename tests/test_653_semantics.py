@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import csv
+import json
 from types import SimpleNamespace
 
 import numpy as np
@@ -158,6 +159,42 @@ def test_dynamic_track_audit_mode_is_non_motion_mode():
     assert args.guided_hard_stop_m == 0.10
 
 
+def test_d1_and_d2_share_one_scene_independent_formal_protocol():
+    d1 = trial.build_parser().parse_args(["--scene", "D1", "--mode", "moving-shadow-stop"])
+    d2 = trial.build_parser().parse_args(["--scene", "D2", "--mode", "moving-shadow-stop"])
+    assert trial.formal_protocol_violations(d1) == []
+    assert trial.formal_protocol_violations(d2) == []
+    assert trial.formal_protocol_signature(d1) == trial.formal_protocol_signature(d2)
+    assert "risk_links" not in trial.SCENARIOS["D1"]
+    assert "risk_links" not in trial.SCENARIOS["D2"]
+
+
+def test_formal_protocol_rejects_scene_specific_threshold_tuning():
+    args = trial.build_parser().parse_args(
+        ["--scene", "D2", "--mode", "moving-shadow-stop", "--min-dynamic-trigger-speed-m-s", "0.05"]
+    )
+    violations = trial.formal_protocol_violations(args)
+    assert any(item.startswith("min_dynamic_trigger_speed_m_s=") for item in violations)
+
+
+def test_nonformal_moving_trial_is_blocked_before_robot_setup(tmp_path):
+    args = trial.build_parser().parse_args(
+        [
+            "--scene", "D1", "--repeat", "99", "--mode", "moving-shadow-stop",
+            "--output", str(tmp_path), "--moving-shadow-replan-in-m", "0.18",
+        ]
+    )
+    try:
+        trial.run(args)
+    except RuntimeError as exc:
+        assert "formal D1/D2 protocol mismatch" in str(exc)
+    else:
+        raise AssertionError("nonformal moving trial must fail closed")
+    summary = json.loads((tmp_path / "trials" / "D1_crossing_body_r99" / "summary.json").read_text())
+    assert summary["status"] == "BLOCKED_NONFORMAL_PROTOCOL"
+    assert not summary["robot_commanded"]
+
+
 def test_dynamic_audit_buffers_exist_even_when_no_clusters_are_seen():
     cluster_rows, track_rows, centers, timestamp, per_track = trial.new_dynamic_audit_buffers()
     assert cluster_rows == []
@@ -184,6 +221,32 @@ def test_dynamic_window_speed_and_hysteresis_tolerate_one_slow_sample():
     assert audits is not None
     assert audits[4]["window_speed_m_s"] >= 0.08
     assert audits[4]["dynamic_state"]
+
+
+def test_prediction_ready_precedes_two_frame_dynamic_valid_and_uses_window_velocity():
+    args = SimpleNamespace(
+        default_obstacle_radius_m=0.055, dynamic_speed_window=5,
+        min_track_age=3, min_dynamic_trigger_speed_m_s=0.08,
+        dynamic_exit_speed_m_s=0.04, dynamic_exit_streak_frames=3,
+        max_track_cluster_association_m=0.08, dynamic_valid_streak_frames=2,
+    )
+    history, streak, state, low = {}, {}, {}, {}
+    objects = []
+    audits = {}
+    valid = []
+    for i in range(5):
+        center = np.array([0.012 * i, 0.004 * i, 0.0])
+        obj = SimpleNamespace(id=6, center=center, velocity=np.zeros(3), radius=0.07, age=i + 1, timestamp=i * 0.1)
+        cluster = SimpleNamespace(center=center.copy(), points=np.array([[center[0] - 0.05, center[1], 0], [center[0] + 0.05, center[1], 0]]))
+        valid, audits = trial.update_dynamic_track_validity([obj], [cluster], history, streak, args, state, low, i * 0.1)
+        objects = [obj]
+    assert valid == []
+    assert audits[6]["prediction_ready"]
+    assert not audits[6]["valid"]
+    ready = trial.make_prediction_ready_objects(objects, audits)
+    assert len(ready) == 1
+    np.testing.assert_allclose(ready[0].velocity, [0.12, 0.04, 0.0])
+    np.testing.assert_allclose(objects[0].velocity, np.zeros(3))
 
 
 def test_dynamic_window_accumulates_before_track_reaches_minimum_age():

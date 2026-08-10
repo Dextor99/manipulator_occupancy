@@ -58,6 +58,11 @@ Keep the robot stationary and perform one continuous foam crossing per run:
 
 The dynamic tracker uses a five-sample timestamped net-motion window, enters
 dynamic state at 0.08 m/s, and exits only after three samples below 0.04 m/s.
+The first prediction-ready frame (age/history/association/dynamic-state checks)
+may enter STRO immediately; the stricter two-frame `dynamic_valid` state remains
+an audit-quality label. STRO and Fast repair use the same frozen window velocity
+vector. Every robot link may trigger predicted risk or the 0.12 m
+current-distance fallback stop; scene metadata has no control authority.
 It may retain identity across two missed frames, but missed tracks are never
 returned for STRO prediction. The audit passes when one ID lasts at least five
 tracked frames, reaches 0.08 m/s, and is dynamically valid for at least two
@@ -143,7 +148,7 @@ generates and validates a Fast CCRO-NUBS candidate, but does not switch to it.
 ```
 
 After the single stationary audit passes, run one D1 `moving-shadow-stop`
-pilot. It should trigger predicted risk at 0.14 m while current scene-link
+pilot. It should trigger predicted risk at 0.14 m while current all-link
 clearance remains above the 0.12 m fallback stop and the independent raw-cloud
 guard remains above 0.10 m. The candidate criterion remains `accepted_steps >
 0`, at least 3 mm clearance gain, candidate clearance at least 0.09 m, and no
@@ -155,6 +160,25 @@ repeat that validation merely to tune Fast-repair thresholds. Formal settings
 remain `replan=0.14 m`, `H_local=1.0 s`, `online_accept=0.09 m`, and
 `fast_budget=150 ms`; current-distance fallback stop is 0.12 m and raw-cloud
 hard guard is 0.10 m.
+
+For D1, move the obstacle laterally across a future robot swept region,
+approximately perpendicular or oblique to the robot reference motion.
+Do not move it head-on along the reference line toward the current gripper.
+Complete the main crossing naturally in about 2--3 s after `REFERENCE_ARMED`.
+The desired evidence is `D_predicted < 0.14 m` while `D_current > 0.12 m` and
+`D_guard > 0.10 m`. D2 uses an opposing or oblique approaching path. The
+actual most-at-risk link is measured rather than prescribed.
+
+## Unified D1/D2 formal protocol
+
+D1 and D2 differ only in obstacle motion geometry. Both use protocol ID
+`653_unified_d1_d2_v1`, including the same perception, window-motion, STRO,
+all-link safety, Fast-repair, and candidate-acceptance parameters. Every moving
+trial writes the complete `formal_protocol` signature to `summary.json`.
+Changing any frozen algorithm/safety value through the CLI causes
+`BLOCKED_NONFORMAL_PROTOCOL` before a robot connection is opened. Scene,
+repeat, duration, output path, and operator/reference inputs remain ordinary
+experimental metadata rather than algorithm parameters.
 
 ## Outputs
 
