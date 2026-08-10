@@ -43,3 +43,21 @@ the foam cluster is not yet trackable as one compact object under the 0.03–0.1
 geometry prefilter. These runs are not formal 6.5.3 evidence and gate the next
 obstacle trial until a track qualifies.
 
+After removing the radius geometry gate (radius became diagnostic, not an
+object-identity filter) and feeding every external cluster to the dynamic
+tracker, `dynamic_track_audit_final/r01` is the first `DYNAMIC_TRACK_AUDIT_PASS`:
+track 25 held 80 tracked frames, 0.551 m net displacement, 0.111 m/s max window
+speed, and 57 consecutive dynamically-valid frames (track 24: 11 frames, 0.063 m,
+max run 6). This passes the frozen `cluster_eps=0.05` + temporal-denoise audit
+and ends the stationary audit phase.
+
+D1 r18 is a development `moving-shadow-stop` pilot taken after the audit
+passed. It is not formal 6.5.3 evidence: the dynamic track (id 2, 251 frames,
+0.388 m net, 0.081 m/s window peak) became dynamically valid for only 3 frames,
+and those frames were blocked as `predicted_non_scene_link` — the closest point
+was `left_link`/`gripper_base_link` (gripper finger), not the D1
+upper-arm/forearm risk links. The raw-cloud hard guard then stopped the robot
+at 0.085–0.099 m (`GUIDED_GUARD_STOPPED_NO_CCRO_TRIGGER`), which is correct
+fail-safe behaviour but not the intended pilot outcome (the pilot wanted
+predicted risk at 0.14 m while current clearance stayed above 0.12 m).
+

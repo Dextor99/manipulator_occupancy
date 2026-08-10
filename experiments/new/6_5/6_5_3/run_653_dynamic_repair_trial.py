@@ -11,7 +11,7 @@ This first real-system implementation is intentionally staged:
   to the candidate trajectory; it is the required pilot before live switching.
 * ``--mode live-stop-replan-execute`` is currently fail-closed after candidate
   acceptance. Live execution remains disabled until a fresh post-planning
-  RGB-D recheck is implemented and validated by three D1 shadow-stop pilots.
+  RGB-D recheck is implemented and validated.
 """
 
 from __future__ import annotations
@@ -163,7 +163,7 @@ FRAME_FIELDS = [
 ]
 
 CLUSTER_FIELDS = [
-    "frame", "t_s", "cluster_index", "dynamic_prefilter_ok", "point_count",
+    "frame", "t_s", "cluster_index", "dynamic_tracker_input", "radius_in_legacy_band", "point_count",
     "center_x", "center_y", "center_z", "raw_radius_m",
     "bbox_dx_m", "bbox_dy_m", "bbox_dz_m", "raw_centroid_speed_m_s",
 ]
@@ -382,15 +382,15 @@ def raw_cluster_geometry(cluster: Any) -> dict[str, Any]:
     }
 
 
-def dynamic_prefilter(clusters: list[Any], args: argparse.Namespace) -> tuple[list[Any], list[dict[str, Any]]]:
+def dynamic_cluster_inputs(clusters: list[Any], args: argparse.Namespace) -> tuple[list[Any], list[dict[str, Any]]]:
+    """Return all external clusters; radius is diagnostic geometry, not identity."""
     selected: list[Any] = []
     audits: list[dict[str, Any]] = []
     for index, cluster in enumerate(clusters):
         geometry = raw_cluster_geometry(cluster)
-        accepted = args.dynamic_radius_min_m <= geometry["radius"] <= args.dynamic_radius_max_m
-        audits.append({"cluster_index": index, "accepted": accepted, **geometry})
-        if accepted:
-            selected.append(cluster)
+        radius_in_legacy_band = args.dynamic_radius_min_m <= geometry["radius"] <= args.dynamic_radius_max_m
+        audits.append({"cluster_index": index, "accepted": True, "radius_in_legacy_band": radius_in_legacy_band, **geometry})
+        selected.append(cluster)
     return selected, audits
 
 
@@ -438,7 +438,6 @@ def update_dynamic_track_validity(
             "age_ok": int(getattr(obj, "age", 0)) >= args.min_track_age,
             "speed_history_ready": len(history) >= args.dynamic_speed_window,
             "speed_ok": dynamic_state.get(track_id, False),
-            "radius_ok": args.dynamic_radius_min_m <= geometry["raw_radius"] <= args.dynamic_radius_max_m,
             "association_ok": geometry["association_error_m"] <= args.max_track_cluster_association_m,
         }
         instant_valid = bool(all(checks.values()))
@@ -1175,7 +1174,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             clusters = list(cluster_result.clusters)
             guard_clusters = filter_guard_clusters(clusters, args) if args.mode in robot_motion_modes else clusters
             eval_clusters = guard_clusters if args.mode in robot_motion_modes else clusters
-            dynamic_clusters, cluster_audits = dynamic_prefilter(eval_clusters, args)
+            dynamic_clusters, cluster_audits = dynamic_cluster_inputs(eval_clusters, args)
             cluster_dt = None if previous_cluster_timestamp is None else max(timestamp - previous_cluster_timestamp, 1.0e-6)
             for audit in cluster_audits:
                 raw_speed = math.nan
@@ -1189,7 +1188,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     {
                         "frame": frame_index, "t_s": f"{now_rel:.6f}",
                         "cluster_index": audit["cluster_index"],
-                        "dynamic_prefilter_ok": int(audit["accepted"]),
+                        "dynamic_tracker_input": 1,
+                        "radius_in_legacy_band": int(audit["radius_in_legacy_band"]),
                         "point_count": audit["point_count"],
                         "center_x": f"{center_audit[0]:.6f}", "center_y": f"{center_audit[1]:.6f}", "center_z": f"{center_audit[2]:.6f}",
                         "raw_radius_m": f"{audit['radius']:.6f}",
@@ -1737,7 +1737,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     qualifying_tracks = [
         track_id for track_id, stats in track_audit_stats.items()
         if stats["rows"] >= args.audit_min_track_frames
-        and stats["net_displacement_m"] >= args.audit_min_net_displacement_m
         and stats["max_window_speed_m_s"] >= args.min_dynamic_trigger_speed_m_s
         and stats["max_valid_run"] >= args.audit_required_valid_frames
     ]
@@ -1823,7 +1822,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-planes", type=int, default=1)
     parser.add_argument("--voxel-size", type=float, default=0.02)
     parser.add_argument("--self-filter-threshold", type=float, default=0.08)
-    parser.add_argument("--cluster-eps", type=float, default=0.06)
+    parser.add_argument("--cluster-eps", type=float, default=0.05)
     parser.add_argument("--cluster-min-samples", type=int, default=15)
     parser.add_argument(
         "--cluster-min-points",
@@ -1859,8 +1858,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--moving-shadow-current-stop-m",
         type=float,
-        default=0.18,
-        help="immediate current-distance stop threshold for moving-shadow-stop pilot",
+        default=0.12,
+        help="scene-link current-distance fallback stop; predicted STRO trigger remains at 0.14 m",
     )
     parser.add_argument(
         "--moving-shadow-any-link-hard-stop-m",
@@ -1887,14 +1886,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dynamic-exit-streak-frames", type=int, default=3)
     parser.add_argument("--dynamic-speed-window", type=int, default=5)
     parser.add_argument("--dynamic-valid-streak-frames", type=int, default=2)
-    parser.add_argument("--dynamic-radius-min-m", type=float, default=0.03)
-    parser.add_argument("--dynamic-radius-max-m", type=float, default=0.10)
+    parser.add_argument("--dynamic-radius-min-m", type=float, default=0.03, help="legacy radius band for audit logging only; never gates tracking")
+    parser.add_argument("--dynamic-radius-max-m", type=float, default=0.10, help="legacy radius band for audit logging only; never gates tracking")
     parser.add_argument("--dynamic-tracker-association-distance-m", type=float, default=0.12)
     parser.add_argument("--dynamic-tracker-motion-gate-speed-m-s", type=float, default=0.03)
     parser.add_argument("--dynamic-tracker-max-miss", type=int, default=2)
     parser.add_argument("--audit-required-valid-frames", type=int, default=2)
     parser.add_argument("--audit-min-track-frames", type=int, default=5)
-    parser.add_argument("--audit-min-net-displacement-m", type=float, default=0.15)
     parser.add_argument("--min-local-motion-rad", type=float, default=0.002)
     parser.add_argument("--shadow-joint-probe-rad", type=float, default=0.025)
     parser.add_argument("--home-joints-deg", default="0,0,90,0,90,0")

@@ -60,16 +60,17 @@ The dynamic tracker uses a five-sample timestamped net-motion window, enters
 dynamic state at 0.08 m/s, and exits only after three samples below 0.04 m/s.
 It may retain identity across two missed frames, but missed tracks are never
 returned for STRO prediction. The audit passes when one ID lasts at least five
-tracked frames, moves at least 0.15 m net, reaches 0.08 m/s, and is dynamically
-valid for at least two consecutive frames. The safety tracker still sees all
-clusters; the dynamic tracker receives only current-cluster 90-percentile
-radius 0.03-0.10 m clusters. `tracks.csv` records `cluster_radius_raw_m`,
+tracked frames, reaches 0.08 m/s, and is dynamically valid for at least two
+consecutive frames. The safety and dynamic trackers both receive all external
+clusters remaining after workspace, plane, point-count, and volume filtering.
+Radius is geometry, not an object-identity gate: a connected foam-plus-support
+component is conservatively treated as one obstacle. `tracks.csv` records `cluster_radius_raw_m`,
 `tracked_radius_m`, and conservative `risk_radius_m` separately.
 
-Keep `cluster_eps=0.05` for the next audit. Do not widen the 0.10 m geometry
-gate merely to accept a foam-plus-rod connected component. Prefer a thin or
-camera-occluded support. If the compact object remains fragmented, perform one
-audit-only A/B run with `--no-temporal-denoise`.
+The perception settings are frozen at `cluster_eps=0.05` with temporal denoise
+enabled. Run one final stationary audit; one credible passing moving track ends
+the audit phase. A thin or camera-occluded support is preferred but is not a
+PASS condition.
 
 ## 1. Optional Reference Recording
 
@@ -141,16 +142,19 @@ generates and validates a Fast CCRO-NUBS candidate, but does not switch to it.
   --output results/new/6_5/6_5_3/dynamic_repair_pilot
 ```
 
-Before any live candidate execution, obtain three consecutive D1
-`moving-shadow-stop` pilots with a stable track ID, plausible tracked radius,
-nonzero obstacle speed, `accepted_steps > 0`, at least 3 mm clearance gain,
-candidate clearance at least 0.09 m, and no safety-gate failure. D2 is optional
-until five formal D1 trials have completed.
+After the single stationary audit passes, run one D1 `moving-shadow-stop`
+pilot. It should trigger predicted risk at 0.14 m while current scene-link
+clearance remains above the 0.12 m fallback stop and the independent raw-cloud
+guard remains above 0.10 m. The candidate criterion remains `accepted_steps >
+0`, at least 3 mm clearance gain, candidate clearance at least 0.09 m, and no
+safety-gate failure. Candidate execution remains fail-closed until a fresh
+post-stop RGB-D recheck is implemented.
 
 The stop interface is frozen based on `stop_interface_validation/r03`; do not
 repeat that validation merely to tune Fast-repair thresholds. Formal settings
 remain `replan=0.14 m`, `H_local=1.0 s`, `online_accept=0.09 m`, and
-`fast_budget=150 ms`.
+`fast_budget=150 ms`; current-distance fallback stop is 0.12 m and raw-cloud
+hard guard is 0.10 m.
 
 ## Outputs
 

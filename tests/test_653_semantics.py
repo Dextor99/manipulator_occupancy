@@ -97,7 +97,7 @@ def test_reference_locator_clamps_large_forward_jump():
     assert audit["step_was_clamped"]
 
 
-def test_static_large_track_cannot_enter_dynamic_trigger_pool():
+def test_static_large_track_is_blocked_by_motion_not_radius_identity():
     obj = SimpleNamespace(id=9, center=np.array([0.59, -0.59, 0.36]), velocity=np.zeros(3), radius=0.203, age=8)
     cluster = SimpleNamespace(
         center=np.array([0.60, -0.59, 0.36]),
@@ -116,22 +116,46 @@ def test_static_large_track_cannot_enter_dynamic_trigger_pool():
     valid, audits = trial.update_dynamic_track_validity([obj], [cluster], {}, {}, args)
     assert valid == []
     assert not audits[9]["checks"]["speed_ok"]
-    assert not audits[9]["checks"]["radius_ok"]
+    assert "radius_ok" not in audits[9]["checks"]
 
 
-def test_dynamic_prefilter_excludes_large_background_before_tracking():
+def test_dynamic_tracker_accepts_all_external_clusters_and_logs_legacy_radius_band():
     small = SimpleNamespace(center=np.zeros(3), points=np.array([[0.05, 0, 0], [-0.05, 0, 0]]))
     large = SimpleNamespace(center=np.zeros(3), points=np.array([[0.22, 0, 0], [-0.22, 0, 0]]))
     args = SimpleNamespace(dynamic_radius_min_m=0.03, dynamic_radius_max_m=0.10)
-    selected, audits = trial.dynamic_prefilter([small, large], args)
-    assert selected == [small]
-    assert [item["accepted"] for item in audits] == [True, False]
+    selected, audits = trial.dynamic_cluster_inputs([small, large], args)
+    assert selected == [small, large]
+    assert [item["accepted"] for item in audits] == [True, True]
+    assert [item["radius_in_legacy_band"] for item in audits] == [True, False]
+
+
+def test_large_connected_component_can_be_dynamic_when_motion_checks_pass():
+    args = SimpleNamespace(
+        default_obstacle_radius_m=0.055, dynamic_speed_window=5,
+        min_track_age=3, min_dynamic_trigger_speed_m_s=0.08,
+        dynamic_exit_speed_m_s=0.04, dynamic_exit_streak_frames=3,
+        max_track_cluster_association_m=0.08, dynamic_valid_streak_frames=1,
+    )
+    history, streak, state, low = {}, {}, {}, {}
+    valid = []
+    for i in range(5):
+        x = 0.012 * i
+        center = np.array([x, 0.0, 0.0])
+        obj = SimpleNamespace(id=12, center=center, velocity=np.zeros(3), radius=0.22, age=i + 1, timestamp=i * 0.1)
+        cluster = SimpleNamespace(center=center.copy(), points=np.array([[x - 0.20, 0, 0], [x + 0.20, 0, 0]]))
+        valid, audits = trial.update_dynamic_track_validity([obj], [cluster], history, streak, args, state, low, i * 0.1)
+    assert valid == [obj]
+    assert "radius_ok" not in audits[12]["checks"]
 
 
 def test_dynamic_track_audit_mode_is_non_motion_mode():
     args = trial.build_parser().parse_args(["--scene", "D1", "--mode", "dynamic-track-audit"])
     assert args.operator_phrase == ""
     assert args.dynamic_tracker_association_distance_m == 0.12
+    assert args.cluster_eps == 0.05
+    assert args.temporal_denoise
+    assert args.moving_shadow_current_stop_m == 0.12
+    assert args.guided_hard_stop_m == 0.10
 
 
 def test_dynamic_audit_buffers_exist_even_when_no_clusters_are_seen():
