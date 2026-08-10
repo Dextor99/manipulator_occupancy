@@ -162,6 +162,20 @@ FRAME_FIELDS = [
     *[f"qd{j+1}_rad_s" for j in range(6)],
 ]
 
+CLUSTER_FIELDS = [
+    "frame", "t_s", "cluster_index", "dynamic_prefilter_ok", "point_count",
+    "center_x", "center_y", "center_z", "raw_radius_m",
+    "bbox_dx_m", "bbox_dy_m", "bbox_dz_m", "raw_centroid_speed_m_s",
+]
+
+TRACK_FIELDS = [
+    "frame", "t_s", "track_id", "age", "center_x", "center_y", "center_z",
+    "instant_speed_m_s", "window_speed_m_s", "median_speed_m_s", "raw_cluster_speed_m_s",
+    "cluster_radius_raw_m", "tracked_radius_m", "risk_radius_m", "raw_radius_m",
+    "association_error_m", "valid_streak", "dynamic_state", "dynamic_valid",
+    "block_reason",
+]
+
 
 class RecordedReference:
     """Joint reference recorded by ``prepare_653_reference.py``.
@@ -334,10 +348,11 @@ def track_geometry(obj: Any, clusters: list[Any], fallback: float) -> dict[str, 
     """Return center, velocity and radius from one track plus association audit."""
     center = np.asarray(obj.center, dtype=np.float64)
     velocity = np.asarray(obj.velocity, dtype=np.float64)
-    raw_radius = float(getattr(obj, "radius", fallback) or fallback)
+    track_radius = float(getattr(obj, "radius", fallback) or fallback)
     distances = [float(np.linalg.norm(np.asarray(c.center, dtype=np.float64) - center)) for c in clusters]
     cluster_index = None if not distances else int(np.argmin(distances))
     cluster_center = None if cluster_index is None else np.asarray(clusters[cluster_index].center, dtype=np.float64)
+    raw_radius = track_radius if cluster_index is None else float(raw_cluster_geometry(clusters[cluster_index])["radius"])
     association_error = math.inf if cluster_center is None else float(np.linalg.norm(center - cluster_center))
     return {
         "track_id": object_track_id(obj),
@@ -345,21 +360,53 @@ def track_geometry(obj: Any, clusters: list[Any], fallback: float) -> dict[str, 
         "velocity": velocity,
         "speed": float(np.linalg.norm(velocity)),
         "raw_radius": raw_radius,
-        "inflated_radius": max(raw_radius, float(fallback)),
+        "track_radius": track_radius,
+        "inflated_radius": max(track_radius, raw_radius, float(fallback)),
         "associated_cluster_index": cluster_index,
         "associated_cluster_center": cluster_center,
         "association_error_m": association_error,
     }
 
 
+def raw_cluster_geometry(cluster: Any) -> dict[str, Any]:
+    points = np.asarray(cluster.points, dtype=np.float64)
+    center = np.asarray(cluster.center, dtype=np.float64)
+    if len(points) == 0:
+        return {"center": center, "point_count": 0, "radius": math.inf, "bbox": np.full(3, math.inf)}
+    distances = np.linalg.norm(points - center[None, :], axis=1)
+    return {
+        "center": center,
+        "point_count": int(len(points)),
+        "radius": float(np.percentile(distances, 90)),
+        "bbox": np.ptp(points, axis=0),
+    }
+
+
+def dynamic_prefilter(clusters: list[Any], args: argparse.Namespace) -> tuple[list[Any], list[dict[str, Any]]]:
+    selected: list[Any] = []
+    audits: list[dict[str, Any]] = []
+    for index, cluster in enumerate(clusters):
+        geometry = raw_cluster_geometry(cluster)
+        accepted = args.dynamic_radius_min_m <= geometry["radius"] <= args.dynamic_radius_max_m
+        audits.append({"cluster_index": index, "accepted": accepted, **geometry})
+        if accepted:
+            selected.append(cluster)
+    return selected, audits
+
+
 def update_dynamic_track_validity(
     stable: list[Any],
     clusters: list[Any],
-    speed_history: dict[int, list[float]],
+    speed_history: dict[int, list[tuple[float, np.ndarray]]],
     valid_streak: dict[int, int],
     args: argparse.Namespace,
+    dynamic_state: dict[int, bool] | None = None,
+    low_speed_streak: dict[int, int] | None = None,
+    timestamp: float | None = None,
 ) -> tuple[list[Any], dict[int, dict[str, Any]]]:
-    """Separate dynamic-trigger tracks from the broader safety-object pool."""
+    """Gate dynamic tracks using a timestamped net-motion window and hysteresis."""
+    dynamic_state = {} if dynamic_state is None else dynamic_state
+    low_speed_streak = {} if low_speed_streak is None else low_speed_streak
     valid: list[Any] = []
     audits: dict[int, dict[str, Any]] = {}
     active_ids: set[int] = set()
@@ -369,14 +416,28 @@ def update_dynamic_track_validity(
         if track_id is None:
             continue
         active_ids.add(track_id)
+        sample_time = float(timestamp if timestamp is not None else getattr(obj, "timestamp", 0.0))
         history = speed_history.setdefault(track_id, [])
-        history.append(float(geometry["speed"]))
+        history.append((sample_time, np.asarray(geometry["center"], dtype=np.float64).copy()))
         del history[:-args.dynamic_speed_window]
-        median_speed = float(np.median(history))
+        elapsed = history[-1][0] - history[0][0] if len(history) >= 2 else 0.0
+        window_speed = (
+            float(np.linalg.norm(history[-1][1] - history[0][1]) / elapsed)
+            if elapsed > 1.0e-6 else 0.0
+        )
+        exit_speed = float(getattr(args, "dynamic_exit_speed_m_s", 0.04))
+        exit_frames = int(getattr(args, "dynamic_exit_streak_frames", 3))
+        if dynamic_state.get(track_id, False):
+            low_speed_streak[track_id] = low_speed_streak.get(track_id, 0) + 1 if window_speed < exit_speed else 0
+            if low_speed_streak[track_id] >= exit_frames:
+                dynamic_state[track_id] = False
+        elif len(history) >= args.dynamic_speed_window and window_speed >= args.min_dynamic_trigger_speed_m_s:
+            dynamic_state[track_id] = True
+            low_speed_streak[track_id] = 0
         checks = {
             "age_ok": int(getattr(obj, "age", 0)) >= args.min_track_age,
             "speed_history_ready": len(history) >= args.dynamic_speed_window,
-            "speed_ok": median_speed >= args.min_dynamic_trigger_speed_m_s,
+            "speed_ok": dynamic_state.get(track_id, False),
             "radius_ok": args.dynamic_radius_min_m <= geometry["raw_radius"] <= args.dynamic_radius_max_m,
             "association_ok": geometry["association_error_m"] <= args.max_track_cluster_association_m,
         }
@@ -385,10 +446,16 @@ def update_dynamic_track_validity(
         is_valid = instant_valid and valid_streak[track_id] >= args.dynamic_valid_streak_frames
         audit = {
             **geometry,
+            "risk_radius_m": geometry["inflated_radius"]
+            + float(getattr(args, "prediction_margin_m", 0.0))
+            + float(getattr(args, "prediction_uncertainty_m", 0.0)),
             "age": int(getattr(obj, "age", 0)),
-            "median_speed_m_s": median_speed,
+            "window_speed_m_s": window_speed,
+            # Kept as a compatibility alias for existing result readers.
+            "median_speed_m_s": window_speed,
             "speed_samples": len(history),
             "valid_streak": valid_streak[track_id],
+            "dynamic_state": dynamic_state.get(track_id, False),
             "valid": is_valid,
             "checks": checks,
             "block_reasons": [name for name, ok in checks.items() if not ok]
@@ -397,10 +464,6 @@ def update_dynamic_track_validity(
         audits[track_id] = audit
         if is_valid:
             valid.append(obj)
-    for mapping in (speed_history, valid_streak):
-        for track_id in list(mapping):
-            if track_id not in active_ids:
-                del mapping[track_id]
     return valid, audits
 
 
@@ -467,6 +530,11 @@ def save_trajectory_csv(path: Path, trajectory: NUBSTrajectory6D, *, dt: float =
             }
         )
     write_csv(path, rows, ["t_s", *[f"q{j+1}_rad" for j in range(6)], *[f"qd{j+1}_rad_s" for j in range(6)], *[f"qdd{j+1}_rad_s2" for j in range(6)]])
+
+
+def new_dynamic_audit_buffers():
+    """Create per-run mutable audit buffers (kept out of trajectory helpers)."""
+    return [], [], [], None, {}
 
 
 def load_fast_candidate_csv(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -865,7 +933,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "parameters": vars(args),
         "events": [],
     }
-    if args.mode != "shadow" and args.operator_phrase != REQUIRED_OPERATOR_PHRASE:
+    if args.mode not in {"shadow", "dynamic-track-audit"} and args.operator_phrase != REQUIRED_OPERATOR_PHRASE:
         log["status"] = "BLOCKED_BAD_OPERATOR_PHRASE"
         write_json(trial_dir / "summary.json", log)
         raise RuntimeError(f"bad operator phrase; required: {REQUIRED_OPERATOR_PHRASE}")
@@ -892,13 +960,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("real AUBO state reader is required")
     robot = getattr(state_reader, "sdk_module", None)
 
-    tracker = OccupancyTracker(
+    safety_tracker = OccupancyTracker(
         association_distance=float(safety.get("association_distance", 0.20)),
         alpha=float(safety.get("velocity_alpha", 0.3)),
         pos_alpha=float(safety.get("pos_alpha", 0.3)),
         motion_gate=float(safety.get("motion_gate", 0.005)),
         velocity_dead_zone=float(safety.get("velocity_dead_zone", 0.01)),
         shape_alpha=float(safety.get("shape_alpha", 0.4)),
+    )
+    dynamic_tracker = OccupancyTracker(
+        association_distance=args.dynamic_tracker_association_distance_m,
+        alpha=float(safety.get("velocity_alpha", 0.3)),
+        pos_alpha=float(safety.get("pos_alpha", 0.3)),
+        motion_gate_speed=args.dynamic_tracker_motion_gate_speed_m_s,
+        velocity_dead_zone=float(safety.get("velocity_dead_zone", 0.01)),
+        shape_alpha=float(safety.get("shape_alpha", 0.4)),
+        max_miss=args.dynamic_tracker_max_miss,
     )
     denoiser = (
         TemporalDenoiser(args.denoise_voxel, args.denoise_conf, args.denoise_decay)
@@ -907,6 +984,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     rows: list[dict[str, Any]] = []
+    (
+        cluster_rows,
+        track_rows,
+        previous_cluster_centers,
+        previous_cluster_timestamp,
+        previous_dynamic_cluster_by_track,
+    ) = new_dynamic_audit_buffers()
     q_history: list[tuple[float, np.ndarray]] = []
     candidate_summary: dict[str, Any] | None = None
     candidate_execution_summary: dict[str, Any] | None = None
@@ -968,7 +1052,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             log["guided_range_m"] = args.guided_range_m
             log["reference_line_velocity_m_s"] = args.line_velocity_m_s
         elif not args.no_prompt:
-            input(f"\n[{args.scene}] shadow 模式：{SCENARIOS[args.scene]['prompt']}。按 Enter 开始 {args.duration_s:.1f}s 采集...")
+            mode_note = "dynamic-track-audit（不发送运动命令）" if args.mode == "dynamic-track-audit" else "shadow"
+            input(f"\n[{args.scene}] {mode_note}：{SCENARIOS[args.scene]['prompt']}。按 Enter 开始 {args.duration_s:.1f}s 采集...")
 
         started = time.perf_counter()
         reference_armed = args.mode not in robot_motion_modes
@@ -985,8 +1070,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "joint_match_max_rad": math.inf,
         }
         previous_frame_perf = started
-        dynamic_speed_history: dict[int, list[float]] = {}
+        dynamic_speed_history: dict[int, list[tuple[float, np.ndarray]]] = {}
         dynamic_valid_streak: dict[int, int] = {}
+        dynamic_state: dict[int, bool] = {}
+        dynamic_low_speed_streak: dict[int, int] = {}
         frame_index = 0
         while True:
             frame_started = time.perf_counter()
@@ -1029,13 +1116,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     q_history.clear()
                     dynamic_speed_history.clear()
                     dynamic_valid_streak.clear()
-                    tracker = OccupancyTracker(
+                    dynamic_state.clear()
+                    dynamic_low_speed_streak.clear()
+                    previous_dynamic_cluster_by_track.clear()
+                    safety_tracker = OccupancyTracker(
                         association_distance=float(safety.get("association_distance", 0.20)),
                         alpha=float(safety.get("velocity_alpha", 0.3)),
                         pos_alpha=float(safety.get("pos_alpha", 0.3)),
                         motion_gate=float(safety.get("motion_gate", 0.005)),
                         velocity_dead_zone=float(safety.get("velocity_dead_zone", 0.01)),
                         shape_alpha=float(safety.get("shape_alpha", 0.4)),
+                    )
+                    dynamic_tracker = OccupancyTracker(
+                        association_distance=args.dynamic_tracker_association_distance_m,
+                        alpha=float(safety.get("velocity_alpha", 0.3)),
+                        pos_alpha=float(safety.get("pos_alpha", 0.3)),
+                        motion_gate_speed=args.dynamic_tracker_motion_gate_speed_m_s,
+                        velocity_dead_zone=float(safety.get("velocity_dead_zone", 0.01)),
+                        shape_alpha=float(safety.get("shape_alpha", 0.4)),
+                        max_miss=args.dynamic_tracker_max_miss,
                     )
                     log["events"].append(
                         {
@@ -1076,19 +1175,77 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             clusters = list(cluster_result.clusters)
             guard_clusters = filter_guard_clusters(clusters, args) if args.mode in robot_motion_modes else clusters
             eval_clusters = guard_clusters if args.mode in robot_motion_modes else clusters
-            detections = [
+            dynamic_clusters, cluster_audits = dynamic_prefilter(eval_clusters, args)
+            cluster_dt = None if previous_cluster_timestamp is None else max(timestamp - previous_cluster_timestamp, 1.0e-6)
+            for audit in cluster_audits:
+                raw_speed = math.nan
+                if cluster_dt is not None and previous_cluster_centers:
+                    displacement = min(float(np.linalg.norm(audit["center"] - old)) for old in previous_cluster_centers)
+                    if displacement <= args.dynamic_tracker_association_distance_m:
+                        raw_speed = displacement / cluster_dt
+                bbox = audit["bbox"]
+                center_audit = audit["center"]
+                cluster_rows.append(
+                    {
+                        "frame": frame_index, "t_s": f"{now_rel:.6f}",
+                        "cluster_index": audit["cluster_index"],
+                        "dynamic_prefilter_ok": int(audit["accepted"]),
+                        "point_count": audit["point_count"],
+                        "center_x": f"{center_audit[0]:.6f}", "center_y": f"{center_audit[1]:.6f}", "center_z": f"{center_audit[2]:.6f}",
+                        "raw_radius_m": f"{audit['radius']:.6f}",
+                        "bbox_dx_m": f"{bbox[0]:.6f}", "bbox_dy_m": f"{bbox[1]:.6f}", "bbox_dz_m": f"{bbox[2]:.6f}",
+                        "raw_centroid_speed_m_s": "" if not np.isfinite(raw_speed) else f"{raw_speed:.6f}",
+                    }
+                )
+            previous_cluster_centers = [audit["center"].copy() for audit in cluster_audits]
+            previous_cluster_timestamp = timestamp
+            safety_detections = [
                 make_occupancy_object(cluster.points, timestamp=timestamp, margin=float(safety.get("shape_margin", 0.02)))
                 for cluster in eval_clusters
             ]
-            tracked = tracker.update(detections, timestamp=timestamp)
-            stable = [obj for obj in tracked if obj.age >= args.min_track_age]
+            dynamic_detections = [
+                make_occupancy_object(cluster.points, timestamp=timestamp, margin=0.0)
+                for cluster in dynamic_clusters
+            ]
+            tracked = safety_tracker.update(safety_detections, timestamp=timestamp)
+            dynamic_tracked = dynamic_tracker.update(dynamic_detections, timestamp=timestamp)
+            stable = [obj for obj in dynamic_tracked if obj.age >= args.min_track_age]
             dynamic_tracks, dynamic_audits = update_dynamic_track_validity(
-                stable,
-                eval_clusters,
+                dynamic_tracked,
+                dynamic_clusters,
                 dynamic_speed_history,
                 dynamic_valid_streak,
                 args,
+                dynamic_state,
+                dynamic_low_speed_streak,
+                timestamp,
             )
+            for track_id, audit in dynamic_audits.items():
+                cluster_center = audit["associated_cluster_center"]
+                raw_cluster_speed = math.nan
+                previous = previous_dynamic_cluster_by_track.get(track_id)
+                if cluster_center is not None and previous is not None:
+                    raw_cluster_speed = float(np.linalg.norm(cluster_center - previous[1]) / max(timestamp - previous[0], 1.0e-6))
+                if cluster_center is not None:
+                    previous_dynamic_cluster_by_track[track_id] = (timestamp, np.asarray(cluster_center, dtype=np.float64).copy())
+                track_rows.append(
+                    {
+                        "frame": frame_index, "t_s": f"{now_rel:.6f}", "track_id": track_id,
+                        "age": audit["age"],
+                        "center_x": f"{audit['center'][0]:.6f}", "center_y": f"{audit['center'][1]:.6f}", "center_z": f"{audit['center'][2]:.6f}",
+                        "instant_speed_m_s": f"{audit['speed']:.6f}",
+                        "window_speed_m_s": f"{audit['window_speed_m_s']:.6f}",
+                        "median_speed_m_s": f"{audit['median_speed_m_s']:.6f}",
+                        "raw_cluster_speed_m_s": "" if not np.isfinite(raw_cluster_speed) else f"{raw_cluster_speed:.6f}",
+                        "cluster_radius_raw_m": f"{audit['raw_radius']:.6f}",
+                        "tracked_radius_m": f"{audit['track_radius']:.6f}",
+                        "risk_radius_m": f"{audit['risk_radius_m']:.6f}",
+                        "raw_radius_m": f"{audit['raw_radius']:.6f}", "association_error_m": f"{audit['association_error_m']:.6f}",
+                        "valid_streak": audit["valid_streak"], "dynamic_valid": int(audit["valid"]),
+                        "dynamic_state": int(audit["dynamic_state"]),
+                        "block_reason": ",".join(audit["block_reasons"]),
+                    }
+                )
             risk_spheres = predict_risk_spheres(
                 dynamic_tracks,
                 horizon=args.prediction_horizon_s,
@@ -1278,6 +1435,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 trigger_block_reason = "reference_not_armed"
             elif args.reference_audit_only:
                 trigger_block_reason = "reference_audit_only"
+            elif args.mode == "dynamic-track-audit":
+                trigger_block_reason = "dynamic_track_audit_only"
             elif reference_audit.get("step_was_clamped", False):
                 trigger_block_reason = "reference_step_jump"
             elif not reference_match_ok:
@@ -1513,6 +1672,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         processor.stop()
 
     write_csv(trial_dir / "frames.csv", rows, FRAME_FIELDS)
+    write_csv(trial_dir / "clusters.csv", cluster_rows, CLUSTER_FIELDS)
+    write_csv(trial_dir / "tracks.csv", track_rows, TRACK_FIELDS)
     pred_vals = [float(r["predicted_distance_m"]) for r in rows if r["predicted_distance_m"] != ""]
     cur_vals = [float(r["nearest_distance_m"]) for r in rows if r["nearest_distance_m"] != ""]
     guard_vals = [float(r["guard_distance_m"]) for r in rows if r.get("guard_distance_m", "") != ""]
@@ -1533,6 +1694,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if caught_error is not None:
         final_status = "FAILED"
     alignment_rows = [row for row in rows if int(row.get("reference_armed", 0)) == 1]
+    reference_match_values = [
+        float(row["reference_joint_match_max_rad"])
+        for row in alignment_rows
+        if row.get("reference_joint_match_max_rad", "") != ""
+    ]
     alignment_checks = {
         "reference_armed": any(event.get("type") == "REFERENCE_ARMED" for event in log["events"])
         or args.mode not in robot_motion_modes,
@@ -1541,15 +1707,54 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         and max(int(row["reference_index_step"]) for row in alignment_rows) <= args.max_reference_step,
         "no_clamped_step": bool(alignment_rows)
         and not any(int(row.get("reference_step_clamped", 0)) for row in alignment_rows),
-        "reference_match_ok": bool(alignment_rows)
-        and max(float(row["reference_joint_match_max_rad"]) for row in alignment_rows if row["reference_joint_match_max_rad"] != "")
-        <= args.reference_match_max_rad,
-        "reference_progress_complete": bool(alignment_rows)
-        and int(alignment_rows[-1]["reference_index"]) >= int(0.95 * (len(reference.times) - 1)) if reference is not None else True,
+        "reference_match_ok": bool(reference_match_values)
+        and max(reference_match_values) <= args.reference_match_max_rad if reference is not None else True,
+        "reference_progress_complete": (
+            bool(alignment_rows)
+            and int(alignment_rows[-1]["reference_index"]) >= int(0.95 * (len(reference.times) - 1))
+        ) if reference is not None else True,
         "no_dynamic_trigger": not triggered,
     }
     if args.reference_audit_only and caught_error is None:
         final_status = "REFERENCE_ALIGNMENT_PASS" if all(alignment_checks.values()) else "REFERENCE_ALIGNMENT_FAIL"
+    valid_runs: dict[int, int] = {}
+    max_valid_runs: dict[int, int] = {}
+    for row in track_rows:
+        track_id = int(row["track_id"])
+        valid_runs[track_id] = valid_runs.get(track_id, 0) + 1 if int(row["dynamic_valid"]) else 0
+        max_valid_runs[track_id] = max(max_valid_runs.get(track_id, 0), valid_runs[track_id])
+    track_audit_stats: dict[int, dict[str, Any]] = {}
+    for track_id in {int(row["track_id"]) for row in track_rows}:
+        track = [row for row in track_rows if int(row["track_id"]) == track_id]
+        first = np.array([float(track[0][name]) for name in ("center_x", "center_y", "center_z")])
+        last = np.array([float(track[-1][name]) for name in ("center_x", "center_y", "center_z")])
+        track_audit_stats[track_id] = {
+            "rows": len(track),
+            "net_displacement_m": float(np.linalg.norm(last - first)),
+            "max_window_speed_m_s": max(float(row.get("window_speed_m_s") or 0.0) for row in track),
+            "max_valid_run": max_valid_runs.get(track_id, 0),
+        }
+    qualifying_tracks = [
+        track_id for track_id, stats in track_audit_stats.items()
+        if stats["rows"] >= args.audit_min_track_frames
+        and stats["net_displacement_m"] >= args.audit_min_net_displacement_m
+        and stats["max_window_speed_m_s"] >= args.min_dynamic_trigger_speed_m_s
+        and stats["max_valid_run"] >= args.audit_required_valid_frames
+    ]
+    dynamic_track_audit = {
+        "accepted": bool(qualifying_tracks),
+        "required_consecutive_valid_frames": args.audit_required_valid_frames,
+        "qualifying_track_ids": qualifying_tracks,
+        "max_valid_run_by_track": max_valid_runs,
+        "track_stats": track_audit_stats,
+        "cluster_rows": len(cluster_rows),
+        "track_rows": len(track_rows),
+        "dynamic_valid_rows": sum(int(row["dynamic_valid"]) for row in track_rows),
+        "robot_motion_commanded": bool(log["robot_commanded"]),
+    }
+    if args.mode == "dynamic-track-audit" and caught_error is None:
+        dynamic_track_audit["accepted"] = bool(dynamic_track_audit["accepted"] and not log["robot_commanded"])
+        final_status = "DYNAMIC_TRACK_AUDIT_PASS" if dynamic_track_audit["accepted"] else "DYNAMIC_TRACK_AUDIT_FAIL"
     log.update(
         {
             "status": final_status,
@@ -1572,12 +1777,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "armed_rows": len(alignment_rows),
                 "final_reference_index": None if not alignment_rows else int(alignment_rows[-1]["reference_index"]),
                 "max_reference_index_step": None if not alignment_rows else max(int(row["reference_index_step"]) for row in alignment_rows),
-                "max_reference_joint_match_rad": None if not alignment_rows else max(
-                    float(row["reference_joint_match_max_rad"])
-                    for row in alignment_rows
-                    if row["reference_joint_match_max_rad"] != ""
-                ),
+                "max_reference_joint_match_rad": None if not reference_match_values else max(reference_match_values),
             },
+            "dynamic_track_audit": dynamic_track_audit,
         }
     )
     write_json(trial_dir / "summary.json", log)
@@ -1591,7 +1793,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument(
         "--mode",
-        choices=["shadow", "moving-shadow-stop", "live-stop-replan-execute", "live-execute"],
+        choices=["shadow", "dynamic-track-audit", "moving-shadow-stop", "live-stop-replan-execute", "live-execute"],
         default="shadow",
     )
     parser.add_argument("--operator-phrase", default="")
@@ -1681,10 +1883,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--default-obstacle-radius-m", type=float, default=0.055)
     parser.add_argument("--max-track-cluster-association-m", type=float, default=0.08)
     parser.add_argument("--min-dynamic-trigger-speed-m-s", type=float, default=0.08)
-    parser.add_argument("--dynamic-speed-window", type=int, default=3)
+    parser.add_argument("--dynamic-exit-speed-m-s", type=float, default=0.04)
+    parser.add_argument("--dynamic-exit-streak-frames", type=int, default=3)
+    parser.add_argument("--dynamic-speed-window", type=int, default=5)
     parser.add_argument("--dynamic-valid-streak-frames", type=int, default=2)
     parser.add_argument("--dynamic-radius-min-m", type=float, default=0.03)
     parser.add_argument("--dynamic-radius-max-m", type=float, default=0.10)
+    parser.add_argument("--dynamic-tracker-association-distance-m", type=float, default=0.12)
+    parser.add_argument("--dynamic-tracker-motion-gate-speed-m-s", type=float, default=0.03)
+    parser.add_argument("--dynamic-tracker-max-miss", type=int, default=2)
+    parser.add_argument("--audit-required-valid-frames", type=int, default=2)
+    parser.add_argument("--audit-min-track-frames", type=int, default=5)
+    parser.add_argument("--audit-min-net-displacement-m", type=float, default=0.15)
     parser.add_argument("--min-local-motion-rad", type=float, default=0.002)
     parser.add_argument("--shadow-joint-probe-rad", type=float, default=0.025)
     parser.add_argument("--home-joints-deg", default="0,0,90,0,90,0")

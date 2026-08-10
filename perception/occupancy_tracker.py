@@ -7,7 +7,9 @@ class OccupancyTracker:
     def __init__(self, association_distance: float = 0.2, alpha: float = 0.3,
                  pos_alpha: float = 0.3, motion_gate: float = 0.005,
                  velocity_dead_zone: float = 0.01,
-                 shape_alpha: float = 0.4):
+                 shape_alpha: float = 0.4,
+                 motion_gate_speed: float | None = None,
+                 max_miss: int = 0):
         """
         Parameters
         ----------
@@ -25,6 +27,12 @@ class OccupancyTracker:
             形状 EMA 平滑系数。对 radius / OBB half_lengths 做 EMA，
             抑制点云噪声引起的包围盒/包围球尺寸抖动。
             输出取 max(smoothed, raw) 以确保不低估障碍物尺寸。
+        motion_gate_speed : float, optional
+            速度门限 (m/s)。设置后替代固定空间位移 ``motion_gate``，使去抖
+            阈值不再依赖相机/循环帧率。
+        max_miss : int
+            允许 track 身份保留的连续漏检帧数。漏检 track 不会出现在返回值
+            中，因此不会生成新的风险预测。
         """
         self.association_distance = association_distance
         self.alpha = alpha
@@ -32,6 +40,8 @@ class OccupancyTracker:
         self.motion_gate = motion_gate
         self.velocity_dead_zone = velocity_dead_zone
         self.shape_alpha = shape_alpha
+        self.motion_gate_speed = motion_gate_speed
+        self.max_miss = max(0, int(max_miss))
         self.next_id = 1
         self.tracks: dict[int, OccupancyObject] = {}
         # 每个 track 的 EMA 平滑后中心（与 raw center 独立）
@@ -39,6 +49,7 @@ class OccupancyTracker:
         # 形状 EMA 缓存
         self._smoothed_radius: dict[int, float] = {}
         self._smoothed_half_lengths: dict[int, np.ndarray] = {}
+        self._misses: dict[int, int] = {}
 
     def update(self, detections: list[OccupancyObject], timestamp: float) -> list[OccupancyObject]:
         assigned: set[int] = set()
@@ -51,6 +62,7 @@ class OccupancyTracker:
                 detection.age = 1
                 detection.velocity = np.zeros(3)
                 self._smoothed_centers[detection.id] = detection.center.copy()
+                self._misses[detection.id] = 0
                 # 新 track：用原始形状初始化平滑缓存
                 self._smoothed_radius[detection.id] = detection.radius
                 hl = detection.shape.extents.get("half_lengths", None)
@@ -69,7 +81,13 @@ class OccupancyTracker:
 
                 # ── 2. 位移门限：位移太小 → 视为静止噪声 ──
                 displacement = np.linalg.norm(smoothed_center - prev_smoothed)
-                if displacement < self.motion_gate:
+                raw_speed = displacement / dt
+                below_motion_gate = (
+                    raw_speed < self.motion_gate_speed
+                    if self.motion_gate_speed is not None
+                    else displacement < self.motion_gate
+                )
+                if below_motion_gate:
                     detection.velocity = np.zeros(3)
                 else:
                     raw_velocity = (smoothed_center - prev_smoothed) / dt
@@ -105,12 +123,23 @@ class OccupancyTracker:
 
                 detection.id = track_id
                 detection.age = previous.age + 1
+                self._misses[track_id] = 0
                 assigned.add(track_id)
             detection.timestamp = timestamp
             detection.confidence = self._confidence(detection)
             output.append(detection)
-        # 清理已消失 track 的缓存
-        self.tracks = {obj.id: obj for obj in output}
+        # 短暂漏检只保留身份用于下一帧关联；漏检对象不加入 output，因而不会
+        # 被下游用于风险预测或动态触发。
+        detected = {obj.id: obj for obj in output}
+        retained = {}
+        for track_id, previous in self.tracks.items():
+            if track_id in detected:
+                continue
+            misses = self._misses.get(track_id, 0) + 1
+            self._misses[track_id] = misses
+            if misses <= self.max_miss:
+                retained[track_id] = previous
+        self.tracks = {**retained, **detected}
         active = set(self.tracks)
         self._smoothed_centers = {tid: c for tid, c in self._smoothed_centers.items()
                                   if tid in active}
@@ -118,6 +147,7 @@ class OccupancyTracker:
                                  if tid in active}
         self._smoothed_half_lengths = {tid: h for tid, h in self._smoothed_half_lengths.items()
                                        if tid in active}
+        self._misses = {tid: n for tid, n in self._misses.items() if tid in active}
         return output
 
     def _nearest_track_id(self, center: np.ndarray, assigned: set[int]) -> int | None:

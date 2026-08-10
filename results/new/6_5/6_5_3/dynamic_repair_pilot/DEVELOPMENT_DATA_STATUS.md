@@ -28,3 +28,18 @@ The clean empty-workspace alignment audit is `reference_alignment_validation/r01
 the full 0.4 → −0.4 m stroke, zero clamped steps, max joint match 0.0010 rad,
 guard active throughout, no CCRO trigger.
 
+`dynamic_track_audit/r01`–`r08` are development records of the foam-crossing
+tracking audit; all eight `DYNAMIC_TRACK_AUDIT_FAIL`. None produced a track
+meeting the qualifying gate (≥5 tracked frames, ≥0.15 m net displacement,
+≥0.08 m/s window speed, ≥2 consecutive dynamically-valid frames). r01–r05 were
+recorded with the earlier median-speed window and produced fragmented tracks
+(r02: 8 rows/2 valid; r04: 33 rows/0 valid). r06–r08 used the timestamped
+net-motion window with hysteresis; the closest attempt is r06 track 9, which
+held ~0.1 m/s instant speed and a 0.121 m/s window peak but never latched
+`dynamic_state` — the 5-sample window diluted net displacement across
+missed-frame gaps, so `speed_ok` never held long enough for the two-frame valid
+streak. r07 shows heavy fragmentation (19 distinct IDs, most single-row), i.e.
+the foam cluster is not yet trackable as one compact object under the 0.03–0.10 m
+geometry prefilter. These runs are not formal 6.5.3 evidence and gate the next
+obstacle trial until a track qualifies.
+

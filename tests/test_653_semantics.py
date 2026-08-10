@@ -13,11 +13,11 @@ prepare = importlib.import_module("experiments.new.6_5.6_5_3.prepare_653_referen
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
     obj = SimpleNamespace(id=7, center=np.array([1.0, 2.0, 3.0]), velocity=np.array([0.1, 0.0, 0.0]), radius=0.06)
-    clusters = [SimpleNamespace(center=np.array([1.01, 2.0, 3.0]))]
+    clusters = [SimpleNamespace(center=np.array([1.01, 2.0, 3.0]), points=np.array([[1.07, 2.0, 3.0], [0.95, 2.0, 3.0]]))]
     geometry = trial.track_geometry(obj, clusters, 0.055)
     assert geometry["track_id"] == 7
-    assert geometry["raw_radius"] == 0.06
-    assert geometry["inflated_radius"] == 0.06
+    assert np.isclose(geometry["raw_radius"], 0.06)
+    assert np.isclose(geometry["inflated_radius"], 0.06)
     assert geometry["associated_cluster_index"] == 0
     assert geometry["association_error_m"] < 0.011
 
@@ -99,7 +99,10 @@ def test_reference_locator_clamps_large_forward_jump():
 
 def test_static_large_track_cannot_enter_dynamic_trigger_pool():
     obj = SimpleNamespace(id=9, center=np.array([0.59, -0.59, 0.36]), velocity=np.zeros(3), radius=0.203, age=8)
-    cluster = SimpleNamespace(center=np.array([0.60, -0.59, 0.36]))
+    cluster = SimpleNamespace(
+        center=np.array([0.60, -0.59, 0.36]),
+        points=np.array([[0.803, -0.59, 0.36], [0.397, -0.59, 0.36]]),
+    )
     args = SimpleNamespace(
         default_obstacle_radius_m=0.055,
         dynamic_speed_window=3,
@@ -114,3 +117,73 @@ def test_static_large_track_cannot_enter_dynamic_trigger_pool():
     assert valid == []
     assert not audits[9]["checks"]["speed_ok"]
     assert not audits[9]["checks"]["radius_ok"]
+
+
+def test_dynamic_prefilter_excludes_large_background_before_tracking():
+    small = SimpleNamespace(center=np.zeros(3), points=np.array([[0.05, 0, 0], [-0.05, 0, 0]]))
+    large = SimpleNamespace(center=np.zeros(3), points=np.array([[0.22, 0, 0], [-0.22, 0, 0]]))
+    args = SimpleNamespace(dynamic_radius_min_m=0.03, dynamic_radius_max_m=0.10)
+    selected, audits = trial.dynamic_prefilter([small, large], args)
+    assert selected == [small]
+    assert [item["accepted"] for item in audits] == [True, False]
+
+
+def test_dynamic_track_audit_mode_is_non_motion_mode():
+    args = trial.build_parser().parse_args(["--scene", "D1", "--mode", "dynamic-track-audit"])
+    assert args.operator_phrase == ""
+    assert args.dynamic_tracker_association_distance_m == 0.12
+
+
+def test_dynamic_audit_buffers_exist_even_when_no_clusters_are_seen():
+    cluster_rows, track_rows, centers, timestamp, per_track = trial.new_dynamic_audit_buffers()
+    assert cluster_rows == []
+    assert track_rows == []
+    assert centers == []
+    assert timestamp is None
+    assert per_track == {}
+
+
+def test_dynamic_window_speed_and_hysteresis_tolerate_one_slow_sample():
+    args = SimpleNamespace(
+        default_obstacle_radius_m=0.055, dynamic_speed_window=5,
+        min_track_age=3, min_dynamic_trigger_speed_m_s=0.08,
+        dynamic_exit_speed_m_s=0.04, dynamic_exit_streak_frames=3,
+        dynamic_radius_min_m=0.03, dynamic_radius_max_m=0.10,
+        max_track_cluster_association_m=0.08, dynamic_valid_streak_frames=2,
+    )
+    history, streak, state, low = {}, {}, {}, {}
+    audits = None
+    for i, x in enumerate((0.00, 0.012, 0.024, 0.028, 0.052)):
+        obj = SimpleNamespace(id=4, center=np.array([x, 0.0, 0.0]), velocity=np.zeros(3), radius=0.07, age=i + 3, timestamp=i * 0.1)
+        cluster = SimpleNamespace(center=obj.center.copy(), points=np.array([[x - 0.05, 0, 0], [x + 0.05, 0, 0]]))
+        _, audits = trial.update_dynamic_track_validity([obj], [cluster], history, streak, args, state, low, i * 0.1)
+    assert audits is not None
+    assert audits[4]["window_speed_m_s"] >= 0.08
+    assert audits[4]["dynamic_state"]
+
+
+def test_dynamic_window_accumulates_before_track_reaches_minimum_age():
+    args = SimpleNamespace(
+        default_obstacle_radius_m=0.055, dynamic_speed_window=5,
+        min_track_age=3, min_dynamic_trigger_speed_m_s=0.08,
+        dynamic_exit_speed_m_s=0.04, dynamic_exit_streak_frames=3,
+        dynamic_radius_min_m=0.03, dynamic_radius_max_m=0.10,
+        max_track_cluster_association_m=0.08, dynamic_valid_streak_frames=1,
+    )
+    history, streak, state, low = {}, {}, {}, {}
+    valid = []
+    for i in range(5):
+        center = np.array([0.012 * i, 0.0, 0.0])
+        obj = SimpleNamespace(id=8, center=center, velocity=np.zeros(3), radius=0.07, age=i + 1, timestamp=i * 0.1)
+        cluster = SimpleNamespace(center=center.copy(), points=np.array([[center[0] - 0.05, 0, 0], [center[0] + 0.05, 0, 0]]))
+        valid, _ = trial.update_dynamic_track_validity([obj], [cluster], history, streak, args, state, low, i * 0.1)
+    assert valid == [obj]
+
+
+def test_track_geometry_separates_cluster_tracked_and_risk_radius():
+    obj = SimpleNamespace(id=2, center=np.zeros(3), velocity=np.zeros(3), radius=0.09)
+    cluster = SimpleNamespace(center=np.zeros(3), points=np.array([[-0.05, 0, 0], [0.05, 0, 0]]))
+    geometry = trial.track_geometry(obj, [cluster], 0.055)
+    assert np.isclose(geometry["raw_radius"], 0.05)
+    assert np.isclose(geometry["track_radius"], 0.09)
+    assert np.isclose(geometry["inflated_radius"], 0.09)
