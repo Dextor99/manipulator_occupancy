@@ -1,0 +1,128 @@
+{
+  "created_at": "2026-08-10T08:44:35.597348+00:00",
+  "status": "REJECTED_CANDIDATE",
+  "accepted_for_switch": false,
+  "repair_step_ok": false,
+  "rejection_reasons": [
+    "online_clearance_failed",
+    "verification_checks_failed:distance_ok,velocity_ok,acceleration_ok",
+    "no_accepted_repair_step",
+    "insufficient_clearance_improvement",
+    "candidate_motion_indistinguishable_from_reference"
+  ],
+  "candidate_is_reference_continuation": true,
+  "fast_elapsed_ms": 58.42302099335939,
+  "fast_budget_ms": 150.0,
+  "online_accept_m": 0.09,
+  "verification_min_distance_m": 0.0663292249386675,
+  "reference_online_min_distance_m": 0.0663292249386675,
+  "candidate_online_min_distance_m": 0.0663292249386675,
+  "clearance_improvement_m": 0.0,
+  "min_clearance_improvement_m": 0.003,
+  "max_delta_q_from_reference_rad": 0.0,
+  "verification_reasons": [
+    "distance_ok",
+    "velocity_ok",
+    "acceleration_ok"
+  ],
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": false,
+    "position_ok": true,
+    "velocity_ok": false,
+    "acceleration_ok": false,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "repair_iterations": 1,
+  "accepted_steps": 0,
+  "active_constraints": 8,
+  "qp_successes": 1,
+  "risk_scan_ms": 44.519157032482326,
+  "linearization_ms": 3.05185402976349,
+  "qp_ms": 10.124083957634866,
+  "trajectory_generation_ms": 0.2525930176489055,
+  "motion_check_ms": 0.38421404315158725,
+  "candidate_distance_check_ms": 0.0,
+  "scale_attempts": 6,
+  "unaccounted_fast_ms": 0.09111891267821193,
+  "messages": [
+    "projected_qp max_violation=6.145e+00 clearance_reward=0",
+    "scale 0.85 rejected: motion q=0.000e+00 qd=5.620e-02 qdd=7.628e+00",
+    "scale 0.65 rejected: motion q=0.000e+00 qd=8.881e-02 qdd=7.926e+00",
+    "scale 0.45 rejected: motion q=0.000e+00 qd=1.214e-01 qdd=8.224e+00",
+    "scale 0.30 rejected: motion q=0.000e+00 qd=1.459e-01 qdd=8.448e+00",
+    "scale 0.20 rejected: motion q=0.000e+00 qd=1.622e-01 qdd=8.597e+00",
+    "scale 0.10 rejected: motion q=0.000e+00 qd=1.785e-01 qdd=8.746e+00",
+    "rejected: no feasible monotonic step"
+  ],
+  "q_now": [
+    0.7022623419761658,
+    -0.25447311997413635,
+    1.274566411972046,
+    -0.04175316542387009,
+    1.5708403587341309,
+    0.7022733092308044
+  ],
+  "qd_now": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "q_goal": [
+    -0.033428148696541544,
+    -0.22458706953647323,
+    1.31355730310871,
+    -0.03258230370147529,
+    1.57080007,
+    -0.033420731824023435
+  ],
+  "obstacle_center": [
+    0.593194448588647,
+    -0.5892798817838864,
+    0.36466019934929733
+  ],
+  "obstacle_velocity": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "obstacle_radius": 0.20355070816446486,
+  "obstacle_association": {
+    "track_id": 9,
+    "center": [
+      0.593194448588647,
+      -0.5892798817838864,
+      0.36466019934929733
+    ],
+    "velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "speed": 0.0,
+    "raw_radius": 0.20355070816446486,
+    "inflated_radius": 0.20355070816446486,
+    "associated_cluster_index": 0,
+    "associated_cluster_center": [
+      0.62632916682522,
+      -0.595271222515671,
+      0.36007963761775386
+    ],
+    "association_error_m": 0.03398216094008598
+  },
+  "risk_links": [
+    "foreArm_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link"
+  ],
+  "candidate_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r16/candidate/fast_ccro_nubs_candidate.csv"
+}

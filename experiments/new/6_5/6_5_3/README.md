@@ -1,6 +1,7 @@
 # 6.5.3 Dynamic Obstacle Fast CCRO-NUBS Real-System Trial
 
-This folder contains the first staged implementation for Section 6.5.3.
+This folder contains the staged implementation for Section 6.5.3. D1 r02-r15
+are development logs and are not formal paper evidence.
 
 The experiment reuses the safe 6.5.2 tabletop reference:
 
@@ -14,12 +15,17 @@ The experiment reuses the safe 6.5.2 tabletop reference:
 `run_653_dynamic_repair_trial.py` supports:
 
 - `shadow`: RealSense + AUBO feedback only, no robot command.
-- `moving-shadow-stop`: command the low-speed reference line, trigger Fast
+- `moving-shadow-stop`: command the recorded one-way low-speed reference line, trigger Fast
   CCRO-NUBS, then stop; no online switch yet.
-- `live-execute`: intentionally blocked in this first implementation.
+- `live-stop-replan-execute`: currently stops and plans but is fail-closed before
+  execution until a fresh post-planning RGB-D recheck is implemented.
 
 Use `moving-shadow-stop` as the required pilot before enabling true online
 trajectory switching.
+
+The moving modes fail closed unless `--reference-feedback-csv` is supplied.
+The same recorded reference drives future STRO evaluation and supplies the
+candidate endpoint at `t + H_local`; `q + qd * lookahead` is no longer used.
 
 ## 1. Optional Reference Recording
 
@@ -80,6 +86,7 @@ generates and validates a Fast CCRO-NUBS candidate, but does not switch to it.
   --scene D1 \
   --repeat 1 \
   --mode moving-shadow-stop \
+  --reference-feedback-csv results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv \
   --operator-phrase CCRO_653_DYNAMIC_SHADOW_APPROVED \
   --x-offset 0.10 \
   --y-start 0.4 \
@@ -89,6 +96,17 @@ generates and validates a Fast CCRO-NUBS candidate, but does not switch to it.
   --duration-s 18 \
   --output results/new/6_5/6_5_3/dynamic_repair_pilot
 ```
+
+Before any live candidate execution, obtain three consecutive D1
+`moving-shadow-stop` pilots with a stable track ID, plausible tracked radius,
+nonzero obstacle speed, `accepted_steps > 0`, at least 3 mm clearance gain,
+candidate clearance at least 0.09 m, and no safety-gate failure. D2 is optional
+until five formal D1 trials have completed.
+
+The stop interface is frozen based on `stop_interface_validation/r03`; do not
+repeat that validation merely to tune Fast-repair thresholds. Formal settings
+remain `replan=0.14 m`, `H_local=1.0 s`, `online_accept=0.09 m`, and
+`fast_budget=150 ms`.
 
 ## Outputs
 

@@ -148,6 +148,10 @@ class RobotCommander:
         range_m: float = 0.40,
         base_omega: float = 0.8,
         x_offset: float = 0.0,
+        *,
+        one_way: bool = False,
+        y_start: float | None = None,
+        y_goal: float | None = None,
     ):
         """启动子进程：Y 轴 ±range_m 正弦往返。
 
@@ -183,7 +187,10 @@ class RobotCommander:
         worker_script = str(Path(__file__).parent / "motion_worker.py")
         self._process = subprocess.Popen(
             [sys.executable, worker_script,
-             self._shm_path, self.ip, str(range_m), str(base_omega), str(x_offset)],
+             self._shm_path, self.ip, str(range_m), str(base_omega), str(x_offset),
+             "one_way" if one_way else "oscillate",
+             "nan" if y_start is None else str(y_start),
+             "nan" if y_goal is None else str(y_goal)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             # 子进程不需要继承主进程的 Open3D/SDK 连接
@@ -205,8 +212,8 @@ class RobotCommander:
         if self._process.poll() is not None:
             print("[RobotCommander] 运动进程异常退出")
             return
-        print(f"[RobotCommander] Y 轴 ±{range_m}m 正弦往返 "
-              f"X offset={x_offset:+.3f}m (PID={self._process.pid})")
+        motion_text = f"Y {y_start:+.3f}->{y_goal:+.3f}m 单向" if one_way else f"Y 轴 ±{range_m}m 往返"
+        print(f"[RobotCommander] {motion_text} X offset={x_offset:+.3f}m (PID={self._process.pid})")
 
     def set_speed_scale(self, scale: float):
         """设置速度倍率 (0~1)，通过 mmap 共享内存传递。"""

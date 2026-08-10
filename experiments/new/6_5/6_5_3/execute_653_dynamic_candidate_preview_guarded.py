@@ -40,7 +40,12 @@ def main() -> None:
     executor.REQUIRED_OPERATOR_PHRASE = REQUIRED_OPERATOR_PHRASE
     parser = executor.build_parser()
     parser.description = __doc__
-    parser.set_defaults(plan_dir=DEFAULT_PLAN_DIR, output=DEFAULT_OUTPUT)
+    parser.set_defaults(
+        plan_dir=DEFAULT_PLAN_DIR,
+        output=DEFAULT_OUTPUT,
+        goal_tolerance_rad=0.010,
+        min_observed_motion_rad=0.003,
+    )
     args = parser.parse_args()
     if args.execute and args.min_execution_wait_s <= 0.0 and args.playback_duration_s > 0.0:
         args.min_execution_wait_s = max(0.0, 0.9 * args.playback_duration_s)

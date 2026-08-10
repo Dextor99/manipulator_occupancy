@@ -106,24 +106,97 @@ def estimate_velocity(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def record_feedback(robot, started: float, args: argparse.Namespace) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
+def append_feedback_sample(robot, started: float, rows: list[dict[str, Any]]) -> tuple[list[float], list[float]]:
+    pose = list(robot.get_status())
+    joint = list(robot.get_joint())
+    rows.append(
+        {
+            "t_s": f"{time.perf_counter() - started:.6f}",
+            **{f"q{j+1}_rad": f"{float(joint[j]):.8f}" for j in range(6)},
+            **{f"pose_{name}": f"{float(pose[i]):.8f}" for i, name in enumerate(("x", "y", "z", "rx", "ry", "rz"))},
+        }
+    )
+    return pose, joint
+
+
+def call_cartesian_motion_recorded(
+    robot,
+    pose: list[float],
+    args: argparse.Namespace,
+    label: str,
+    *,
+    started: float,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Issue a nonblocking line move and record feedback while it is moving."""
+    command_started = time.perf_counter()
+    append_feedback_sample(robot, started, rows)  # preserve the actual start state
+    if not hasattr(robot, "movel_line"):
+        raise RuntimeError("reference recording requires the nonblocking movel_line interface")
+    ret = robot.movel_line(pose, args.line_velocity_m_s, args.line_acc_m_s2, False, True)
+    if ret not in (None, 0):
+        raise RuntimeError(f"{label}: movel_line returned {ret}")
+
     last_pose = list(robot.get_status())
     last_joint = list(robot.get_joint())
-    while time.perf_counter() - started <= args.record_duration_s:
-        t = time.perf_counter() - started
-        last_pose = list(robot.get_status())
-        last_joint = list(robot.get_joint())
-        rows.append(
-            {
-                "t_s": f"{t:.6f}",
-                **{f"q{j+1}_rad": f"{float(last_joint[j]):.8f}" for j in range(6)},
-                **{f"pose_{name}": f"{float(last_pose[i]):.8f}" for i, name in enumerate(("x", "y", "z", "rx", "ry", "rz"))},
-            }
-        )
+    reached_at: float | None = None
+    while time.perf_counter() - command_started <= args.motion_timeout_s:
+        last_pose, last_joint = append_feedback_sample(robot, started, rows)
+        error = cartesian_distance(pose, last_pose)
+        if error <= args.record_goal_tolerance_m:
+            if reached_at is None:
+                reached_at = time.perf_counter()
+            if time.perf_counter() - reached_at >= args.settle_s:
+                break
+        else:
+            reached_at = None
         time.sleep(args.poll_s)
-    estimate_velocity(rows)
-    return {"rows": rows, "last_pose": last_pose, "last_joint": last_joint}
+    else:
+        raise RuntimeError(
+            f"{label}: target not reached to recording tolerance {args.record_goal_tolerance_m:.4f} m "
+            f"within {args.motion_timeout_s:.1f}s"
+        )
+    return {
+        "label": label,
+        "method": "movel_line_recorded",
+        "return_code": ret,
+        "target_pose": pose,
+        "actual_pose_after": last_pose,
+        "actual_joint_after": last_joint,
+        "position_error_m": cartesian_distance(pose, last_pose),
+        "elapsed_s": time.perf_counter() - command_started,
+        "recorded_rows_total": len(rows),
+    }
+
+
+def reference_completeness(rows: list[dict[str, Any]], args: argparse.Namespace) -> dict[str, Any]:
+    if len(rows) < 2:
+        return {"accepted": False, "checks": {"minimum_rows": False}, "reasons": ["too_few_rows"]}
+    times = np.asarray([float(row["t_s"]) for row in rows], dtype=np.float64)
+    ys = np.asarray([float(row["pose_y"]) for row in rows], dtype=np.float64)
+    qd = np.asarray([[float(row[f"qd{j}_rad_s"]) for j in range(1, 7)] for row in rows], dtype=np.float64)
+    expected_span = abs(float(args.y_goal) - float(args.y_start))
+    observed_span = float(np.max(ys) - np.min(ys))
+    checks = {
+        "minimum_rows": len(rows) >= args.minimum_reference_rows,
+        "timestamps_strict": bool(np.all(np.diff(times) > 0.0)),
+        "starts_near_reference_start": abs(float(ys[0]) - float(args.y_start)) <= args.reference_endpoint_tolerance_m,
+        "ends_near_reference_goal": abs(float(ys[-1]) - float(args.y_goal)) <= args.reference_endpoint_tolerance_m,
+        "y_span_complete": observed_span >= args.minimum_reference_span_fraction * expected_span,
+        "nonzero_joint_velocity": int(np.sum(np.max(np.abs(qd), axis=1) > args.nonzero_qd_threshold)) >= args.minimum_moving_rows,
+    }
+    return {
+        "accepted": bool(all(checks.values())),
+        "checks": checks,
+        "reasons": [name for name, ok in checks.items() if not ok],
+        "rows": len(rows),
+        "duration_s": float(times[-1] - times[0]),
+        "y_start_observed_m": float(ys[0]),
+        "y_end_observed_m": float(ys[-1]),
+        "y_span_observed_m": observed_span,
+        "y_span_required_m": float(args.minimum_reference_span_fraction * expected_span),
+        "moving_rows": int(np.sum(np.max(np.abs(qd), axis=1) > args.nonzero_qd_threshold)),
+    }
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -208,8 +281,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
         require_confirmation(True, "Step 3/3: execute low-speed reference stroke and record joint feedback.")
         started = time.perf_counter()
+        feedback_rows: list[dict[str, Any]] = []
         if args.reference_shape == "line":
-            move_goal = call_cartesian_motion(robot, goal_pose, args, "execute_reference_line")
+            move_goal = call_cartesian_motion_recorded(
+                robot,
+                goal_pose,
+                args,
+                "execute_reference_line",
+                started=started,
+                rows=feedback_rows,
+            )
         else:
             # Execute the micro-curve as short guarded line segments. This is for preview
             # and low-speed pilot only; the official dynamic trial can still use line.
@@ -217,18 +298,38 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             move_goal = {"label": "execute_reference_micro_curve", "segments": []}
             for row in curve_rows[1:]:
                 pose = [float(row[k]) for k in ("x", "y", "z", "rx", "ry", "rz")]
-                move_goal["segments"].append(call_cartesian_motion(robot, pose, args, "curve_segment"))
-        feedback = record_feedback(robot, started, args)
+                move_goal["segments"].append(
+                    call_cartesian_motion_recorded(
+                        robot,
+                        pose,
+                        args,
+                        "curve_segment",
+                        started=started,
+                        rows=feedback_rows,
+                    )
+                )
+        estimate_velocity(feedback_rows)
+        feedback = {
+            "rows": feedback_rows,
+            "last_pose": [float(feedback_rows[-1][f"pose_{name}"]) for name in ("x", "y", "z", "rx", "ry", "rz")],
+            "last_joint": [float(feedback_rows[-1][f"q{j}_rad"]) for j in range(1, 7)],
+        }
+        completeness = reference_completeness(feedback_rows, args)
         fields = ["t_s", *[f"q{j+1}_rad" for j in range(6)], *[f"qd{j+1}_rad_s" for j in range(6)], *[f"pose_{name}" for name in ("x", "y", "z", "rx", "ry", "rz")]]
-        write_csv(output_dir / "reference_feedback.csv", feedback["rows"], fields)
+        feedback_name = "reference_feedback.csv" if completeness["accepted"] else "reference_feedback_invalid.csv"
+        write_csv(output_dir / feedback_name, feedback["rows"], fields)
         log["robot_commanded"] = True
-        log["status"] = "REFERENCE_RECORDED"
+        log["status"] = "REFERENCE_RECORDED" if completeness["accepted"] else "REFERENCE_INVALID_INCOMPLETE"
         log["move_start"] = move_start
         log["move_goal"] = move_goal
         log["feedback_rows"] = len(feedback["rows"])
+        log["feedback_file"] = str(output_dir / feedback_name)
+        log["reference_completeness"] = completeness
         log["final_pose"] = feedback["last_pose"]
         log["final_joint"] = feedback["last_joint"]
         log["goal_position_error_m"] = cartesian_distance(goal_pose, feedback["last_pose"])
+        if not completeness["accepted"]:
+            raise RuntimeError(f"reference completeness gate failed: {completeness['reasons']}")
     finally:
         try:
             robot.log_out()
@@ -255,6 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--line-velocity-m-s", type=float, default=0.025)
     parser.add_argument("--line-acc-m-s2", type=float, default=0.06)
     parser.add_argument("--record-duration-s", type=float, default=40.0)
+    parser.add_argument("--record-goal-tolerance-m", type=float, default=0.002)
+    parser.add_argument("--reference-endpoint-tolerance-m", type=float, default=0.015)
+    parser.add_argument("--minimum-reference-span-fraction", type=float, default=0.95)
+    parser.add_argument("--minimum-reference-rows", type=int, default=200)
+    parser.add_argument("--minimum-moving-rows", type=int, default=50)
+    parser.add_argument("--nonzero-qd-threshold", type=float, default=1.0e-4)
     parser.add_argument("--settle-s", type=float, default=0.4)
     parser.add_argument("--poll-s", type=float, default=0.04)
     parser.add_argument("--motion-timeout-s", type=float, default=90.0)

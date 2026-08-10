@@ -39,6 +39,13 @@ def main():
     range_m = float(sys.argv[3])
     base_omega = float(sys.argv[4]) if len(sys.argv) > 4 else 0.8
     x_offset = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
+    motion_mode = sys.argv[6] if len(sys.argv) > 6 else "oscillate"
+    requested_y_start = float(sys.argv[7]) if len(sys.argv) > 7 else math.nan
+    requested_y_goal = float(sys.argv[8]) if len(sys.argv) > 8 else math.nan
+    one_way = motion_mode == "one_way"
+    if one_way and (not math.isfinite(requested_y_start) or not math.isfinite(requested_y_goal)):
+        print("[MotionWorker] one_way requires finite y_start and y_goal", flush=True)
+        sys.exit(1)
 
     # ── 打开共享内存 ──
     fd = os.open(shm_path, os.O_RDWR)
@@ -150,6 +157,22 @@ def main():
             print(f"[MotionWorker] X offset 调整失败: {exc}", flush=True)
             sys.exit(1)
 
+    if one_way:
+        start_pose = [x0, requested_y_start, z0, rx0, ry0, rz0]
+        print(f"[MotionWorker] 移动到单向参考起点 Y={requested_y_start:+.3f}", flush=True)
+        try:
+            if hasattr(mod, "movel"):
+                mod.movel(start_pose)
+            else:
+                ret = mod.movel_line(start_pose, 0.02, 0.05, False, True)
+                if ret != 0:
+                    raise RuntimeError(f"start movel_line ret={ret}")
+            status = list(mod.get_status())
+            x0, y0, z0, rx0, ry0, rz0 = status
+        except Exception as exc:
+            print(f"[MotionWorker] 到达单向参考起点失败: {exc}", flush=True)
+            sys.exit(1)
+
     # ── 运动循环（非阻塞 LineMove 到端点，支持暂停/恢复） ──
     # TeachStart(MOV_Y) 在程序化 stop/continue/反向时容易让控制器进入 stop state。
     # 这里改为一次发送到 y_min/y_max 端点的非阻塞直线运动，机械臂连续运行；
@@ -160,10 +183,10 @@ def main():
     # 2) 当前方向目标是 y_max 或 y_min；
     # 3) speed_scale≈0 时 move_control_stop，停在当前位置；
     # 4) 障碍离开后，从当前位置继续向原方向端点移动。
-    y_min = y0 - range_m
-    y_max = y0 + range_m
-    direction = 1.0
-    max_line_vel = min(max(abs(range_m * base_omega), 0.02), 0.08)
+    y_min = min(requested_y_start, requested_y_goal) if one_way else y0 - range_m
+    y_max = max(requested_y_start, requested_y_goal) if one_way else y0 + range_m
+    direction = (1.0 if requested_y_goal > requested_y_start else -1.0) if one_way else 1.0
+    max_line_vel = min(max(abs(base_omega), 0.006), 0.08) if one_way else min(max(abs(range_m * base_omega), 0.02), 0.08)
     max_line_acc = min(max(max_line_vel * 2.0, 0.05), 0.20)
     edge_margin_m = 0.010
     min_line_vel = 0.006
@@ -240,7 +263,15 @@ def main():
 
             _write_double(8, current_y)
 
-            if current_y >= y_max - edge_margin_m:
+            reached_one_way_goal = one_way and (
+                (direction > 0.0 and current_y >= requested_y_goal - edge_margin_m)
+                or (direction < 0.0 and current_y <= requested_y_goal + edge_margin_m)
+            )
+            if reached_one_way_goal:
+                _stop_motion(f"到达单向参考终点 Y={current_y:+.3f}")
+                _write_double(0, 0.0)
+                paused_for_safety = True
+            elif current_y >= y_max - edge_margin_m:
                 if direction > 0.0:
                     _stop_motion(f"到达 +Y 端点附近 Y={current_y:+.3f}")
                 direction = -1.0
@@ -249,7 +280,7 @@ def main():
                     _stop_motion(f"到达 -Y 端点附近 Y={current_y:+.3f}")
                 direction = 1.0
 
-            if speed <= 0.005:
+            if speed <= 0.005 or reached_one_way_goal:
                 if not paused_for_safety:
                     _stop_motion("安全速度为 0")
                     paused_for_safety = True

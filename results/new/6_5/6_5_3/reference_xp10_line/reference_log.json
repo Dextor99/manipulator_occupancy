@@ -1,0 +1,224 @@
+{
+  "created_at": "2026-08-10T08:40:42.394439+00:00",
+  "experiment": "6.5.3 dynamic repair reference",
+  "robot_commanded": true,
+  "execute_requested": true,
+  "operator_phrase_ok": true,
+  "required_operator_phrase": "CCRO_653_REFERENCE_APPROVED",
+  "home_joints_deg": [
+    0.0,
+    0.0,
+    90.0,
+    0.0,
+    90.0,
+    0.0
+  ],
+  "home_joints_rad": [
+    0.0,
+    0.0,
+    1.5707963267948966,
+    0.0,
+    1.5707963267948966,
+    0.0
+  ],
+  "parameters": {
+    "execute": true,
+    "operator_phrase": "CCRO_653_REFERENCE_APPROVED",
+    "sdk_dir": null,
+    "output": "results/new/6_5/6_5_3/reference_xp10_line",
+    "home_joints_deg": "0,0,90,0,90,0",
+    "x_offset": 0.1,
+    "y_start": 0.4,
+    "y_goal": -0.4,
+    "reference_shape": "line",
+    "curve_amplitude_m": 0.04,
+    "preview_samples": 81,
+    "line_velocity_m_s": 0.02,
+    "line_acc_m_s2": 0.05,
+    "record_duration_s": 45.0,
+    "record_goal_tolerance_m": 0.002,
+    "reference_endpoint_tolerance_m": 0.015,
+    "minimum_reference_span_fraction": 0.95,
+    "minimum_reference_rows": 200,
+    "minimum_moving_rows": 50,
+    "nonzero_qd_threshold": 0.0001,
+    "settle_s": 0.4,
+    "poll_s": 0.04,
+    "motion_timeout_s": 90.0,
+    "pose_tolerance_m": 0.015,
+    "joint_tolerance_rad": 0.02,
+    "allow_movel_fallback": false,
+    "stop_after_start": false,
+    "min_x": -0.2,
+    "max_x": 0.9,
+    "min_y": -0.55,
+    "max_y": 0.55,
+    "min_z": 0.25,
+    "max_z": 0.9
+  },
+  "sdk_so": "/home/hzy/Code/manipulator_occupancy/robot/01_calibrate_robot/build/modules/pybind/robot.cpython-310-x86_64-linux-gnu.so",
+  "home_pose": [
+    0.4874993803894717,
+    -0.19099961299286572,
+    0.5394999458450986,
+    3.141581468313215,
+    -3.7393953798747716e-06,
+    1.5707780841414296
+  ],
+  "home_joint": [
+    0.0,
+    3.6680280572909396e-06,
+    1.5708036422729492,
+    1.4672112229163758e-05,
+    1.5708000659942627,
+    1.834014074120205e-05
+  ],
+  "start_pose": [
+    0.5874993803894717,
+    0.4,
+    0.5394999458450986,
+    3.141581468313215,
+    -3.7393953798747716e-06,
+    1.5707780841414296
+  ],
+  "goal_pose": [
+    0.5874993803894717,
+    -0.4,
+    0.5394999458450986,
+    3.141581468313215,
+    -3.7393953798747716e-06,
+    1.5707780841414296
+  ],
+  "home_reach_check": {
+    "reached": true,
+    "label": "movej_home",
+    "actual_joint": [
+      -0.00026409802376292646,
+      -0.00023108578170649707,
+      1.5705615282058716,
+      -0.00024575789575465024,
+      1.5708000659942627,
+      -0.0002787701378110796
+    ],
+    "joint_l2_error_rad": 0.0005624966637619882,
+    "wait_s": 0.00172743498114869,
+    "sample_count": 1
+  },
+  "status": "REFERENCE_RECORDED",
+  "move_start": {
+    "label": "move_to_reference_start",
+    "method": "movel_line",
+    "return_code": 0,
+    "target_pose": [
+      0.5874993803894717,
+      0.4,
+      0.5394999458450986,
+      3.141581468313215,
+      -3.7393953798747716e-06,
+      1.5707780841414296
+    ],
+    "actual_pose_after": [
+      0.5864134108063613,
+      0.39354561933022025,
+      0.5395016986784146,
+      3.141591854641466,
+      1.031653486794399e-05,
+      1.5707595751718535
+    ],
+    "actual_joint_after": [
+      0.865005373954773,
+      -0.4178764522075653,
+      1.041045069694519,
+      -0.11187118291854858,
+      1.5707889795303345,
+      0.8650457262992859
+    ],
+    "position_error_m": 0.006545102202280133,
+    "reach_check": {
+      "reached": true,
+      "label": "move_to_reference_start",
+      "actual_pose": [
+        0.5850774888853183,
+        0.3856590792416275,
+        0.5394863897453386,
+        -3.1415670872433283,
+        4.0867148883962505e-05,
+        1.5707633035973796
+      ],
+      "position_error_m": 0.01454399362017361,
+      "wait_s": 29.590428860974498,
+      "sample_count": 725
+    },
+    "elapsed_s": 29.994802724046167
+  },
+  "move_goal": {
+    "label": "execute_reference_line",
+    "method": "movel_line_recorded",
+    "return_code": 0,
+    "target_pose": [
+      0.5874993803894717,
+      -0.4,
+      0.5394999458450986,
+      3.141581468313215,
+      -3.7393953798747716e-06,
+      1.5707780841414296
+    ],
+    "actual_pose_after": [
+      0.5874975014360322,
+      -0.3999955317983342,
+      0.5395025944313381,
+      -3.141586528319286,
+      -5.9019083143614735e-06,
+      1.5707888699438444
+    ],
+    "actual_joint_after": [
+      -0.3256768584251404,
+      -0.4289979040622711,
+      1.0239593982696533,
+      -0.11784639954566956,
+      1.5708000659942627,
+      -0.3256695568561554
+    ],
+    "position_error_m": 5.523613058687798e-06,
+    "elapsed_s": 40.70317153603537,
+    "recorded_rows_total": 981
+  },
+  "feedback_rows": 981,
+  "feedback_file": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv",
+  "reference_completeness": {
+    "accepted": true,
+    "checks": {
+      "minimum_rows": true,
+      "timestamps_strict": true,
+      "starts_near_reference_start": true,
+      "ends_near_reference_goal": true,
+      "y_span_complete": true,
+      "nonzero_joint_velocity": true
+    },
+    "reasons": [],
+    "rows": 981,
+    "duration_s": 40.701494,
+    "y_start_observed_m": 0.39999743,
+    "y_end_observed_m": -0.39999553,
+    "y_span_observed_m": 0.7999961099999999,
+    "y_span_required_m": 0.76,
+    "moving_rows": 980
+  },
+  "final_pose": [
+    0.5874975,
+    -0.39999553,
+    0.53950259,
+    -3.14158653,
+    -5.9e-06,
+    1.57078887
+  ],
+  "final_joint": [
+    -0.32567686,
+    -0.4289979,
+    1.0239594,
+    -0.1178464,
+    1.57080007,
+    -0.32566956
+  ],
+  "goal_position_error_m": 5.523433688200819e-06
+}

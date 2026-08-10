@@ -9,10 +9,9 @@ This first real-system implementation is intentionally staged:
 * ``--mode moving-shadow-stop`` additionally commands the familiar 6.5.2
   low-speed reference line and stops on trigger/hold.  It still does not switch
   to the candidate trajectory; it is the required pilot before live switching.
-* ``--mode live-stop-replan-execute`` commands the same low-speed reference,
-  stops on trigger, generates a Fast CCRO-NUBS local candidate, and executes it
-  only when the candidate is accepted and an additional execution phrase is
-  supplied.
+* ``--mode live-stop-replan-execute`` is currently fail-closed after candidate
+  acceptance. Live execution remains disabled until a fresh post-planning
+  RGB-D recheck is implemented and validated by three D1 shadow-stop pilots.
 """
 
 from __future__ import annotations
@@ -126,6 +125,8 @@ FRAME_FIELDS = [
     "predicted_distance_m",
     "predicted_nearest_link",
     "predicted_tau_s",
+    "predicted_object_id",
+    "trigger_block_reason",
     "risk_state_current",
     "risk_state_predicted",
     "max_track_speed_m_s",
@@ -142,6 +143,82 @@ FRAME_FIELDS = [
     *[f"q{j+1}_rad" for j in range(6)],
     *[f"qd{j+1}_rad_s" for j in range(6)],
 ]
+
+
+class RecordedReference:
+    """Joint reference recorded by ``prepare_653_reference.py``.
+
+    Online progress is located by the closest recorded joint state in a small
+    forward-only window.  This keeps both STRO and local repair tied to the
+    same physical reference instead of extrapolating the measured velocity.
+    """
+
+    def __init__(self, times: np.ndarray, q: np.ndarray, qd: np.ndarray):
+        if len(times) < 2 or q.shape != qd.shape or q.shape != (len(times), 6):
+            raise ValueError("invalid recorded 6.5.3 reference")
+        if np.any(np.diff(times) <= 0.0):
+            raise ValueError("reference timestamps must be strictly increasing")
+        self.times = times - times[0]
+        self.q = q
+        self.qd = qd
+        self.qdd = np.gradient(qd, self.times, axis=0, edge_order=1)
+        self.index = 0
+
+    @classmethod
+    def load(cls, path: Path) -> "RecordedReference":
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        if len(rows) < 2:
+            raise ValueError(f"recorded reference has too few rows: {path}")
+        if "pose_y" in rows[0]:
+            ys = np.asarray([float(row["pose_y"]) for row in rows], dtype=np.float64)
+            y_span = float(np.max(ys) - np.min(ys))
+            if y_span < 0.75:
+                raise ValueError(
+                    f"recorded reference covers only {y_span:.4f} m in Y; at least 0.75 m is required"
+                )
+        times = np.asarray([float(row["t_s"]) for row in rows], dtype=np.float64)
+        q = np.asarray([[float(row[f"q{j}_rad"]) for j in range(1, 7)] for row in rows], dtype=np.float64)
+        qd = np.asarray([[float(row[f"qd{j}_rad_s"]) for j in range(1, 7)] for row in rows], dtype=np.float64)
+        return cls(times, q, qd)
+
+    def locate(self, q_actual: np.ndarray, *, forward_window: int = 250) -> int:
+        stop = min(len(self.q), self.index + max(2, int(forward_window)))
+        local = np.linalg.norm(self.q[self.index:stop] - q_actual[None, :], axis=1)
+        self.index += int(np.argmin(local))
+        return self.index
+
+    def state_after(self, delta_s: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        target = min(self.times[-1], self.times[self.index] + max(0.0, float(delta_s)))
+        return tuple(
+            np.asarray([np.interp(target, self.times, values[:, j]) for j in range(6)], dtype=np.float64)
+            for values in (self.q, self.qd, self.qdd)
+        )
+
+
+def future_reference_sphere_distance(
+    surface_model: RobotSurfaceModel,
+    reference: RecordedReference,
+    spheres: list[RiskSphere],
+    *,
+    density: str,
+) -> dict[str, Any]:
+    """Evaluate each future obstacle sphere against q_ref(t + sphere.tau)."""
+    best = {"distance": math.inf, "link": None, "object_id": None, "tau": None}
+    surfaces_by_tau: dict[float, dict[str, np.ndarray]] = {}
+    for sphere in spheres:
+        tau = float(sphere.tau)
+        if tau not in surfaces_by_tau:
+            q_future, _, _ = reference.state_after(tau)
+            surfaces_by_tau[tau] = surface_model.surface_by_link(q_future, density=density)
+        center = np.asarray(sphere.center, dtype=np.float64)
+        for link, surface in surfaces_by_tau[tau].items():
+            if len(surface) == 0:
+                continue
+            distance = float(cKDTree(surface).query(center, k=1)[0] - sphere.radius)
+            if distance < best["distance"]:
+                best = {"distance": distance, "link": link, "object_id": int(sphere.object_id), "tau": tau}
+    return best
 
 
 def json_default(value: Any) -> Any:
@@ -181,14 +258,26 @@ def estimate_qd(history: list[tuple[float, np.ndarray]]) -> np.ndarray:
     return np.zeros(6)
 
 
-def radius_from_clusters(clusters: list[Any], cluster_index: int | None, fallback: float) -> float:
-    if cluster_index is None or cluster_index < 0 or cluster_index >= len(clusters):
-        return float(fallback)
-    pts = np.asarray(clusters[cluster_index].points, dtype=np.float64)
-    if len(pts) == 0:
-        return float(fallback)
-    center = np.asarray(clusters[cluster_index].center, dtype=np.float64)
-    return float(max(np.percentile(np.linalg.norm(pts - center[None, :], axis=1), 90), fallback))
+def track_geometry(obj: Any, clusters: list[Any], fallback: float) -> dict[str, Any]:
+    """Return center, velocity and radius from one track plus association audit."""
+    center = np.asarray(obj.center, dtype=np.float64)
+    velocity = np.asarray(obj.velocity, dtype=np.float64)
+    raw_radius = float(getattr(obj, "radius", fallback) or fallback)
+    distances = [float(np.linalg.norm(np.asarray(c.center, dtype=np.float64) - center)) for c in clusters]
+    cluster_index = None if not distances else int(np.argmin(distances))
+    cluster_center = None if cluster_index is None else np.asarray(clusters[cluster_index].center, dtype=np.float64)
+    association_error = math.inf if cluster_center is None else float(np.linalg.norm(center - cluster_center))
+    return {
+        "track_id": object_track_id(obj),
+        "center": center,
+        "velocity": velocity,
+        "speed": float(np.linalg.norm(velocity)),
+        "raw_radius": raw_radius,
+        "inflated_radius": max(raw_radius, float(fallback)),
+        "associated_cluster_index": cluster_index,
+        "associated_cluster_center": cluster_center,
+        "association_error_m": association_error,
+    }
 
 
 def object_track_id(obj: Any) -> int | None:
@@ -221,22 +310,21 @@ def select_stable_object(stable: list[Any], predicted_best: dict[str, Any], risk
     return min(stable, key=lambda obj: float(np.linalg.norm(np.asarray(obj.center, dtype=np.float64) - target_center)))
 
 
-def make_local_reference(q_now: np.ndarray, qd_now: np.ndarray, args: argparse.Namespace, q_goal_hint: np.ndarray | None = None):
+def make_local_reference(
+    q_now: np.ndarray,
+    qd_now: np.ndarray,
+    args: argparse.Namespace,
+    *,
+    reference_goal: tuple[np.ndarray, np.ndarray, np.ndarray],
+):
     horizon = float(args.local_horizon_s)
     segments = int(args.local_segments)
-    q_goal = q_goal_hint if q_goal_hint is not None else q_now + qd_now * horizon
+    q_goal, qd_goal, qdd_goal = (np.asarray(value, dtype=np.float64) for value in reference_goal)
     if np.linalg.norm(q_goal - q_now) < args.min_local_motion_rad:
-        # In static shadow tests there may be almost no robot motion. Add a tiny
-        # continuation in the dominant reference direction so the repair pipeline
-        # still has a non-degenerate 1 s candidate.
-        direction = np.zeros(6)
-        direction[0] = args.shadow_joint_probe_rad
-        direction[1] = -0.5 * args.shadow_joint_probe_rad
-        q_goal = q_now + direction
-    qd_goal = np.zeros(6)
+        raise RuntimeError("recorded reference has insufficient local motion; refusing a synthetic probe candidate")
     qdd = np.zeros(6)
     head = NUBSTrajectory6D.make_boundary_state(q_now, qd_now, qdd)
-    tail = NUBSTrajectory6D.make_boundary_state(q_goal, qd_goal, qdd)
+    tail = NUBSTrajectory6D.make_boundary_state(q_goal, qd_goal, qdd_goal)
     durations = np.full(segments, horizon / segments, dtype=np.float64)
     p_inner = NUBSTrajectory6D.linear_inner_points(q_now, q_goal, durations)
     return head, tail, durations, p_inner, q_goal
@@ -278,24 +366,33 @@ def wait_for_candidate_goal(
     min_execution_wait_s: float,
     motion_timeout_s: float,
     poll_s: float,
+    min_motion_rad: float,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     started = time.perf_counter()
     samples: list[dict[str, Any]] = []
-    last = np.asarray(robot.get_joint(), dtype=np.float64)
+    initial = np.asarray(robot.get_joint(), dtype=np.float64)
+    last = initial.copy()
+    max_motion = 0.0
     while time.perf_counter() - started <= motion_timeout_s:
         now = time.perf_counter()
         last = np.asarray(robot.get_joint(), dtype=np.float64)
         err = joint_error(last, q_goal)
+        max_motion = max(max_motion, float(np.max(np.abs(last - initial))))
         samples.append(
             {
                 "t_s": now - started,
                 "actual_joint_rad": last.tolist(),
                 "goal_l2_error_rad": err["l2_rad"],
                 "goal_max_abs_error_rad": err["max_abs_rad"],
+                "max_motion_from_start_rad": max_motion,
             }
         )
         elapsed = now - started
-        if err["max_abs_rad"] <= goal_tolerance_rad and elapsed >= min_execution_wait_s:
+        if (
+            err["max_abs_rad"] <= goal_tolerance_rad
+            and elapsed >= min_execution_wait_s
+            and max_motion >= min_motion_rad
+        ):
             return (
                 {
                     "reached": True,
@@ -303,6 +400,8 @@ def wait_for_candidate_goal(
                     "goal_error": err,
                     "actual_joint_rad": last.tolist(),
                     "sample_count": len(samples),
+                    "max_motion_from_start_rad": max_motion,
+                    "min_motion_required_rad": min_motion_rad,
                 },
                 samples,
             )
@@ -315,6 +414,8 @@ def wait_for_candidate_goal(
             "goal_error": err,
             "actual_joint_rad": last.tolist(),
             "sample_count": len(samples),
+            "max_motion_from_start_rad": max_motion,
+            "min_motion_required_rad": min_motion_rad,
         },
         samples,
     )
@@ -390,6 +491,7 @@ def execute_fast_candidate_offline_track(
         min_execution_wait_s=min_wait,
         motion_timeout_s=args.candidate_motion_timeout_s,
         poll_s=args.poll_s,
+        min_motion_rad=args.candidate_min_observed_motion_rad,
     )
     log["goal_check"] = goal_check
     log["feedback_samples"] = feedback_samples
@@ -412,11 +514,15 @@ def run_fast_repair(
     radius: float,
     risk_links: set[str],
     trial_dir: Path,
-    q_goal_hint: np.ndarray | None = None,
+    reference_goal: tuple[np.ndarray, np.ndarray, np.ndarray],
+    obstacle_audit: dict[str, Any],
 ) -> dict[str, Any]:
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
     forecast = constant_forecast(center, velocity, radius)
-    head, tail, durations, p_inner, q_goal = make_local_reference(q_now, qd_now, args, q_goal_hint=q_goal_hint)
+    head, tail, durations, p_inner, q_goal = make_local_reference(
+        q_now, qd_now, args, reference_goal=reference_goal
+    )
+    reference_trajectory = NUBSTrajectory6D().generate(p_inner, head, tail, durations)
     started = time.perf_counter()
     result = run_repair_v3(
         evaluator,
@@ -439,12 +545,27 @@ def run_fast_repair(
         q_goal=q_goal,
         solver_success=True,
     )
+    reference_verification = verifier.verify(
+        reference_trajectory,
+        forecast,
+        current_q=q_now,
+        current_qd=qd_now,
+        current_qdd=np.zeros(6),
+        q_goal=q_goal,
+        solver_success=True,
+    )
+    clearance_gain = float(verification.min_distance - reference_verification.min_distance)
+    candidate_samples = result.trajectory.dense_sample(0.02).q
+    reference_samples = reference_trajectory.dense_sample(0.02).q
+    max_delta_q = float(np.max(np.abs(candidate_samples - reference_samples)))
     repair_step_ok = int(result.accepted_steps) > 0
     accepted = bool(
         elapsed_ms <= args.fast_budget_ms
         and verification.min_distance >= args.online_accept_m
         and all({**verification.checks, "solver_ok": True}.values())
         and repair_step_ok
+        and clearance_gain >= args.min_clearance_improvement_m
+        and max_delta_q >= args.min_candidate_delta_q_rad
     )
     rejection_reasons = []
     if elapsed_ms > args.fast_budget_ms:
@@ -456,6 +577,10 @@ def run_fast_repair(
         rejection_reasons.append("verification_checks_failed:" + ",".join(failed_checks))
     if not repair_step_ok:
         rejection_reasons.append("no_accepted_repair_step")
+    if clearance_gain < args.min_clearance_improvement_m:
+        rejection_reasons.append("insufficient_clearance_improvement")
+    if max_delta_q < args.min_candidate_delta_q_rad:
+        rejection_reasons.append("candidate_motion_indistinguishable_from_reference")
     candidate_dir = trial_dir / "candidate"
     candidate_dir.mkdir(parents=True, exist_ok=True)
     save_trajectory_csv(candidate_dir / "fast_ccro_nubs_candidate.csv", result.trajectory, dt=0.01)
@@ -470,6 +595,11 @@ def run_fast_repair(
         "fast_budget_ms": args.fast_budget_ms,
         "online_accept_m": args.online_accept_m,
         "verification_min_distance_m": verification.min_distance,
+        "reference_online_min_distance_m": reference_verification.min_distance,
+        "candidate_online_min_distance_m": verification.min_distance,
+        "clearance_improvement_m": clearance_gain,
+        "min_clearance_improvement_m": args.min_clearance_improvement_m,
+        "max_delta_q_from_reference_rad": max_delta_q,
         "verification_reasons": verification.reasons,
         "verification_checks": verification.checks,
         "repair_iterations": result.iterations,
@@ -479,6 +609,20 @@ def run_fast_repair(
         "risk_scan_ms": result.risk_scan_ms,
         "linearization_ms": result.linearization_ms,
         "qp_ms": result.qp_ms,
+        "trajectory_generation_ms": result.trajectory_generation_ms,
+        "motion_check_ms": result.motion_check_ms,
+        "candidate_distance_check_ms": result.candidate_distance_check_ms,
+        "scale_attempts": result.scale_attempts,
+        "unaccounted_fast_ms": max(
+            0.0,
+            elapsed_ms
+            - result.risk_scan_ms
+            - result.linearization_ms
+            - result.qp_ms
+            - result.trajectory_generation_ms
+            - result.motion_check_ms
+            - result.candidate_distance_check_ms,
+        ),
         "messages": result.messages,
         "q_now": q_now.tolist(),
         "qd_now": qd_now.tolist(),
@@ -486,6 +630,7 @@ def run_fast_repair(
         "obstacle_center": center.tolist(),
         "obstacle_velocity": velocity.tolist(),
         "obstacle_radius": radius,
+        "obstacle_association": obstacle_audit,
         "risk_links": sorted(risk_links),
         "candidate_csv": str(candidate_dir / "fast_ccro_nubs_candidate.csv"),
     }
@@ -652,6 +797,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     ref_robot_points: np.ndarray | None = None
     ref_robot_motion_y: float | None = None
     robot_motion_modes = {"moving-shadow-stop", "live-stop-replan-execute"}
+    reference: RecordedReference | None = None
+    if args.reference_feedback_csv is not None:
+        reference = RecordedReference.load(args.reference_feedback_csv.resolve())
+        log["reference_feedback_csv"] = str(args.reference_feedback_csv.resolve())
+        log["reference_samples"] = len(reference.times)
+    if args.mode in robot_motion_modes and reference is None:
+        processor.stop()
+        raise RuntimeError(
+            "moving 6.5.3 modes require --reference-feedback-csv; velocity extrapolation and synthetic probe references are forbidden"
+        )
 
     try:
         if args.mode in robot_motion_modes:
@@ -661,7 +816,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             require_confirmation(
                 True,
                 f"{step_label}: workspace clear, operator at emergency stop. "
-                f"Press Enter to start Y oscillation and guarded logging together for {args.duration_s:.1f}s. "
+                f"Press Enter to start the one-way recorded Y reference and guarded logging for {args.duration_s:.1f}s. "
                 "Only introduce the foam obstacle after the robot has started moving.",
             )
             commander = RobotCommander(ip=args.robot_ip, base_speed=args.line_velocity_m_s, robot_mod=robot)
@@ -669,8 +824,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 raise RuntimeError("RobotCommander failed to connect")
             commander.start_y_oscillate(
                 range_m=args.guided_range_m,
-                base_omega=args.guided_base_omega,
+                base_omega=args.line_velocity_m_s,
                 x_offset=args.x_offset,
+                one_way=True,
+                y_start=args.y_start,
+                y_goal=args.y_goal,
             )
             guided_controller = AdaptiveSafetyController(
                 d_safe=args.guided_d_safe_m,
@@ -681,9 +839,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 dynamic_lookahead=args.guided_dynamic_lookahead_s,
             )
             log["robot_commanded"] = True
-            log["reference_motion_method"] = "RobotCommander.motion_worker_y_oscillate"
+            log["reference_motion_method"] = "RobotCommander.motion_worker_y_one_way_reference"
             log["guided_range_m"] = args.guided_range_m
-            log["guided_base_omega"] = args.guided_base_omega
+            log["reference_line_velocity_m_s"] = args.line_velocity_m_s
         elif not args.no_prompt:
             input(f"\n[{args.scene}] shadow 模式：{SCENARIOS[args.scene]['prompt']}。按 Enter 开始 {args.duration_s:.1f}s 采集...")
 
@@ -702,6 +860,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             q_history.append((now_rel, q.copy()))
             q_history = q_history[-20:]
             qd = estimate_qd(q_history)
+            if reference is not None:
+                reference.locate(q)
             plane_removal = None
             if args.remove_planes:
                 plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
@@ -735,7 +895,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 velocity_radius_scale=float(safety.get("prediction_velocity_radius_scale", 0.1)),
             )
             current_best = nearest_cluster_to_links(live_model, q, eval_clusters, density=args.surface_density)
-            predicted_best = nearest_sphere_to_links(live_model, q, risk_spheres, density=args.surface_density)
+            predicted_best = (
+                future_reference_sphere_distance(live_model, reference, risk_spheres, density=args.surface_density)
+                if reference is not None
+                else nearest_sphere_to_links(live_model, q, risk_spheres, density=args.surface_density)
+            )
             center = current_best["cluster_center"]
             speeds = [float(np.linalg.norm(obj.velocity)) for obj in stable]
             guided_info = {
@@ -835,6 +999,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "predicted_distance_m": "" if math.isinf(predicted_best["distance"]) else f"{predicted_best['distance']:.6f}",
                 "predicted_nearest_link": predicted_best["link"] or "",
                 "predicted_tau_s": "" if predicted_best["tau"] is None else f"{predicted_best['tau']:.3f}",
+                "predicted_object_id": "" if predicted_best["object_id"] is None else int(predicted_best["object_id"]),
+                "trigger_block_reason": "",
                 "risk_state_current": risk_color_level(policy, current_best["distance"]),
                 "risk_state_predicted": risk_color_level(policy, predicted_best["distance"]),
                 "max_track_speed_m_s": "" if not speeds else f"{max(speeds):.6f}",
@@ -862,6 +1028,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             current_distance = float(current_best["distance"])
             current_link = current_best["link"] or ""
             scene_risk_links = set(SCENARIOS[args.scene]["risk_links"])
+            trigger_block_reason = ""
+            if triggered:
+                trigger_block_reason = "already_triggered"
+            elif len(stable) == 0:
+                trigger_block_reason = "no_stable_track"
+            elif not np.isfinite(trigger_distance):
+                trigger_block_reason = "no_finite_future_reference_risk"
+            elif trigger_distance >= trigger_threshold:
+                trigger_block_reason = "future_reference_clearance_above_threshold"
+            elif now_rel < args.arm_delay_s:
+                trigger_block_reason = "arm_delay"
+            row["trigger_block_reason"] = trigger_block_reason
             if (
                 args.mode in robot_motion_modes
                 and np.isfinite(current_distance)
@@ -949,22 +1127,39 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         }
                     )
                 selected_obj = select_stable_object(stable, predicted_best, risk_spheres)
-                radius = radius_from_clusters(clusters, current_best["cluster_index"], args.default_obstacle_radius_m)
-                q_goal_hint = None
-                if args.mode == "live-stop-replan-execute":
-                    q_goal_hint = q + qd * args.local_goal_lookahead_s
+                obstacle = track_geometry(selected_obj, eval_clusters, args.default_obstacle_radius_m)
+                if obstacle["association_error_m"] > args.max_track_cluster_association_m:
+                    raise RuntimeError(
+                        f"selected track/cluster association error {obstacle['association_error_m']:.4f} m "
+                        f"exceeds {args.max_track_cluster_association_m:.4f} m"
+                    )
+                if reference is None:
+                    raise RuntimeError("a recorded reference is required to construct a Fast local repair")
+                # Both active modes stop before repair. Anchor the candidate at
+                # the measured stopped state, not at the last moving sample.
+                if args.mode in robot_motion_modes:
+                    time.sleep(max(args.post_stop_settle_s, 0.0))
+                    _, q_repair_start = q_from_reader(state_reader)
+                    q_repair_start = np.asarray(q_repair_start, dtype=np.float64)
+                    qd_repair_start = np.zeros(6, dtype=np.float64)
+                    reference.locate(q_repair_start)
+                else:
+                    q_repair_start = q
+                    qd_repair_start = qd
+                reference_goal = reference.state_after(args.local_horizon_s)
                 candidate_summary = run_fast_repair(
                     args,
                     stage4_config,
                     stage4_model,
-                    q_now=q,
-                    qd_now=qd,
-                    center=np.asarray(selected_obj.center, dtype=np.float64),
-                    velocity=np.asarray(selected_obj.velocity, dtype=np.float64),
-                    radius=radius,
+                    q_now=q_repair_start,
+                    qd_now=qd_repair_start,
+                    center=obstacle["center"],
+                    velocity=obstacle["velocity"],
+                    radius=obstacle["inflated_radius"],
                     risk_links=set(SCENARIOS[args.scene]["risk_links"]),
                     trial_dir=trial_dir,
-                    q_goal_hint=q_goal_hint,
+                    reference_goal=reference_goal,
+                    obstacle_audit=obstacle,
                 )
                 log["events"].append({"type": candidate_summary["status"], "frame": frame_index, "t_s": now_rel, "candidate": candidate_summary})
                 if args.mode == "moving-shadow-stop":
@@ -980,6 +1175,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             }
                         )
                         break
+                    log["events"].append(
+                        {
+                            "type": "LIVE_CANDIDATE_EXECUTION_BLOCKED_PENDING_FRESH_RECHECK",
+                            "reason": (
+                                "trigger-time obstacle data must not authorize execution after planning/operator delay; "
+                                "implement and validate a fresh RGB-D candidate recheck first"
+                            ),
+                        }
+                    )
+                    break
                     if not args.allow_live_candidate_execution:
                         log["events"].append(
                             {
@@ -1156,16 +1361,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="absolute all-link hard stop; above this, current-distance stops are limited to the scene risk links",
     )
     parser.add_argument("--online-accept-m", type=float, default=0.09)
+    parser.add_argument("--min-clearance-improvement-m", type=float, default=0.003)
+    parser.add_argument("--min-candidate-delta-q-rad", type=float, default=1.0e-4)
     parser.add_argument("--fast-budget-ms", type=float, default=150.0)
     parser.add_argument("--local-horizon-s", type=float, default=1.0)
     parser.add_argument(
-        "--local-goal-lookahead-s",
-        type=float,
-        default=2.5,
-        help="for live-stop-replan-execute, set the local candidate target from q + qd * this lookahead before Fast CCRO-NUBS",
+        "--reference-feedback-csv",
+        type=Path,
+        default=None,
+        help="recorded one-way reference_feedback.csv; mandatory for moving modes",
     )
     parser.add_argument("--local-segments", type=int, default=5)
     parser.add_argument("--default-obstacle-radius-m", type=float, default=0.055)
+    parser.add_argument("--max-track-cluster-association-m", type=float, default=0.08)
     parser.add_argument("--min-local-motion-rad", type=float, default=0.002)
     parser.add_argument("--shadow-joint-probe-rad", type=float, default=0.025)
     parser.add_argument("--home-joints-deg", default="0,0,90,0,90,0")
@@ -1210,9 +1418,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-joint-acc", type=float, default=0.012)
     parser.add_argument("--candidate-start-tolerance-rad", type=float, default=0.035)
     parser.add_argument("--candidate-goal-tolerance-rad", type=float, default=0.012)
+    parser.add_argument("--candidate-min-observed-motion-rad", type=float, default=0.003)
     parser.add_argument("--candidate-min-execution-wait-s", type=float, default=0.0)
     parser.add_argument("--candidate-motion-timeout-s", type=float, default=45.0)
     parser.add_argument("--candidate-pre-execute-settle-s", type=float, default=0.35)
+    parser.add_argument("--post-stop-settle-s", type=float, default=0.25)
     parser.add_argument("--candidate-execute-confirm", action="store_true", default=True)
     parser.add_argument("--no-candidate-execute-confirm", dest="candidate_execute_confirm", action="store_false")
     return parser

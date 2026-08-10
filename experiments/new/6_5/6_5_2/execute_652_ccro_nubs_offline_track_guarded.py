@@ -139,21 +139,29 @@ def trajectory_stats(times: np.ndarray, qs: np.ndarray) -> dict[str, Any]:
 def wait_for_goal(robot, q_goal: np.ndarray, args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     started = time.perf_counter()
     samples: list[dict[str, Any]] = []
-    last = np.asarray(robot.get_joint(), dtype=np.float64)
+    initial = np.asarray(robot.get_joint(), dtype=np.float64)
+    last = initial.copy()
+    max_motion = 0.0
     while time.perf_counter() - started <= args.motion_timeout_s:
         now = time.perf_counter()
         last = np.asarray(robot.get_joint(), dtype=np.float64)
         err = joint_error(last, q_goal)
+        max_motion = max(max_motion, float(np.max(np.abs(last - initial))))
         samples.append(
             {
                 "t_s": now - started,
                 "actual_joint_rad": last.tolist(),
                 "goal_l2_error_rad": err["l2_rad"],
                 "goal_max_abs_error_rad": err["max_abs_rad"],
+                "max_motion_from_start_rad": max_motion,
             }
         )
         elapsed = now - started
-        if err["max_abs_rad"] <= args.goal_tolerance_rad and elapsed >= args.min_execution_wait_s:
+        if (
+            err["max_abs_rad"] <= args.goal_tolerance_rad
+            and elapsed >= args.min_execution_wait_s
+            and max_motion >= args.min_observed_motion_rad
+        ):
             return (
                 {
                     "reached": True,
@@ -161,6 +169,8 @@ def wait_for_goal(robot, q_goal: np.ndarray, args: argparse.Namespace) -> tuple[
                     "goal_error": err,
                     "actual_joint_rad": last.tolist(),
                     "sample_count": len(samples),
+                    "max_motion_from_start_rad": max_motion,
+                    "min_motion_required_rad": args.min_observed_motion_rad,
                 },
                 samples,
             )
@@ -173,6 +183,8 @@ def wait_for_goal(robot, q_goal: np.ndarray, args: argparse.Namespace) -> tuple[
             "goal_error": err,
             "actual_joint_rad": last.tolist(),
             "sample_count": len(samples),
+            "max_motion_from_start_rad": max_motion,
+            "min_motion_required_rad": args.min_observed_motion_rad,
         },
         samples,
     )
@@ -378,6 +390,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--joint-acc", type=float, default=0.04)
     parser.add_argument("--start-tolerance-rad", type=float, default=0.035)
     parser.add_argument("--goal-tolerance-rad", type=float, default=0.035)
+    parser.add_argument(
+        "--min-observed-motion-rad",
+        type=float,
+        default=0.0,
+        help="minimum measured departure from the starting joints before goal completion is accepted",
+    )
     parser.add_argument(
         "--min-execution-wait-s",
         type=float,

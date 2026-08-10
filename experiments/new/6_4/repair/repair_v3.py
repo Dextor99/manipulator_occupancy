@@ -25,6 +25,10 @@ class RepairV3Result:
     risk_scan_ms: float
     linearization_ms: float
     qp_ms: float
+    trajectory_generation_ms: float
+    motion_check_ms: float
+    candidate_distance_check_ms: float
+    scale_attempts: int
     messages: list[str]
 
 
@@ -56,10 +60,15 @@ def run_repair_v3(
     sample_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
     motion_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.DT, cfg.DT)
     points = np.asarray(p_inner, dtype=np.float64).copy()
+    t_generate = time.perf_counter()
     trajectory = NUBSTrajectory6D().generate(points, head, tail, durations)
+    trajectory_generation_ms = (time.perf_counter() - t_generate) * 1000.0
     risk_scan_ms = 0.0
     linearization_ms = 0.0
     qp_ms = 0.0
+    motion_check_ms = 0.0
+    candidate_distance_check_ms = 0.0
+    scale_attempts = 0
     accepted = 0
     qp_successes = 0
     active_count = 0
@@ -117,9 +126,14 @@ def run_repair_v3(
         accepted_candidate = None
         scales = cfg.FAST_V4_ACCEPTANCE_SCALES if v4_mode else (cfg.FAST_V3_RELAXATION,)
         for scale in scales:
+            scale_attempts += 1
             candidate_points = points + float(scale) * qp.delta.reshape(points.shape)
+            t_generate = time.perf_counter()
             candidate = NUBSTrajectory6D().generate(candidate_points, head, tail, durations)
+            trajectory_generation_ms += (time.perf_counter() - t_generate) * 1000.0
+            t_motion = time.perf_counter()
             motion = _motion_violations(candidate, limits, motion_times)
+            motion_check_ms += (time.perf_counter() - t_motion) * 1000.0
             if motion["q"] > 1.0e-8 or motion["qd"] > 1.0e-8 or motion["qdd"] > 1.0e-8:
                 messages.append(
                     f"scale {float(scale):.2f} rejected: motion q={motion['q']:.3e} "
@@ -127,6 +141,7 @@ def run_repair_v3(
                 )
                 continue
             if dense_active:
+                t_distance = time.perf_counter()
                 next_active = extract_dense_nearest_distances(
                     evaluator,
                     candidate,
@@ -135,6 +150,7 @@ def run_repair_v3(
                     top_k=1,
                 )
             else:
+                t_distance = time.perf_counter()
                 next_active = extract_active_distances(
                     evaluator,
                     candidate,
@@ -143,6 +159,7 @@ def run_repair_v3(
                     top_k=1,
                     density=cfg.SURFACE_DENSITY_LOOP,
                 )
+            candidate_distance_check_ms += (time.perf_counter() - t_distance) * 1000.0
             next_min = cfg.D_ONLINE_ACCEPT if not next_active else min(item.distance for item in next_active)
             if next_min <= current_min + cfg.FAST_V3_MIN_IMPROVEMENT:
                 messages.append(f"scale {float(scale):.2f} rejected: no monotonic distance improvement")
@@ -165,5 +182,9 @@ def run_repair_v3(
         risk_scan_ms=float(risk_scan_ms),
         linearization_ms=float(linearization_ms),
         qp_ms=float(qp_ms),
+        trajectory_generation_ms=float(trajectory_generation_ms),
+        motion_check_ms=float(motion_check_ms),
+        candidate_distance_check_ms=float(candidate_distance_check_ms),
+        scale_attempts=int(scale_attempts),
         messages=messages,
     )
