@@ -1,0 +1,103 @@
+{
+  "status": "DELAYED_REJOIN_AUTHORIZED",
+  "authorized": true,
+  "forecast_basis": "FRESH3_SCENE_CLEAR_EMPTY_ROI",
+  "hard_guard_distance_m": Infinity,
+  "hard_guard_safe": true,
+  "scene_clear_audit": {
+    "status": "FRESH3_SCENE_CLEAR",
+    "accepted": true,
+    "required_consecutive_frames": 3,
+    "available_frames": 5,
+    "evaluated_tail_frames": 3,
+    "frames": [
+      {
+        "timestamp": 1786453410.8002448,
+        "cluster_count": 0,
+        "raw_guard_distance_m": Infinity,
+        "future_reference_min_distance_m": Infinity,
+        "future_nearest_link": null,
+        "checks": {
+          "camera_frame_valid": true,
+          "original_target_unassociated": true,
+          "raw_hard_guard_safe": true,
+          "all_cluster_current_distance_safe": true,
+          "remaining_reference_0p5s_safe": true
+        },
+        "accepted": true
+      },
+      {
+        "timestamp": 1786453410.932456,
+        "cluster_count": 0,
+        "raw_guard_distance_m": Infinity,
+        "future_reference_min_distance_m": Infinity,
+        "future_nearest_link": null,
+        "checks": {
+          "camera_frame_valid": true,
+          "original_target_unassociated": true,
+          "raw_hard_guard_safe": true,
+          "all_cluster_current_distance_safe": true,
+          "remaining_reference_0p5s_safe": true
+        },
+        "accepted": true
+      },
+      {
+        "timestamp": 1786453411.0653267,
+        "cluster_count": 0,
+        "raw_guard_distance_m": Infinity,
+        "future_reference_min_distance_m": Infinity,
+        "future_nearest_link": null,
+        "checks": {
+          "camera_frame_valid": true,
+          "original_target_unassociated": true,
+          "raw_hard_guard_safe": true,
+          "all_cluster_current_distance_safe": true,
+          "remaining_reference_0p5s_safe": true
+        },
+        "accepted": true
+      }
+    ]
+  },
+  "selected_rejoin_offset_s": 1.5,
+  "bridge_min_distance_m": 172.29948633374195,
+  "authorized_trajectory_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/local_delayed_rejoin_calibration/r05/delayed_rejoin_authorization/authorized_delayed_rejoin_bridge.csv",
+  "authorized_duration_s": 0.5,
+  "rejoin_search_audit": [
+    {
+      "offset_s": 1.25,
+      "bridge_duration_s": 0.25,
+      "endpoint_distance_m": 172.30069154315774,
+      "endpoint_nearest_link": "wrist2_Link",
+      "endpoint_safe": true,
+      "motion_feasible": false,
+      "bridge_valid": false
+    },
+    {
+      "offset_s": 1.5,
+      "bridge_duration_s": 0.5,
+      "endpoint_distance_m": 172.30291391440124,
+      "endpoint_nearest_link": "wrist2_Link",
+      "endpoint_safe": true,
+      "motion_feasible": true,
+      "bridge_valid": true,
+      "bridge_min_distance_m": 172.29948633374195,
+      "verification_checks": {
+        "solver_ok": true,
+        "finite_ok": true,
+        "goal_ok": true,
+        "distance_ok": true,
+        "position_ok": true,
+        "velocity_ok": true,
+        "acceleration_ok": true,
+        "continuity_q_ok": true,
+        "continuity_qd_ok": true,
+        "continuity_qdd_ok": true,
+        "forecast_horizon_ok": true
+      },
+      "verification_reasons": [],
+      "verification_ms": 9.529684000881389
+    }
+  ],
+  "authorization_compute_ms": 41.4641140087042,
+  "robot_executed": false
+}
