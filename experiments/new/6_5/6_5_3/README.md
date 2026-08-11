@@ -79,6 +79,25 @@ enabled. Run one final stationary audit; one credible passing moving track ends
 the audit phase. A thin or camera-occluded support is preferred but is not a
 PASS condition.
 
+For fixture diagnosis, the non-commanding audit/shadow modes support an
+Open3D view without changing the formal perception protocol:
+
+```bash
+/home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_3/run_653_dynamic_repair_trial.py \
+  --scene D1 --repeat 1 --mode dynamic-track-audit --duration-s 8 \
+  --visualize-audit --show-filtered --show-noise \
+  --output results/new/6_5/6_5_3/fixture_visual_diagnostic
+```
+
+The view separates robot, plane, valid-cluster, filtered-cluster, and DBSCAN
+noise points, and overlays each valid cluster's OBB, 90-percent raw-radius
+sphere, and center. Prediction-ready clusters are highlighted. The option is
+rejected in every robot-commanding mode. Independently of visualization,
+audit/shadow runs save each cluster with `max(bbox)>0.20 m` or raw radius
+`>0.12 m` under `anomalous_clusters/` as a compressed NPZ containing the exact
+points and frame/cluster/track metadata. These are diagnostic outputs only;
+they do not filter, resize, or otherwise alter an obstacle.
+
 ## 1. Optional Reference Recording
 
 Dry run:

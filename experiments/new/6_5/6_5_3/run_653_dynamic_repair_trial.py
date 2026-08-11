@@ -66,7 +66,11 @@ from execute_652_ccro_nubs_offline_track_guarded import (  # noqa: E402
     resample_for_offline_track,
     trajectory_stats,
 )
-from perception.geometry_fit import make_occupancy_object  # noqa: E402
+from perception.geometry_fit import (  # noqa: E402
+    create_obb_wireframe,
+    create_sphere_wireframe,
+    make_occupancy_object,
+)
 from perception.occupancy_tracker import OccupancyTracker  # noqa: E402
 from planning.nubs_trajectory import CompositeTrajectory6D, NUBSTrajectory6D  # noqa: E402
 from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
@@ -675,6 +679,144 @@ def save_dynamic_risk_profile(path: Path, trajectory: Any, evaluator: Any, forec
 def new_dynamic_audit_buffers():
     """Create per-run mutable audit buffers (kept out of trajectory helpers)."""
     return [], [], [], None, {}
+
+
+class AuditVisualizer:
+    """Small audit-only Open3D viewer built from the shared geometry helpers."""
+
+    MAX_CLUSTERS = 12
+
+    def __init__(self, *, show_filtered: bool, show_noise: bool) -> None:
+        import open3d as o3d
+
+        self.o3d = o3d
+        self.show_filtered = bool(show_filtered)
+        self.show_noise = bool(show_noise)
+        self.vis = o3d.visualization.Visualizer()
+        self.vis.create_window(window_name="6.5.3 dynamic audit clusters", width=1280, height=800)
+        self.vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.25))
+
+        def point_cloud(color):
+            cloud = o3d.geometry.PointCloud()
+            cloud.paint_uniform_color(color)
+            self.vis.add_geometry(cloud)
+            return cloud
+
+        def line_set():
+            lines = o3d.geometry.LineSet()
+            lines.points = o3d.utility.Vector3dVector(np.empty((0, 3)))
+            self.vis.add_geometry(lines)
+            return lines
+
+        self.robot = point_cloud([0.85, 0.15, 0.15])
+        self.valid = point_cloud([0.15, 0.75, 0.20])
+        self.filtered = point_cloud([0.45, 0.45, 0.45])
+        self.noise = point_cloud([0.80, 0.20, 0.80])
+        self.plane = point_cloud([0.15, 0.35, 0.90])
+        self.centers = point_cloud([1.0, 1.0, 0.0])
+        self.obb = [line_set() for _ in range(self.MAX_CLUSTERS)]
+        self.spheres = [line_set() for _ in range(self.MAX_CLUSTERS)]
+
+    def update(self, robot_points, cluster_result, clusters, dynamic_audits) -> bool:
+        o3d = self.o3d
+        self.robot.points = o3d.utility.Vector3dVector(np.asarray(robot_points))
+        self.vis.update_geometry(self.robot)
+
+        all_points = []
+        all_colors = []
+        centers = []
+        for index, cluster in enumerate(clusters[: self.MAX_CLUSTERS]):
+            points = np.asarray(cluster.points, dtype=np.float64)
+            center = np.asarray(cluster.center, dtype=np.float64)
+            matching = [
+                audit for audit in dynamic_audits.values()
+                if audit.get("associated_cluster_center") is not None
+                and np.linalg.norm(np.asarray(audit["associated_cluster_center"]) - center) < 1.0e-6
+            ]
+            prediction_ready = any(bool(audit.get("prediction_ready")) for audit in matching)
+            dynamic_valid = any(bool(audit.get("valid")) for audit in matching)
+            color = [1.0, 0.15, 0.05] if prediction_ready else ([1.0, 0.65, 0.0] if dynamic_valid else [0.1, 0.8, 0.2])
+            all_points.append(points)
+            all_colors.append(np.repeat(np.asarray(color)[None, :], len(points), axis=0))
+            centers.append(center)
+            geometry = raw_cluster_geometry(cluster)
+            for target, source in (
+                (self.obb[index], create_obb_wireframe(points, color=color)),
+                (self.spheres[index], create_sphere_wireframe(center, geometry["radius"], color=color)),
+            ):
+                target.points = source.points
+                target.lines = source.lines
+                target.colors = source.colors
+                self.vis.update_geometry(target)
+        for index in range(len(clusters), self.MAX_CLUSTERS):
+            for target in (self.obb[index], self.spheres[index]):
+                target.points = o3d.utility.Vector3dVector(np.empty((0, 3)))
+                target.lines = o3d.utility.Vector2iVector(np.empty((0, 2), dtype=np.int32))
+                self.vis.update_geometry(target)
+        self.valid.points = o3d.utility.Vector3dVector(np.vstack(all_points) if all_points else np.empty((0, 3)))
+        self.valid.colors = o3d.utility.Vector3dVector(np.vstack(all_colors) if all_colors else np.empty((0, 3)))
+        self.centers.points = o3d.utility.Vector3dVector(np.asarray(centers) if centers else np.empty((0, 3)))
+        self.vis.update_geometry(self.valid)
+        self.vis.update_geometry(self.centers)
+
+        layers = (
+            (self.filtered, cluster_result.filtered_out_points if self.show_filtered else np.empty((0, 3))),
+            (self.noise, cluster_result.noise_points if self.show_noise else np.empty((0, 3))),
+            (self.plane, cluster_result.plane_points),
+        )
+        for cloud, points in layers:
+            cloud.points = o3d.utility.Vector3dVector(np.asarray(points, dtype=np.float64))
+            self.vis.update_geometry(cloud)
+        alive = bool(self.vis.poll_events())
+        self.vis.update_renderer()
+        return alive
+
+    def close(self) -> None:
+        self.vis.destroy_window()
+
+
+def save_anomalous_audit_clusters(
+    trial_dir: Path,
+    frame_index: int,
+    timestamp: float,
+    clusters: list[Any],
+    dynamic_audits: dict[int, dict[str, Any]],
+    *,
+    max_bbox_m: float,
+    max_radius_m: float,
+) -> int:
+    """Persist exact points for oversized audit clusters without changing filtering."""
+    saved = 0
+    output = trial_dir / "anomalous_clusters"
+    for cluster_index, cluster in enumerate(clusters):
+        geometry = raw_cluster_geometry(cluster)
+        if float(np.max(geometry["bbox"])) <= max_bbox_m and geometry["radius"] <= max_radius_m:
+            continue
+        track_id = -1
+        best_error = math.inf
+        for candidate_id, audit in dynamic_audits.items():
+            associated = audit.get("associated_cluster_center")
+            if associated is None:
+                continue
+            error = float(np.linalg.norm(np.asarray(associated) - geometry["center"]))
+            if error < best_error:
+                best_error = error
+                track_id = int(candidate_id)
+        output.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            output / f"cluster_points_frame{frame_index:04d}_cluster{cluster_index:02d}.npz",
+            points=np.asarray(cluster.points, dtype=np.float64),
+            center=np.asarray(geometry["center"], dtype=np.float64),
+            bbox=np.asarray(geometry["bbox"], dtype=np.float64),
+            radius_m=np.asarray(geometry["radius"], dtype=np.float64),
+            frame=np.asarray(frame_index, dtype=np.int64),
+            cluster_index=np.asarray(cluster_index, dtype=np.int64),
+            track_id=np.asarray(track_id, dtype=np.int64),
+            association_error_m=np.asarray(best_error, dtype=np.float64),
+            timestamp=np.asarray(timestamp, dtype=np.float64),
+        )
+        saved += 1
+    return saved
 
 
 def load_fast_candidate_csv(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -1454,6 +1596,8 @@ def capture_post_stop_obstacle(
 def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.scene not in SCENARIOS:
         raise ValueError(f"unknown scene {args.scene}")
+    if args.visualize_audit and args.mode not in {"dynamic-track-audit", "shadow"}:
+        raise ValueError("--visualize-audit is restricted to non-commanding dynamic-track-audit/shadow modes")
     trial_dir = build_trial_dir(args)
     trial_dir.mkdir(parents=True, exist_ok=True)
     protocol_violations = formal_protocol_violations(args) if args.mode in ROBOT_MOTION_MODES else []
@@ -1555,6 +1699,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if args.temporal_denoise
         else None
     )
+    audit_visualizer = (
+        AuditVisualizer(show_filtered=args.show_filtered, show_noise=args.show_noise)
+        if args.visualize_audit
+        else None
+    )
+    anomalous_cluster_files = 0
 
     rows: list[dict[str, Any]] = []
     (
@@ -1826,6 +1976,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         "block_reason": ",".join(audit["block_reasons"]),
                     }
                 )
+            if args.mode in {"dynamic-track-audit", "shadow"} and args.save_anomalous_clusters:
+                anomalous_cluster_files += save_anomalous_audit_clusters(
+                    trial_dir,
+                    frame_index,
+                    timestamp,
+                    clusters,
+                    dynamic_audits,
+                    max_bbox_m=args.anomaly_bbox_m,
+                    max_radius_m=args.anomaly_radius_m,
+                )
+            if audit_visualizer is not None and not audit_visualizer.update(
+                robot_points, cluster_result, clusters, dynamic_audits
+            ):
+                log["events"].append({"type": "AUDIT_VISUALIZER_CLOSED", "frame": frame_index, "t_s": now_rel})
+                break
             risk_spheres = predict_risk_spheres(
                 prediction_tracks,
                 horizon=args.prediction_horizon_s,
@@ -2391,6 +2556,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 commander.stop()
             except Exception:
                 pass
+        if audit_visualizer is not None:
+            try:
+                audit_visualizer.close()
+            except Exception:
+                pass
         processor.stop()
 
     write_csv(trial_dir / "frames.csv", rows, FRAME_FIELDS)
@@ -2487,6 +2657,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "local_repair_ready": None if candidate_summary is None else candidate_summary.get("local_repair_ready"),
             "execution_authorization_status": None if candidate_summary is None else candidate_summary.get("execution_authorization_status"),
             "execution_authorized": None if candidate_summary is None else candidate_summary.get("execution_authorized", False),
+            "anomalous_cluster_files": anomalous_cluster_files,
             "candidate_execution_status": None if candidate_execution_summary is None else candidate_execution_summary.get("status"),
             "candidate_execution": candidate_execution_summary,
             "frame_count": len(rows),
@@ -2530,6 +2701,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--duration-s", type=float, default=18.0)
+    parser.add_argument(
+        "--visualize-audit",
+        action="store_true",
+        help="audit/shadow only: show valid clusters, OBBs, 90%% radius spheres, robot and plane points",
+    )
+    parser.add_argument("--show-filtered", action="store_true", help="with --visualize-audit, show rejected-cluster points")
+    parser.add_argument("--show-noise", action="store_true", help="with --visualize-audit, show DBSCAN noise points")
+    parser.add_argument("--save-anomalous-clusters", action="store_true", default=True)
+    parser.add_argument("--no-save-anomalous-clusters", dest="save_anomalous_clusters", action="store_false")
+    parser.add_argument("--anomaly-bbox-m", type=float, default=0.20)
+    parser.add_argument("--anomaly-radius-m", type=float, default=0.12)
     parser.add_argument("--arm-delay-s", type=float, default=1.0)
     parser.add_argument("--reference-audit-only", action="store_true")
     parser.add_argument("--reference-preparation-timeout-s", type=float, default=60.0)

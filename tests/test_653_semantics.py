@@ -247,6 +247,30 @@ def test_dynamic_audit_buffers_exist_even_when_no_clusters_are_seen():
     assert per_track == {}
 
 
+def test_oversized_audit_cluster_saves_exact_points_and_track_metadata(tmp_path):
+    points = np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.10, 0.02, 0.0]])
+    cluster = SimpleNamespace(center=np.mean(points, axis=0), points=points)
+    audits = {7: {"associated_cluster_center": cluster.center.copy()}}
+    saved = trial.save_anomalous_audit_clusters(
+        tmp_path, 12, 3.5, [cluster], audits, max_bbox_m=0.20, max_radius_m=0.12
+    )
+    assert saved == 1
+    files = list((tmp_path / "anomalous_clusters").glob("*.npz"))
+    assert len(files) == 1
+    with np.load(files[0], allow_pickle=False) as data:
+        np.testing.assert_allclose(data["points"], points)
+        assert int(data["frame"]) == 12
+        assert int(data["track_id"]) == 7
+
+
+def test_audit_visualization_flags_do_not_change_formal_protocol():
+    base = trial.build_parser().parse_args(["--scene", "D1", "--mode", "dynamic-track-audit"])
+    visual = trial.build_parser().parse_args(
+        ["--scene", "D1", "--mode", "dynamic-track-audit", "--visualize-audit", "--show-filtered", "--show-noise"]
+    )
+    assert trial.formal_protocol_signature(base) == trial.formal_protocol_signature(visual)
+
+
 def test_fresh_obstacle_fit_recovers_linear_motion_and_conservative_radius():
     velocity = np.array([0.12, -0.03, 0.01])
     samples = []
