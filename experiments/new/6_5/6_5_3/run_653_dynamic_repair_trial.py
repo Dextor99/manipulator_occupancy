@@ -166,6 +166,12 @@ FORMAL_PROTOCOL = {
     "multisphere_max_components": 4,
     "line_velocity_m_s": 0.020,
     "line_acc_m_s2": 0.05,
+    # Frozen after three successful empty-scene executions (r02-r04). This
+    # prevents a formal live trial from falling back to a legacy time scale.
+    "candidate_playback_duration_s": 1.0,
+    "candidate_controller_waypoint_period_s": 0.005,
+    "candidate_joint_velc": 0.006,
+    "candidate_joint_acc": 0.012,
 }
 ROBOT_MOTION_MODES = {"moving-shadow-stop", "live-stop-replan-execute"}
 

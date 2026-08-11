@@ -172,8 +172,9 @@ def test_dynamic_track_audit_mode_is_non_motion_mode():
 
 
 def test_d1_and_d2_share_one_scene_independent_formal_protocol():
-    d1 = trial.build_parser().parse_args(["--scene", "D1", "--mode", "moving-shadow-stop"])
-    d2 = trial.build_parser().parse_args(["--scene", "D2", "--mode", "moving-shadow-stop"])
+    calibrated_time = ["--candidate-playback-duration-s", "1.0"]
+    d1 = trial.build_parser().parse_args(["--scene", "D1", "--mode", "moving-shadow-stop", *calibrated_time])
+    d2 = trial.build_parser().parse_args(["--scene", "D2", "--mode", "moving-shadow-stop", *calibrated_time])
     assert trial.formal_protocol_violations(d1) == []
     assert trial.formal_protocol_violations(d2) == []
     assert trial.formal_protocol_signature(d1) == trial.formal_protocol_signature(d2)
@@ -187,6 +188,17 @@ def test_formal_protocol_rejects_scene_specific_threshold_tuning():
     )
     violations = trial.formal_protocol_violations(args)
     assert any(item.startswith("min_dynamic_trigger_speed_m_s=") for item in violations)
+
+
+def test_formal_protocol_freezes_calibrated_candidate_execution_time_scale():
+    args = trial.build_parser().parse_args(
+        ["--scene", "D1", "--mode", "moving-shadow-stop", "--candidate-playback-duration-s", "1.0"]
+    )
+    assert trial.formal_protocol_violations(args) == []
+
+    args.candidate_playback_duration_s = 0.0
+    violations = trial.formal_protocol_violations(args)
+    assert any(item.startswith("candidate_playback_duration_s=") for item in violations)
 
 
 def test_nonformal_moving_trial_is_blocked_before_robot_setup(tmp_path):
