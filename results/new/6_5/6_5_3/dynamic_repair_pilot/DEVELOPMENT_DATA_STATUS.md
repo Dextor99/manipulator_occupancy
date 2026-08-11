@@ -118,5 +118,33 @@ state for repair. The candidate was then `REJECTED_CANDIDATE`:
 `verification_min_distance = −0.153 m` with the large conservative radius, and
 `safe_rejoin_not_found`. The fresh-recheck infrastructure works; the live repair
 still needs the elastic step to succeed on a 0.189 m-radius obstacle within
-budget. r24 is not formal 6.5.3 avoidance evidence.
+budget. r24 is not formal 6.5.3 avoidance evidence. An offline replay
+(`r24/early_reject_replay`) confirms the early-exit decision path: with
+`accepted_steps = 0` the online decision ends at 56 ms without a candidate
+verification, but the single-sphere geometry still cannot clear (verification
+`−0.152 m`).
+
+D1 r25 is a development pilot that exposed a fresh-recheck association gap: it
+`TRIGGERED` at frame 147 but the recheck returned
+`insufficient_fresh_frames` — all 5 captured frames were unassociated
+(association error 0.096–0.125 m) because only the trigger-time prediction was
+propagated to every frame. This motivated fresh-continuity association: the
+first frame bootstraps from the trigger state with the 0.12 m dynamic-tracker
+threshold, and each later frame predicts from the previously associated sample
+with the tighter 0.08 m association threshold.
+
+D1 r26 is a development pilot with the continuity association and the fresh
+PCA-axis multi-sphere refinement. It `TRIGGERED` at frame 127, the recheck
+passed (2-component fit, 0.299 m axial length, coverage ratio 1.0, max radius
+0.155 m vs 0.191 m single-sphere), and the live elastic step finally moved:
+`tail_delta_q_max = 21.1 mrad`, `verification_min_distance = 0.1013 m > 0.09 m`
+(online clearance passed live for the first time), but the candidate was still
+rejected — `fast_elapsed_ms = 163.4 > 150` and `safe_rejoin_not_found`. An
+offline A/B on the same data (`offline_multisphere_ab.json`) isolates the
+geometry contribution: single-sphere verification `0.0456 m` (fails) vs
+multi-sphere `0.1022 m` (passes), a 2.2× clearance gain, with a clean QP
+(multi-sphere motion violation `6.4e-11` vs single-sphere `4.9e-2`). The
+multi-sphere candidate passes every geometric gate and is only 4.2 ms over the
+150 ms budget. r25/r26 are development records, not formal 6.5.3 avoidance
+evidence.
 

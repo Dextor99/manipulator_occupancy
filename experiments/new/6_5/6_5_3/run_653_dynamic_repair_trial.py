@@ -1312,17 +1312,35 @@ def capture_post_stop_obstacle(
             min_volume=args.cluster_min_volume,
         )
         clusters = filter_guard_clusters(list(clustered.clusters), args)
-        elapsed_from_trigger = max(0.0, timestamp - float(trigger_timestamp))
-        expected_center = np.asarray(trigger_center, dtype=np.float64) + np.asarray(trigger_velocity, dtype=np.float64) * elapsed_from_trigger
+        if samples:
+            previous = samples[-1]
+            dt_from_previous = max(0.0, timestamp - float(previous["timestamp"]))
+            expected_center = np.asarray(previous["center"], dtype=np.float64) + np.asarray(trigger_velocity, dtype=np.float64) * dt_from_previous
+            association_threshold = args.max_track_cluster_association_m
+            association_mode = "fresh_continuity"
+        else:
+            elapsed_from_trigger = max(0.0, timestamp - float(trigger_timestamp))
+            expected_center = np.asarray(trigger_center, dtype=np.float64) + np.asarray(trigger_velocity, dtype=np.float64) * elapsed_from_trigger
+            association_threshold = args.dynamic_tracker_association_distance_m
+            association_mode = "trigger_bootstrap"
         if not clusters:
             frame_audit.append({"timestamp": timestamp, "cluster_count": 0, "associated": False})
             continue
         errors = [float(np.linalg.norm(np.asarray(cluster.center, dtype=np.float64) - expected_center)) for cluster in clusters]
         index = int(np.argmin(errors))
         error = errors[index]
-        associated = error <= args.max_track_cluster_association_m
+        associated = error <= association_threshold
         frame_audit.append(
-            {"timestamp": timestamp, "cluster_count": len(clusters), "associated": associated, "association_error_m": error}
+            {
+                "timestamp": timestamp,
+                "cluster_count": len(clusters),
+                "associated": associated,
+                "association_mode": association_mode,
+                "association_threshold_m": association_threshold,
+                "association_error_m": error,
+                "expected_center": expected_center.tolist(),
+                "candidate_cluster_center": np.asarray(clusters[index].center, dtype=np.float64).tolist(),
+            }
         )
         if not associated:
             continue
