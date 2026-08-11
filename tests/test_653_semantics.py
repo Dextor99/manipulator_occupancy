@@ -21,6 +21,7 @@ repair_v3 = importlib.import_module("experiments.new.6_4.repair.repair_v3")
 linearization = importlib.import_module("experiments.new.6_4.repair.nubs_linearization")
 calibration = importlib.import_module("experiments.new.6_5.6_5_3.calibrate_653_local_offline_track")
 alignment = importlib.import_module("experiments.new.6_5.6_5_3.align_653_authorized_start")
+candidate_return = importlib.import_module("experiments.new.6_5.6_5_3.return_653_local_candidate_start")
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -595,3 +596,15 @@ def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
     np.testing.assert_allclose(segment[0], actual)
     np.testing.assert_allclose(segment[-1], target)
     assert len(segment) == 4
+
+
+def test_candidate_return_reverses_only_authorized_waypoint_geometry():
+    times = np.array([0.0, 0.5, 1.0])
+    qs = np.zeros((3, 6))
+    qs[:, 0] = [0.0, 0.02, 0.05]
+    command_times, command_q = candidate_return.reverse_authorized_waypoints(
+        times, qs, return_duration_s=1.0, controller_period_s=0.5
+    )
+    np.testing.assert_allclose(command_times, [0.0, 0.5, 1.0])
+    np.testing.assert_allclose(command_q[0], qs[-1])
+    np.testing.assert_allclose(command_q[-1], qs[0])

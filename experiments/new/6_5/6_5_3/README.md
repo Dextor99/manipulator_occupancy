@@ -58,6 +58,14 @@ uses three empty-scene guard previews and retains the 0.10 m hard guard during
 alignment. The default 4 s alignment is positioning only and does not calibrate
 the 1 s candidate playback.
 
+After one empty-scene candidate playback, the elastic endpoint need not lie on
+the recorded reference. Before a repeat, `return_653_local_candidate_start.py`
+may traverse the exact authorized waypoint geometry in reverse. It refuses to
+start unless the robot is already within the frozen start tolerance of the
+authorized endpoint, and it retains the same empty-scene preview, explicit
+phrase, Offline Track checks, and 0.10 m execution hard guard. This return is
+calibration positioning only; it is not the automatic task-rejoin method.
+
 The moving modes fail closed unless `--reference-feedback-csv` is supplied.
 The same recorded reference drives future STRO evaluation and supplies the
 candidate endpoint at `t + H_local`; `q + qd * lookahead` is no longer used.
