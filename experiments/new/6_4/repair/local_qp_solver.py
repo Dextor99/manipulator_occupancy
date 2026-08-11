@@ -69,6 +69,7 @@ def solve_local_qp(
     trust_region: float,
     d_safe: float,
     clearance_reward: float = 0.0,
+    minimum_distance_improvement: float = 0.0,
 ) -> LocalQPResult:
     n = sensitivity.variable_count
     if n == 0 or not active:
@@ -79,7 +80,10 @@ def solve_local_qp(
     for item in active:
         index = int(np.argmin(np.abs(sensitivity.sample_times - item.tau)))
         row = np.einsum("j,jv->v", item.gradient_q, sensitivity.sq[index], optimize=True)
-        deficit = max(0.0, float(d_safe) - float(item.distance))
+        deficit = max(
+            float(minimum_distance_improvement),
+            float(d_safe) - float(item.distance),
+        )
         if np.linalg.norm(row) < 1.0e-12:
             continue
         distance_rows.append((float(item.distance), row.copy(), deficit))
@@ -98,7 +102,9 @@ def solve_local_qp(
 
     halfspaces: list[tuple[np.ndarray, float]] = []
     for distance, row, _ in distance_rows:
-        halfspaces.append((row, float(d_safe) - distance))
+        halfspaces.append(
+            (row, max(float(minimum_distance_improvement), float(d_safe) - distance))
+        )
     halfspaces.extend(_motion_halfspaces(sensitivity, limits))
 
     changed = 0

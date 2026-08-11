@@ -1,0 +1,194 @@
+{
+  "created_at": "2026-08-11T02:44:26.909418+00:00",
+  "status": "REJECTED_CANDIDATE",
+  "accepted_for_switch": false,
+  "repair_step_ok": false,
+  "rejection_reasons": [
+    "fast_budget_exceeded",
+    "online_clearance_failed",
+    "verification_checks_failed:distance_ok",
+    "no_accepted_repair_step",
+    "safe_rejoin_not_found",
+    "insufficient_clearance_improvement",
+    "candidate_motion_indistinguishable_from_reference"
+  ],
+  "candidate_is_reference_continuation": true,
+  "fast_elapsed_ms": 173.91568300081417,
+  "online_pipeline_elapsed_ms": 173.91568300081417,
+  "repair_elapsed_ms": 91.80756500427378,
+  "candidate_verification_ms": 44.39187599928118,
+  "reference_verification_ms": 37.52095599338645,
+  "post_check_ms": 0.17700099851936102,
+  "budget_exhausted": false,
+  "tail_delta_q_rad": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "tail_delta_q_max_rad": 0.0,
+  "selected_rejoin_offset_s": null,
+  "rejoin_search_audit": [],
+  "candidate_total_duration_s": 1.0,
+  "fast_budget_ms": 150.0,
+  "online_accept_m": 0.09,
+  "verification_min_distance_m": -0.1528468310567419,
+  "reference_online_min_distance_m": -0.1528468310567419,
+  "candidate_online_min_distance_m": -0.1528468310567419,
+  "clearance_improvement_m": 0.0,
+  "min_clearance_improvement_m": 0.003,
+  "max_delta_q_from_reference_rad": 0.0,
+  "verification_reasons": [
+    "distance_ok"
+  ],
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": false,
+    "position_ok": true,
+    "velocity_ok": true,
+    "acceleration_ok": true,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "repair_iterations": 1,
+  "accepted_steps": 0,
+  "active_constraints": 8,
+  "qp_successes": 1,
+  "risk_scan_ms": 75.08195199625334,
+  "linearization_ms": 3.868573003273923,
+  "qp_ms": 7.737412001006305,
+  "trajectory_generation_ms": 0.5402420065365732,
+  "motion_check_ms": 0.7597869916935451,
+  "candidate_distance_check_ms": 0.0,
+  "scale_attempts": 7,
+  "unaccounted_fast_ms": 3.8195990055100992,
+  "messages": [
+    "projected_qp max_violation=2.526e-01 clearance_reward=0",
+    "scale 1.00 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=2.061e-01",
+    "scale 0.85 rejected by linear screen",
+    "scale 0.65 rejected by linear screen",
+    "scale 0.45 rejected by linear screen",
+    "scale 0.30 rejected by linear screen",
+    "scale 0.20 rejected by linear screen",
+    "scale 0.10 rejected by linear screen",
+    "rejected: no feasible monotonic step"
+  ],
+  "q_now": [
+    0.48362216353416443,
+    -0.1587192416191101,
+    1.3957616090774536,
+    -0.01627870835363865,
+    1.5708513259887695,
+    0.48361483216285706
+  ],
+  "qd_now": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "q_goal": [
+    0.4597372286445304,
+    -0.15382425431176047,
+    1.4016539587123884,
+    -0.015302582122192711,
+    1.57079637,
+    0.45978734610625466
+  ],
+  "obstacle_center": [
+    0.3713152910967883,
+    -0.24260391181628654,
+    0.3319958208678388
+  ],
+  "obstacle_velocity": [
+    -0.10942177383689698,
+    0.020104244420680997,
+    -0.06561991869215056
+  ],
+  "obstacle_radius": 0.18858964013547058,
+  "obstacle_association": {
+    "track_id": 1,
+    "center": [
+      0.3713152910967883,
+      -0.24260391181628654,
+      0.3319958208678388
+    ],
+    "velocity": [
+      -0.0898025612100508,
+      0.0003041973873275722,
+      -0.01817625378184703
+    ],
+    "speed": 0.09162406200053284,
+    "raw_radius": 0.14129502591530008,
+    "track_radius": 0.1840443799982504,
+    "inflated_radius": 0.18858964013547058,
+    "associated_cluster_index": 0,
+    "associated_cluster_center": [
+      0.44098119975379085,
+      -0.24912235339993202,
+      0.37693304621411095
+    ],
+    "association_error_m": 0.026382767777874648,
+    "window_velocity": [
+      -0.10942177383689698,
+      0.020104244420680997,
+      -0.06561991869215056
+    ],
+    "prediction_ready": true,
+    "trigger_center": [
+      0.42187307608926944,
+      -0.2393888220279957,
+      0.36156462363161573
+    ],
+    "trigger_velocity": [
+      -0.0898025612100508,
+      0.0003041973873275722,
+      -0.01817625378184703
+    ],
+    "trigger_inflated_radius": 0.1840443799982504,
+    "fresh_recheck": {
+      "accepted": true,
+      "reason": "fresh_obstacle_ready",
+      "sample_count": 5,
+      "span_s": 0.5306656360626221,
+      "center": [
+        0.3713152910967883,
+        -0.24260391181628654,
+        0.3319958208678388
+      ],
+      "velocity": [
+        -0.10942177383689698,
+        0.020104244420680997,
+        -0.06561991869215056
+      ],
+      "speed_m_s": 0.12916376799437204,
+      "radius": 0.18858964013547058,
+      "max_association_error_m": 0.0728439994225716,
+      "first_timestamp": 1786416265.982974,
+      "last_timestamp": 1786416266.5136397,
+      "capture_elapsed_s": 0.6628764550041524,
+      "frame_count": 5
+    }
+  },
+  "risk_links": [
+    "base_link",
+    "foreArm_Link",
+    "gripper_base_link",
+    "left_link",
+    "right_link",
+    "shoulder_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link",
+    "wrist3_Link"
+  ],
+  "candidate_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r24/candidate/fast_ccro_nubs_candidate.csv"
+}

@@ -169,6 +169,30 @@ acceptance uses complete online pipeline time (repair, candidate verification,
 required reference verification, and final comparison), rather than reporting
 repair-only time as the online latency.
 
+Fast repair optimizes `z=[Delta Q, delta q_T]`. The six elastic tail-position
+variables are part of the finite NUBS sensitivity and QP, while terminal
+velocity and acceleration remain equal to the recorded reference. A nonzero
+tail offset is followed by a C2 NUBS bridge to the earliest kinematically
+feasible reference state in the scene-independent 1.25--2.00 s bounded search
+window. The complete repair plus bridge must pass the unchanged 0.09 m and
+joint-motion gates; otherwise the robot remains stopped.
+
+Scale candidates use linearized active-distance screening plus exact motion
+checks. Only the selected candidate receives full online geometric
+verification, avoiding repeated dense scans without weakening the final gate.
+The candidate and reference profiles are written separately as
+`fast_candidate_risk_profile.csv` and `fast_reference_risk_profile.csv`.
+
+After a trigger, robot motion is stopped before planning. The system then
+captures a fresh 0.6 s RGB-D window and associates observations against the
+trigger track's predicted position. At least three associated frames spanning
+0.25 s are required. The latest center, conservative maximum observed radius,
+and a timestamped linear-regression velocity replace the trigger-time state
+for repair and bounded-rejoin validation. Missing, stale, or unassociated data
+produces `REJECTED_FRESH_RECHECK` and keeps the robot stopped. The acquisition
+time is logged separately; the unchanged 150 ms budget starts with Fast repair.
+`post_stop_fresh_recheck.json` records every association decision.
+
 For D1, move the obstacle laterally across a future robot swept region,
 approximately perpendicular or oblique to the robot reference motion.
 Do not move it head-on along the reference line toward the current gripper.

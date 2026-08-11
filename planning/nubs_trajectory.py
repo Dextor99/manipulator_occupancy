@@ -238,3 +238,54 @@ class NUBSTrajectory6D:
         knot_times = np.cumsum(self._durations)[:-1]
         values = self.sample(knot_times, max_derivative=0).q
         return float(np.max(np.linalg.norm(values - self._p_inner, axis=1)))
+
+
+class CompositeTrajectory6D:
+    """Piecewise C2 trajectory assembled from already generated NUBS segments."""
+
+    def __init__(self, segments: list[NUBSTrajectory6D]) -> None:
+        if not segments:
+            raise ValueError("segments must not be empty")
+        self.segments = tuple(segments)
+        self._ends = np.cumsum([segment.total_duration for segment in self.segments])
+
+    @property
+    def total_duration(self) -> float:
+        return float(self._ends[-1])
+
+    @property
+    def head_state(self) -> np.ndarray:
+        return self.segments[0].head_state
+
+    @property
+    def tail_state(self) -> np.ndarray:
+        return self.segments[-1].tail_state
+
+    def _locate(self, value: float) -> tuple[NUBSTrajectory6D, float]:
+        if not np.isfinite(value) or value < 0.0 or value > self.total_duration + 1.0e-12:
+            raise ValueError("time must lie in [0, total_duration]")
+        index = min(int(np.searchsorted(self._ends, value, side="right")), len(self.segments) - 1)
+        start = 0.0 if index == 0 else float(self._ends[index - 1])
+        return self.segments[index], min(max(float(value) - start, 0.0), self.segments[index].total_duration)
+
+    def evaluate(self, time: float, derivative_order: int = 0) -> np.ndarray:
+        segment, local_time = self._locate(float(time))
+        return segment.evaluate(local_time, derivative_order)
+
+    def sample(self, times: np.ndarray, max_derivative: int = MAX_DERIVATIVE) -> TrajectorySamples:
+        values = _as_finite_array(times, (None,), "times")
+        if np.any(values < 0.0) or np.any(values > self.total_duration + 1.0e-12):
+            raise ValueError("sample times must lie in [0, total_duration]")
+        outputs = [np.empty((len(values), DIMENSION), dtype=np.float64) for _ in range(4)]
+        for row, value in enumerate(values):
+            segment, local_time = self._locate(float(value))
+            sample = segment.sample(np.asarray([local_time]), max_derivative=max_derivative)
+            for output, source in zip(outputs, (sample.q, sample.qd, sample.qdd, sample.jerk)):
+                output[row] = source[0]
+        return TrajectorySamples(values.copy(), *outputs)
+
+    def dense_sample(self, time_step: float = 0.01) -> TrajectorySamples:
+        if not np.isfinite(time_step) or time_step <= 0.0:
+            raise ValueError("time_step must be positive and finite")
+        count = max(2, int(np.ceil(self.total_duration / time_step)) + 1)
+        return self.sample(np.linspace(0.0, self.total_duration, count))

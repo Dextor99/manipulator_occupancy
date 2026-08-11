@@ -15,6 +15,7 @@ from planning.optimizer import JointLimits
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
 prepare = importlib.import_module("experiments.new.6_5.6_5_3.prepare_653_reference")
 repair_v3 = importlib.import_module("experiments.new.6_4.repair.repair_v3")
+linearization = importlib.import_module("experiments.new.6_4.repair.nubs_linearization")
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -218,6 +219,23 @@ def test_fast_repair_past_deadline_fails_before_risk_scan():
     assert any("budget exhausted before risk scan" in message for message in result.messages)
 
 
+def test_elastic_tail_sensitivity_controls_position_but_keeps_tail_derivatives_fixed():
+    q0 = np.zeros(6)
+    q1 = np.full(6, 0.02)
+    durations = np.full(2, 0.5)
+    head = NUBSTrajectory6D.make_boundary_state(q0)
+    tail = NUBSTrajectory6D.make_boundary_state(q1, np.full(6, 0.01), np.full(6, -0.02))
+    inner = NUBSTrajectory6D.linear_inner_points(q0, q1, durations)
+    sensitivity = linearization.build_local_sensitivity(
+        inner, head, tail, durations, np.array([0.0, 0.5, 1.0]), elastic_tail_position=True,
+    )
+    assert sensitivity.variable_count == inner.size + 6
+    tail_columns = sensitivity.sq[-1, :, inner.size:]
+    np.testing.assert_allclose(tail_columns, np.eye(6), atol=1.0e-7)
+    np.testing.assert_allclose(sensitivity.sqd[-1, :, inner.size:], 0.0, atol=1.0e-6)
+    np.testing.assert_allclose(sensitivity.sqdd[-1, :, inner.size:], 0.0, atol=1.0e-5)
+
+
 def test_dynamic_audit_buffers_exist_even_when_no_clusters_are_seen():
     cluster_rows, track_rows, centers, timestamp, per_track = trial.new_dynamic_audit_buffers()
     assert cluster_rows == []
@@ -225,6 +243,34 @@ def test_dynamic_audit_buffers_exist_even_when_no_clusters_are_seen():
     assert centers == []
     assert timestamp is None
     assert per_track == {}
+
+
+def test_fresh_obstacle_fit_recovers_linear_motion_and_conservative_radius():
+    velocity = np.array([0.12, -0.03, 0.01])
+    samples = []
+    for index, timestamp in enumerate((10.0, 10.15, 10.30, 10.45)):
+        samples.append(
+            {
+                "timestamp": timestamp,
+                "center": np.array([0.5, -0.2, 0.4]) + velocity * (timestamp - 10.0),
+                "radius": 0.06 + 0.002 * index,
+                "association_error_m": 0.01,
+            }
+        )
+    result = trial.fit_fresh_obstacle_motion(samples, minimum_frames=3, minimum_span_s=0.25)
+    assert result["accepted"]
+    np.testing.assert_allclose(result["velocity"], velocity, atol=1.0e-10)
+    assert np.isclose(result["radius"], 0.066)
+
+
+def test_fresh_obstacle_fit_fails_closed_on_short_capture():
+    samples = [
+        {"timestamp": 1.0, "center": np.zeros(3), "radius": 0.06, "association_error_m": 0.0},
+        {"timestamp": 1.1, "center": np.ones(3) * 0.01, "radius": 0.06, "association_error_m": 0.0},
+    ]
+    result = trial.fit_fresh_obstacle_motion(samples, minimum_frames=3, minimum_span_s=0.25)
+    assert not result["accepted"]
+    assert result["reason"] == "insufficient_fresh_frames"
 
 
 def test_dynamic_window_speed_and_hysteresis_tolerate_one_slow_sample():

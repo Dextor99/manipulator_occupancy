@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 from experiments.exp_ccro_stage1 import check_energy_gradient
-from planning.nubs_trajectory import NUBSTrajectory6D
+from planning.nubs_trajectory import CompositeTrajectory6D, NUBSTrajectory6D
 from planning.optimizer import FixedTimeNUBSOptimizer, JointLimits
 
 
@@ -83,6 +83,30 @@ class NUBSStageOneTests(unittest.TestCase):
             NUBSTrajectory6D().generate(
                 self.inner, self.head, self.tail, np.array([1.0, 0.0, 1.0, 1.0])
             )
+
+    def test_composite_trajectory_preserves_c2_join(self):
+        middle = NUBSTrajectory6D.make_boundary_state(self.q1, np.full(6, 0.02), np.full(6, -0.01))
+        first = NUBSTrajectory6D().generate(
+            NUBSTrajectory6D.linear_inner_points(self.q0, self.q1, np.array([0.5, 0.5])),
+            self.head,
+            middle,
+            np.array([0.5, 0.5]),
+        )
+        q2 = self.q1 + 0.1
+        second = NUBSTrajectory6D().generate(
+            NUBSTrajectory6D.linear_inner_points(self.q1, q2, np.array([0.4, 0.6])),
+            middle,
+            NUBSTrajectory6D.make_boundary_state(q2),
+            np.array([0.4, 0.6]),
+        )
+        composite = CompositeTrajectory6D([first, second])
+        for derivative in range(3):
+            np.testing.assert_allclose(
+                composite.evaluate(1.0 - 1.0e-8, derivative),
+                composite.evaluate(1.0 + 1.0e-8, derivative),
+                atol=1.0e-5,
+            )
+        self.assertAlmostEqual(composite.total_duration, 2.0)
 
 
 if __name__ == "__main__":

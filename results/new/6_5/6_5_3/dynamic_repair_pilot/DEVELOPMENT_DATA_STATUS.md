@@ -94,3 +94,29 @@ candidate was still a reference continuation (`max_delta_q = 0`,
 The trigger→stop pipeline is repeatably proven; the SCvx step still cannot move
 within budget, so none of r20–r23 are formal 6.5.3 avoidance evidence.
 
+After the Fast repair added elastic tail-position variables (`z = [ΔQ, δq_T]`,
+six tail variables in the finite sensitivity and QP, terminal velocity and
+acceleration fixed to the reference), cheap linearized scale screening (only the
+selected candidate gets the full dense geometric verification), and a bounded
+1.25–2.00 s C2 rejoin-bridge search, `elastic_tail_replay` under r23 replays the
+r23 trigger data offline and is the first evidence that an acceptable step can
+be produced: `accepted_steps = 1`, elastic tail moved q1/q2 by −12.5/+23.7 mrad,
+`fast_elapsed_ms = 105.9 < 150`, `verification_min_distance = 0.108 m > 0.09 m`,
+`clearance_improvement = 3.3 mm ≥ 3 mm`, `max_delta_q = 28.6 mrad`. The sole
+rejection is `safe_rejoin_not_found`: all four reference endpoints at 1.25–2.0 s
+read 0.087/0.069/0.052/0.034 m (upperArm_Link, still inside the crossing
+obstacle), so remaining stopped is the correct fail-closed decision rather than
+a repair failure. This replay is development evidence for the repair mechanism,
+not a formal avoidance execution.
+
+D1 r24 is a development `moving-shadow-stop` pilot that adds the fresh post-stop
+RGB-D recheck. It `TRIGGERED` at frame 144 and the recheck passed
+(`post_stop_fresh_recheck.json`: 5 associated frames, 0.53 s span, fitted speed
+0.129 m/s, conservative max radius 0.189 m), replacing the trigger-time obstacle
+state for repair. The candidate was then `REJECTED_CANDIDATE`:
+`fast_elapsed_ms = 173.9 > 150`, no accepted tail step (`tail_delta_q = 0`),
+`verification_min_distance = −0.153 m` with the large conservative radius, and
+`safe_rejoin_not_found`. The fresh-recheck infrastructure works; the live repair
+still needs the elastic step to succeed on a 0.189 m-radius obstacle within
+budget. r24 is not formal 6.5.3 avoidance evidence.
+

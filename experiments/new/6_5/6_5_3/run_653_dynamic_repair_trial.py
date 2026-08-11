@@ -65,7 +65,7 @@ from execute_652_ccro_nubs_offline_track_guarded import (  # noqa: E402
 )
 from perception.geometry_fit import make_occupancy_object  # noqa: E402
 from perception.occupancy_tracker import OccupancyTracker  # noqa: E402
-from planning.nubs_trajectory import NUBSTrajectory6D  # noqa: E402
+from planning.nubs_trajectory import CompositeTrajectory6D, NUBSTrajectory6D  # noqa: E402
 from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
 from risk.prediction import RiskSphere, predict_risk_spheres  # noqa: E402
 from risk.safety_policy import SafetyPolicy  # noqa: E402
@@ -146,10 +146,15 @@ FORMAL_PROTOCOL = {
     "guided_max_accel": 0.5,
     "guided_dynamic_lookahead_s": 0.15,
     "local_horizon_s": 1.0,
+    "rejoin_search_step_s": 0.25,
+    "rejoin_max_offset_s": 2.0,
     "local_segments": 5,
     "online_accept_m": 0.09,
     "min_clearance_improvement_m": 0.003,
     "fast_budget_ms": 150.0,
+    "post_stop_recheck_duration_s": 0.6,
+    "post_stop_recheck_min_frames": 3,
+    "post_stop_recheck_min_span_s": 0.25,
     "line_velocity_m_s": 0.020,
     "line_acc_m_s2": 0.05,
 }
@@ -609,6 +614,24 @@ def make_local_reference(
     return head, tail, durations, p_inner, q_goal
 
 
+def make_rejoin_bridge(
+    repair_trajectory: NUBSTrajectory6D,
+    rejoin_state: tuple[np.ndarray, np.ndarray, np.ndarray],
+    duration_s: float,
+    *,
+    segments: int = 3,
+) -> NUBSTrajectory6D:
+    """Create a C2 bridge from an elastic repair tail to a later reference state."""
+    if duration_s <= 0.0 or segments < 1:
+        raise ValueError("rejoin bridge requires positive duration and at least one segment")
+    q_goal, qd_goal, qdd_goal = (np.asarray(value, dtype=np.float64) for value in rejoin_state)
+    head = repair_trajectory.tail_state
+    tail = NUBSTrajectory6D.make_boundary_state(q_goal, qd_goal, qdd_goal)
+    durations = np.full(int(segments), float(duration_s) / int(segments), dtype=np.float64)
+    inner = NUBSTrajectory6D.linear_inner_points(head[:, 0], q_goal, durations)
+    return NUBSTrajectory6D().generate(inner, head, tail, durations)
+
+
 def save_trajectory_csv(path: Path, trajectory: NUBSTrajectory6D, *, dt: float = 0.01) -> None:
     samples = trajectory.dense_sample(dt)
     rows: list[dict[str, Any]] = []
@@ -622,6 +645,26 @@ def save_trajectory_csv(path: Path, trajectory: NUBSTrajectory6D, *, dt: float =
             }
         )
     write_csv(path, rows, ["t_s", *[f"q{j+1}_rad" for j in range(6)], *[f"qd{j+1}_rad_s" for j in range(6)], *[f"qdd{j+1}_rad_s2" for j in range(6)]])
+
+
+def save_dynamic_risk_profile(path: Path, trajectory: Any, evaluator: Any, forecast: Any, *, density: str, dt: float) -> None:
+    """Persist a named distance profile so STRO/active/verifier distances are not conflated."""
+    times = np.linspace(0.0, trajectory.total_duration, max(2, int(np.ceil(trajectory.total_duration / dt)) + 1))
+    rows = []
+    for tau in times:
+        risk = evaluator.configuration(trajectory.evaluate(float(tau)), forecast, float(tau), density=density, with_gradient=False)
+        occupancy = forecast.occupancy_at(float(tau))
+        radius = math.nan if not occupancy.spheres else max(float(sphere.radius) for sphere in occupancy.spheres)
+        rows.append(
+            {
+                "tau": f"{float(tau):.6f}",
+                "distance_m": "" if not np.isfinite(risk.min_distance) else f"{float(risk.min_distance):.9f}",
+                "nearest_link": risk.nearest_link or "",
+                "surface_density": density,
+                "forecast_radius": "" if not np.isfinite(radius) else f"{radius:.9f}",
+            }
+        )
+    write_csv(path, rows, ["tau", "distance_m", "nearest_link", "surface_density", "forecast_radius"])
 
 
 def new_dynamic_audit_buffers():
@@ -799,6 +842,7 @@ def run_fast_repair(
     risk_links: set[str],
     trial_dir: Path,
     reference_goal: tuple[np.ndarray, np.ndarray, np.ndarray],
+    rejoin_goals: list[tuple[float, tuple[np.ndarray, np.ndarray, np.ndarray]]] | None,
     obstacle_audit: dict[str, Any],
 ) -> dict[str, Any]:
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
@@ -820,11 +864,63 @@ def run_fast_repair(
         dense_active=True,
         v4_mode=True,
         deadline_perf=deadline_perf,
+        elastic_tail_position=True,
+        cheap_scale_screening=True,
+        # A small linearization buffer compensates for the finite-distance
+        # model; the externally reported/accepted requirement remains 3 mm.
+        minimum_distance_improvement=1.10 * args.min_clearance_improvement_m,
     )
     repair_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
+    repair_trajectory = result.trajectory
+    candidate_trajectory: Any = repair_trajectory
+    reference_full_trajectory: Any = reference_trajectory
+    selected_rejoin_offset_s = None
+    rejoin_search_audit = []
+    if rejoin_goals and np.max(np.abs(result.tail_delta_q)) > 0.0:
+        # Select the earliest C2 bridge that satisfies cheap kinematic gates.
+        # Geometric authorization is still performed once by the full verifier.
+        for offset_s, state in rejoin_goals:
+            bridge_duration = float(offset_s) - float(args.local_horizon_s)
+            if bridge_duration <= 0.0:
+                continue
+            endpoint_risk = evaluator.configuration(
+                np.asarray(state[0], dtype=np.float64),
+                forecast,
+                float(offset_s),
+                density="medium",
+                with_gradient=False,
+            )
+            endpoint_safe = bool(endpoint_risk.min_distance >= args.online_accept_m)
+            audit = {
+                "offset_s": float(offset_s),
+                "endpoint_distance_m": float(endpoint_risk.min_distance),
+                "endpoint_nearest_link": endpoint_risk.nearest_link,
+                "endpoint_safe": endpoint_safe,
+                "motion_feasible": False,
+            }
+            rejoin_search_audit.append(audit)
+            if not endpoint_safe:
+                continue
+            bridge = make_rejoin_bridge(repair_trajectory, state, bridge_duration)
+            candidate_full = CompositeTrajectory6D([repair_trajectory, bridge])
+            samples = candidate_full.dense_sample(0.04)
+            q_ok = bool(np.all(samples.q >= limits.q_min[None, :]) and np.all(samples.q <= limits.q_max[None, :]))
+            qd_ok = bool(np.all(np.abs(samples.qd) <= limits.qd_max[None, :]))
+            qdd_ok = bool(np.all(np.abs(samples.qdd) <= limits.qdd_max[None, :]))
+            audit["motion_feasible"] = bool(q_ok and qd_ok and qdd_ok)
+            if not (q_ok and qd_ok and qdd_ok):
+                continue
+            nominal_bridge = make_rejoin_bridge(reference_trajectory, state, bridge_duration)
+            candidate_trajectory = candidate_full
+            reference_full_trajectory = CompositeTrajectory6D([reference_trajectory, nominal_bridge])
+            selected_rejoin_offset_s = float(offset_s)
+            q_goal = np.asarray(state[0], dtype=np.float64)
+            break
+    if selected_rejoin_offset_s is None and np.max(np.abs(result.tail_delta_q)) > 0.0:
+        q_goal = result.tail_state[:, 0].copy()
     candidate_verify_started = time.perf_counter()
     verification = verifier.verify(
-        result.trajectory,
+        candidate_trajectory,
         forecast,
         current_q=q_now,
         current_qd=qd_now,
@@ -835,7 +931,7 @@ def run_fast_repair(
     candidate_verification_ms = (time.perf_counter() - candidate_verify_started) * 1000.0
     reference_verify_started = time.perf_counter()
     reference_verification = verifier.verify(
-        reference_trajectory,
+        reference_full_trajectory,
         forecast,
         current_q=q_now,
         current_qd=qd_now,
@@ -846,18 +942,20 @@ def run_fast_repair(
     reference_verification_ms = (time.perf_counter() - reference_verify_started) * 1000.0
     post_check_started = time.perf_counter()
     clearance_gain = float(verification.min_distance - reference_verification.min_distance)
-    candidate_samples = result.trajectory.dense_sample(0.02).q
-    reference_samples = reference_trajectory.dense_sample(0.02).q
+    candidate_samples = candidate_trajectory.dense_sample(0.02).q
+    reference_samples = reference_full_trajectory.dense_sample(0.02).q
     max_delta_q = float(np.max(np.abs(candidate_samples - reference_samples)))
     post_check_ms = (time.perf_counter() - post_check_started) * 1000.0
     online_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
     repair_step_ok = int(result.accepted_steps) > 0
+    rejoin_ok = selected_rejoin_offset_s is not None
     accepted = bool(
         online_elapsed_ms <= args.fast_budget_ms
         and not result.budget_exhausted
         and verification.min_distance >= args.online_accept_m
         and all({**verification.checks, "solver_ok": True}.values())
         and repair_step_ok
+        and rejoin_ok
         and clearance_gain >= args.min_clearance_improvement_m
         and max_delta_q >= args.min_candidate_delta_q_rad
     )
@@ -871,13 +969,50 @@ def run_fast_repair(
         rejection_reasons.append("verification_checks_failed:" + ",".join(failed_checks))
     if not repair_step_ok:
         rejection_reasons.append("no_accepted_repair_step")
+    if not rejoin_ok:
+        rejection_reasons.append("safe_rejoin_not_found")
     if clearance_gain < args.min_clearance_improvement_m:
         rejection_reasons.append("insufficient_clearance_improvement")
     if max_delta_q < args.min_candidate_delta_q_rad:
         rejection_reasons.append("candidate_motion_indistinguishable_from_reference")
     candidate_dir = trial_dir / "candidate"
     candidate_dir.mkdir(parents=True, exist_ok=True)
-    save_trajectory_csv(candidate_dir / "fast_ccro_nubs_candidate.csv", result.trajectory, dt=0.01)
+    save_trajectory_csv(candidate_dir / "fast_ccro_nubs_candidate.csv", candidate_trajectory, dt=0.01)
+    save_dynamic_risk_profile(
+        candidate_dir / "fast_candidate_risk_profile.csv",
+        candidate_trajectory,
+        evaluator,
+        forecast,
+        density="medium",
+        dt=0.04,
+    )
+    save_dynamic_risk_profile(
+        candidate_dir / "fast_reference_risk_profile.csv",
+        reference_full_trajectory,
+        evaluator,
+        forecast,
+        density="medium",
+        dt=0.04,
+    )
+    active_profile_rows = []
+    for item in result.active_distance_profile:
+        tau = float(item["tau"])
+        occupancy = forecast.occupancy_at(tau)
+        radius_at_tau = math.nan if not occupancy.spheres else max(float(sphere.radius) for sphere in occupancy.spheres)
+        active_profile_rows.append(
+            {
+                "tau": f"{tau:.6f}",
+                "distance_m": f"{float(item['distance_m']):.9f}",
+                "nearest_link": item.get("nearest_link") or "",
+                "surface_density": "dense_active",
+                "forecast_radius": "" if not np.isfinite(radius_at_tau) else f"{radius_at_tau:.9f}",
+            }
+        )
+    write_csv(
+        candidate_dir / "fast_active_distance_profile.csv",
+        active_profile_rows,
+        ["tau", "distance_m", "nearest_link", "surface_density", "forecast_radius"],
+    )
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "ACCEPTED_CANDIDATE" if accepted else "REJECTED_CANDIDATE",
@@ -892,6 +1027,11 @@ def run_fast_repair(
         "reference_verification_ms": reference_verification_ms,
         "post_check_ms": post_check_ms,
         "budget_exhausted": result.budget_exhausted,
+        "tail_delta_q_rad": result.tail_delta_q.tolist(),
+        "tail_delta_q_max_rad": float(np.max(np.abs(result.tail_delta_q))),
+        "selected_rejoin_offset_s": selected_rejoin_offset_s,
+        "rejoin_search_audit": rejoin_search_audit,
+        "candidate_total_duration_s": float(candidate_trajectory.total_duration),
         "fast_budget_ms": args.fast_budget_ms,
         "online_accept_m": args.online_accept_m,
         "verification_min_distance_m": verification.min_distance,
@@ -1009,6 +1149,107 @@ def guided_guard_distance(
         "robot_point": None if robot_pt is None else np.asarray(robot_pt, dtype=np.float64).tolist(),
         "obstacle_point": None if obs_pt is None else np.asarray(obs_pt, dtype=np.float64).tolist(),
     }
+
+
+def fit_fresh_obstacle_motion(samples: list[dict[str, Any]], *, minimum_frames: int, minimum_span_s: float) -> dict[str, Any]:
+    """Fit a conservative fresh obstacle state from associated post-stop observations."""
+    if len(samples) < int(minimum_frames):
+        return {"accepted": False, "reason": "insufficient_fresh_frames", "sample_count": len(samples)}
+    times = np.asarray([float(item["timestamp"]) for item in samples], dtype=np.float64)
+    centers = np.asarray([item["center"] for item in samples], dtype=np.float64)
+    span = float(times[-1] - times[0])
+    if span < float(minimum_span_s):
+        return {"accepted": False, "reason": "insufficient_fresh_time_span", "sample_count": len(samples), "span_s": span}
+    centered_times = times - float(np.mean(times))
+    denominator = float(np.dot(centered_times, centered_times))
+    if denominator <= 1.0e-12:
+        return {"accepted": False, "reason": "degenerate_fresh_timestamps", "sample_count": len(samples), "span_s": span}
+    velocity = np.sum(centered_times[:, None] * (centers - np.mean(centers, axis=0)), axis=0) / denominator
+    center = centers[-1].copy()
+    radius = max(float(item["radius"]) for item in samples)
+    if not np.all(np.isfinite(center)) or not np.all(np.isfinite(velocity)) or not np.isfinite(radius):
+        return {"accepted": False, "reason": "nonfinite_fresh_state", "sample_count": len(samples), "span_s": span}
+    return {
+        "accepted": True,
+        "reason": "fresh_obstacle_ready",
+        "sample_count": len(samples),
+        "span_s": span,
+        "center": center,
+        "velocity": velocity,
+        "speed_m_s": float(np.linalg.norm(velocity)),
+        "radius": radius,
+        "max_association_error_m": max(float(item["association_error_m"]) for item in samples),
+        "first_timestamp": float(times[0]),
+        "last_timestamp": float(times[-1]),
+    }
+
+
+def capture_post_stop_obstacle(
+    processor: Any,
+    state_reader: Any,
+    denoiser: Any,
+    args: argparse.Namespace,
+    *,
+    trigger_center: np.ndarray,
+    trigger_velocity: np.ndarray,
+    trigger_timestamp: float,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Acquire and associate fresh RGB-D obstacle observations after stopping."""
+    started = time.perf_counter()
+    samples: list[dict[str, Any]] = []
+    frame_audit: list[dict[str, Any]] = []
+    while time.perf_counter() - started < args.post_stop_recheck_duration_s:
+        frame = processor.process_frame()
+        timestamp = float(getattr(frame, "timestamp", time.time()))
+        scene_points = np.asarray(frame.scene_points, dtype=np.float64)
+        robot_points = np.asarray(frame.robot_points, dtype=np.float64)
+        if denoiser is not None:
+            scene_points = denoiser.filter(scene_points)
+        plane_removal = None
+        if args.remove_planes:
+            plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
+        clustered = FastClusteringFilter(
+            scene_points,
+            robot_points,
+            workspace=getattr(processor, "_workspace", None),
+            plane_removal=plane_removal,
+            eps=args.cluster_eps,
+            min_samples=args.cluster_min_samples,
+            min_points=args.cluster_min_points,
+            min_volume=args.cluster_min_volume,
+        )
+        clusters = filter_guard_clusters(list(clustered.clusters), args)
+        elapsed_from_trigger = max(0.0, timestamp - float(trigger_timestamp))
+        expected_center = np.asarray(trigger_center, dtype=np.float64) + np.asarray(trigger_velocity, dtype=np.float64) * elapsed_from_trigger
+        if not clusters:
+            frame_audit.append({"timestamp": timestamp, "cluster_count": 0, "associated": False})
+            continue
+        errors = [float(np.linalg.norm(np.asarray(cluster.center, dtype=np.float64) - expected_center)) for cluster in clusters]
+        index = int(np.argmin(errors))
+        error = errors[index]
+        associated = error <= args.max_track_cluster_association_m
+        frame_audit.append(
+            {"timestamp": timestamp, "cluster_count": len(clusters), "associated": associated, "association_error_m": error}
+        )
+        if not associated:
+            continue
+        detection = make_occupancy_object(np.asarray(clusters[index].points), timestamp=timestamp, margin=0.0)
+        samples.append(
+            {
+                "timestamp": timestamp,
+                "center": np.asarray(detection.center, dtype=np.float64),
+                "radius": float(detection.radius),
+                "association_error_m": error,
+            }
+        )
+    result = fit_fresh_obstacle_motion(
+        samples,
+        minimum_frames=args.post_stop_recheck_min_frames,
+        minimum_span_s=args.post_stop_recheck_min_span_s,
+    )
+    result["capture_elapsed_s"] = time.perf_counter() - started
+    result["frame_count"] = len(frame_audit)
+    return result, frame_audit
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -1697,12 +1938,50 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         f"selected track/cluster association error {obstacle['association_error_m']:.4f} m "
                         f"exceeds {args.max_track_cluster_association_m:.4f} m"
                     )
+                fresh_recheck = None
+                if args.mode in robot_motion_modes:
+                    time.sleep(max(args.post_stop_settle_s, 0.0))
+                    fresh_recheck, fresh_frames = capture_post_stop_obstacle(
+                        processor,
+                        state_reader,
+                        denoiser,
+                        args,
+                        trigger_center=np.asarray(obstacle["center"], dtype=np.float64),
+                        trigger_velocity=np.asarray(obstacle["window_velocity"], dtype=np.float64),
+                        trigger_timestamp=timestamp,
+                    )
+                    write_json(trial_dir / "post_stop_fresh_recheck.json", {"result": fresh_recheck, "frames": fresh_frames})
+                    log["events"].append(
+                        {
+                            "type": "POST_STOP_FRESH_RECHECK_READY" if fresh_recheck["accepted"] else "POST_STOP_FRESH_RECHECK_REJECTED",
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "recheck": fresh_recheck,
+                        }
+                    )
+                    if not fresh_recheck["accepted"]:
+                        candidate_summary = {
+                            "status": "REJECTED_FRESH_RECHECK",
+                            "accepted_for_switch": False,
+                            "rejection_reasons": [fresh_recheck["reason"]],
+                            "fresh_recheck": fresh_recheck,
+                        }
+                        log["events"].append(
+                            {"type": "REJECTED_FRESH_RECHECK", "frame": frame_index, "t_s": time.perf_counter() - started}
+                        )
+                        break
+                    obstacle["trigger_center"] = np.asarray(obstacle["center"], dtype=np.float64).copy()
+                    obstacle["trigger_velocity"] = np.asarray(obstacle["window_velocity"], dtype=np.float64).copy()
+                    obstacle["trigger_inflated_radius"] = float(obstacle["inflated_radius"])
+                    obstacle["center"] = np.asarray(fresh_recheck["center"], dtype=np.float64)
+                    obstacle["window_velocity"] = np.asarray(fresh_recheck["velocity"], dtype=np.float64)
+                    obstacle["inflated_radius"] = max(float(fresh_recheck["radius"]), args.default_obstacle_radius_m)
+                    obstacle["fresh_recheck"] = fresh_recheck
                 if reference is None:
                     raise RuntimeError("a recorded reference is required to construct a Fast local repair")
                 # Both active modes stop before repair. Anchor the candidate at
                 # the measured stopped state, not at the last moving sample.
                 if args.mode in robot_motion_modes:
-                    time.sleep(max(args.post_stop_settle_s, 0.0))
                     _, q_repair_start = q_from_reader(state_reader)
                     q_repair_start = np.asarray(q_repair_start, dtype=np.float64)
                     qd_repair_start = np.zeros(6, dtype=np.float64)
@@ -1721,6 +2000,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     q_repair_start = q
                     qd_repair_start = qd
                 reference_goal = reference.state_after(args.local_horizon_s)
+                rejoin_offsets = np.arange(
+                    args.local_horizon_s + args.rejoin_search_step_s,
+                    args.rejoin_max_offset_s + 0.5 * args.rejoin_search_step_s,
+                    args.rejoin_search_step_s,
+                )
+                rejoin_goals = [
+                    (float(offset), reference.state_after(float(offset)))
+                    for offset in rejoin_offsets
+                ]
                 candidate_summary = run_fast_repair(
                     args,
                     stage4_config,
@@ -1733,6 +2021,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     risk_links=set(stage4_model.surface_by_link(q_repair_start, density="coarse")),
                     trial_dir=trial_dir,
                     reference_goal=reference_goal,
+                    rejoin_goals=rejoin_goals,
                     obstacle_audit=obstacle,
                 )
                 log["events"].append({"type": candidate_summary["status"], "frame": frame_index, "t_s": now_rel, "candidate": candidate_summary})
@@ -1753,8 +2042,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         {
                             "type": "LIVE_CANDIDATE_EXECUTION_BLOCKED_PENDING_FRESH_RECHECK",
                             "reason": (
-                                "trigger-time obstacle data must not authorize execution after planning/operator delay; "
-                                "implement and validate a fresh RGB-D candidate recheck first"
+                                "the pre-planning fresh obstacle state must not authorize execution after planning/operator delay; "
+                                "a second post-planning fresh RGB-D verification is still required"
                             ),
                         }
                     )
@@ -2015,6 +2304,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-candidate-delta-q-rad", type=float, default=1.0e-4)
     parser.add_argument("--fast-budget-ms", type=float, default=150.0)
     parser.add_argument("--local-horizon-s", type=float, default=1.0)
+    parser.add_argument("--rejoin-search-step-s", type=float, default=0.25)
+    parser.add_argument("--rejoin-max-offset-s", type=float, default=2.0)
     parser.add_argument(
         "--reference-feedback-csv",
         type=Path,
@@ -2085,6 +2376,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-motion-timeout-s", type=float, default=45.0)
     parser.add_argument("--candidate-pre-execute-settle-s", type=float, default=0.35)
     parser.add_argument("--post-stop-settle-s", type=float, default=0.25)
+    parser.add_argument("--post-stop-recheck-duration-s", type=float, default=0.6)
+    parser.add_argument("--post-stop-recheck-min-frames", type=int, default=3)
+    parser.add_argument("--post-stop-recheck-min-span-s", type=float, default=0.25)
     parser.add_argument("--candidate-execute-confirm", action="store_true", default=True)
     parser.add_argument("--no-candidate-execute-confirm", dest="candidate_execute_confirm", action="store_false")
     return parser

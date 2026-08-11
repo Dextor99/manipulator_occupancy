@@ -18,6 +18,8 @@ from .nubs_linearization import build_local_sensitivity
 class RepairV3Result:
     trajectory: NUBSTrajectory6D
     p_inner: np.ndarray
+    tail_state: np.ndarray
+    tail_delta_q: np.ndarray
     iterations: int
     accepted_steps: int
     active_constraints: int
@@ -30,6 +32,7 @@ class RepairV3Result:
     candidate_distance_check_ms: float
     scale_attempts: int
     budget_exhausted: bool
+    active_distance_profile: list[dict[str, object]]
     messages: list[str]
 
 
@@ -58,6 +61,9 @@ def run_repair_v3(
     dense_active: bool = False,
     v4_mode: bool = False,
     deadline_perf: float | None = None,
+    elastic_tail_position: bool = False,
+    cheap_scale_screening: bool = False,
+    minimum_distance_improvement: float = 0.0,
 ) -> RepairV3Result:
     def deadline_reached(stage: str) -> bool:
         if deadline_perf is None or time.perf_counter() < deadline_perf:
@@ -68,8 +74,10 @@ def run_repair_v3(
     sample_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
     motion_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.DT, cfg.DT)
     points = np.asarray(p_inner, dtype=np.float64).copy()
+    nominal_tail = np.asarray(tail, dtype=np.float64).copy()
+    working_tail = nominal_tail.copy()
     t_generate = time.perf_counter()
-    trajectory = NUBSTrajectory6D().generate(points, head, tail, durations)
+    trajectory = NUBSTrajectory6D().generate(points, head, working_tail, durations)
     trajectory_generation_ms = (time.perf_counter() - t_generate) * 1000.0
     risk_scan_ms = 0.0
     linearization_ms = 0.0
@@ -82,6 +90,7 @@ def run_repair_v3(
     active_count = 0
     messages: list[str] = []
     budget_exhausted = False
+    active_distance_profile: list[dict[str, object]] = []
     max_iterations = cfg.FAST_V4_MAX_ITERATIONS if v4_mode else cfg.FAST_V3_MAX_ITERATIONS
     for iteration in range(max_iterations):
         if deadline_reached("risk scan"):
@@ -107,6 +116,15 @@ def run_repair_v3(
             )
         risk_scan_ms += (time.perf_counter() - t_scan) * 1000.0
         active_count += len(active)
+        if not active_distance_profile:
+            active_distance_profile = [
+                {
+                    "tau": float(item.tau),
+                    "distance_m": float(item.distance),
+                    "nearest_link": item.nearest_link,
+                }
+                for item in active
+            ]
         if not active:
             messages.append("no active constraints")
             break
@@ -117,10 +135,11 @@ def run_repair_v3(
         sensitivity = build_local_sensitivity(
             points,
             head,
-            tail,
+            working_tail,
             durations,
             sample_times,
             epsilon=cfg.FAST_V3_SENSITIVITY_EPS,
+            elastic_tail_position=elastic_tail_position,
         )
         linearization_ms += (time.perf_counter() - t_lin) * 1000.0
         if deadline_reached("QP"):
@@ -134,6 +153,7 @@ def run_repair_v3(
             trust_region=cfg.FAST_V3_TRUST_REGION,
             d_safe=cfg.FAST_V4_TARGET_CLEARANCE if v4_mode else cfg.D_ONLINE_ACCEPT,
             clearance_reward=cfg.FAST_V4_CLEARANCE_REWARD if v4_mode else 0.0,
+            minimum_distance_improvement=float(minimum_distance_improvement),
         )
         qp_ms += (time.perf_counter() - t_qp) * 1000.0
         messages.append(qp.message)
@@ -143,14 +163,21 @@ def run_repair_v3(
         current_min = min(item.distance for item in active)
         accepted_candidate = None
         scales = cfg.FAST_V4_ACCEPTANCE_SCALES if v4_mode else (cfg.FAST_V3_RELAXATION,)
+        if elastic_tail_position and 1.0 not in scales:
+            scales = (1.0, *scales)
+        screened_candidates = []
         for scale in scales:
             if deadline_reached(f"scale {float(scale):.2f}"):
                 budget_exhausted = True
                 break
             scale_attempts += 1
-            candidate_points = points + float(scale) * qp.delta.reshape(points.shape)
+            inner_count = points.size
+            candidate_points = points + float(scale) * qp.delta[:inner_count].reshape(points.shape)
+            candidate_tail = working_tail.copy()
+            if elastic_tail_position:
+                candidate_tail[:, 0] += float(scale) * qp.delta[inner_count:inner_count + 6]
             t_generate = time.perf_counter()
-            candidate = NUBSTrajectory6D().generate(candidate_points, head, tail, durations)
+            candidate = NUBSTrajectory6D().generate(candidate_points, head, candidate_tail, durations)
             trajectory_generation_ms += (time.perf_counter() - t_generate) * 1000.0
             t_motion = time.perf_counter()
             motion = _motion_violations(candidate, limits, motion_times)
@@ -160,6 +187,18 @@ def run_repair_v3(
                     f"scale {float(scale):.2f} rejected: motion q={motion['q']:.3e} "
                     f"qd={motion['qd']:.3e} qdd={motion['qdd']:.3e}"
                 )
+                continue
+            if cheap_scale_screening:
+                predicted = []
+                for item in active:
+                    index = int(np.argmin(np.abs(sensitivity.sample_times - item.tau)))
+                    row = np.einsum("j,jv->v", item.gradient_q, sensitivity.sq[index], optimize=True)
+                    predicted.append(float(item.distance + float(scale) * np.dot(row, qp.delta)))
+                predicted_min = min(predicted) if predicted else current_min
+                if predicted_min <= current_min + cfg.FAST_V3_MIN_IMPROVEMENT:
+                    messages.append(f"scale {float(scale):.2f} rejected by linear screen")
+                    continue
+                screened_candidates.append((predicted_min, float(scale), candidate_points, candidate_tail, candidate))
                 continue
             if deadline_reached(f"scale {float(scale):.2f} distance check"):
                 budget_exhausted = True
@@ -192,19 +231,29 @@ def run_repair_v3(
             if next_min <= current_min + cfg.FAST_V3_MIN_IMPROVEMENT:
                 messages.append(f"scale {float(scale):.2f} rejected: no monotonic distance improvement")
                 continue
-            accepted_candidate = (candidate_points, candidate)
+            accepted_candidate = (candidate_points, candidate_tail, candidate)
             messages.append(f"accepted scale {float(scale):.2f}")
             break
+        if cheap_scale_screening and screened_candidates:
+            predicted_min, selected_scale, candidate_points, candidate_tail, candidate = max(
+                screened_candidates, key=lambda item: item[0]
+            )
+            accepted_candidate = (candidate_points, candidate_tail, candidate)
+            messages.append(
+                f"accepted scale {selected_scale:.2f} by linear screen predicted_min={predicted_min:.6f}"
+            )
         if budget_exhausted:
             break
         if accepted_candidate is None:
             messages.append("rejected: no feasible monotonic step")
             break
-        points, trajectory = accepted_candidate
+        points, working_tail, trajectory = accepted_candidate
         accepted += 1
     return RepairV3Result(
         trajectory=trajectory,
         p_inner=points,
+        tail_state=working_tail,
+        tail_delta_q=working_tail[:, 0] - nominal_tail[:, 0],
         iterations=iteration + 1 if "iteration" in locals() else 0,
         accepted_steps=accepted,
         active_constraints=active_count,
@@ -217,5 +266,6 @@ def run_repair_v3(
         candidate_distance_check_ms=float(candidate_distance_check_ms),
         scale_attempts=int(scale_attempts),
         budget_exhausted=bool(budget_exhausted),
+        active_distance_profile=active_distance_profile,
         messages=messages,
     )
