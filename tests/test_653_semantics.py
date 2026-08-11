@@ -25,6 +25,9 @@ candidate_return = importlib.import_module("experiments.new.6_5.6_5_3.return_653
 delayed_calibration = importlib.import_module(
     "experiments.new.6_5.6_5_3.calibrate_653_local_delayed_rejoin"
 )
+delayed_resume = importlib.import_module(
+    "experiments.new.6_5.6_5_3.resume_653_from_delayed_rejoin"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -211,6 +214,12 @@ def test_delayed_rejoin_calibration_is_noncommanding_by_default():
     args = delayed_calibration.build_parser().parse_args(["--repeat", "1"])
     assert not args.execute
     assert delayed_calibration.PHRASE == "CCRO_653_EMPTY_SCENE_LOCAL_DELAYED_REJOIN_APPROVED"
+
+
+def test_delayed_rejoin_resume_recovery_is_noncommanding_by_default():
+    args = delayed_resume.build_parser().parse_args(["--repeat", "1"])
+    assert not args.execute
+    assert delayed_resume.PHRASE == "CCRO_653_DELAYED_REJOIN_RESUME_APPROVED"
 
 
 def test_delayed_rejoin_calibration_allows_only_untracked_result_artifacts(monkeypatch):
@@ -789,7 +798,9 @@ def test_authorized_timing_check_rejects_compressed_waypoint_playback():
         {"t_s": 3.8, "goal_max_abs_error_rad": 0.001},
         {"t_s": 24.0, "goal_max_abs_error_rad": 0.0},
     ]
-    result = trial.authorized_execution_timing_check(26.8, feedback, goal_tolerance_rad=0.012)
+    result = trial.authorized_execution_timing_check(
+        26.8, feedback, valid_completion_time_s=3.8, goal_tolerance_rad=0.012
+    )
     assert not result["accepted"]
     assert result["actual_to_requested_ratio"] < 0.2
 
@@ -799,8 +810,29 @@ def test_authorized_timing_check_accepts_calibrated_repair_duration():
         {"t_s": 0.0, "goal_max_abs_error_rad": 1.0},
         {"t_s": 1.19, "goal_max_abs_error_rad": 0.004},
     ]
-    result = trial.authorized_execution_timing_check(1.25, feedback, goal_tolerance_rad=0.012)
+    result = trial.authorized_execution_timing_check(
+        1.25, feedback, valid_completion_time_s=1.19, goal_tolerance_rad=0.012
+    )
     assert result["accepted"]
+
+
+def test_r05_short_bridge_uses_valid_completion_not_first_tolerance_entry():
+    feedback = [
+        {"t_s": 0.0005, "goal_max_abs_error_rad": 0.015689},
+        {"t_s": 0.17789388, "goal_max_abs_error_rad": 0.010851},
+        {"t_s": 0.3491, "goal_max_abs_error_rad": 0.005437},
+        {"t_s": 0.522888058, "goal_max_abs_error_rad": 0.000149},
+    ]
+    result = trial.authorized_execution_timing_check(
+        0.5,
+        feedback,
+        valid_completion_time_s=0.522888058,
+        goal_tolerance_rad=0.012,
+    )
+    assert result["accepted"]
+    assert result["first_goal_tolerance_time_s"] == pytest.approx(0.17789388)
+    assert result["valid_completion_time_s"] == pytest.approx(0.522888058)
+    assert result["completion_to_requested_ratio"] == pytest.approx(1.045776116)
 
 
 def test_empty_scene_calibration_defaults_to_noncommanding_dry_run(tmp_path):

@@ -56,6 +56,20 @@ matched recorded-reference segment rather than issuing a free-space movej.
 New files under `results/` do not block this positioning audit; any uncommitted
 source or configuration change still does.
 
+The Offline Track timing audit uses the executor's valid completion time
+(`goal_check.elapsed_s`), which already requires goal tolerance, at least 90%
+of the authorized duration, nonzero observed motion, and no hard-guard stop.
+The first entry into goal tolerance remains logged as diagnostic evidence but
+does not decide timing acceptance; this avoids false failures for short,
+small-amplitude bridges without changing the frozen +/-20% timing band.
+
+If an older run physically reached its authorized delayed-rejoin endpoint but
+was stopped only by the former first-tolerance audit, use the one-shot
+`resume_653_from_delayed_rejoin.py`. It checks the current joints against the
+saved authorized bridge endpoint and performs three hard-guard previews before
+allowing the existing guarded Cartesian resume. Such a run is archived as a
+recovery/completion record, not relabeled as an uninterrupted formal trial.
+
 ## Empty-scene local Offline Track calibration
 
 Before the first live dynamic execution, calibrate only the already authorized

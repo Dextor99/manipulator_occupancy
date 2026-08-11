@@ -1067,21 +1067,26 @@ def authorized_execution_timing_check(
     requested_duration_s: float,
     feedback_samples: list[dict[str, Any]],
     *,
+    valid_completion_time_s: float | None,
     goal_tolerance_rad: float,
     relative_tolerance: float = 0.20,
 ) -> dict[str, Any]:
-    """Reject waypoint playback that ignores the authorized time axis."""
+    """Audit the executor's valid completion, not first tolerance entry."""
     goal_hits = [
         float(row["t_s"]) for row in feedback_samples
         if float(row.get("goal_max_abs_error_rad", math.inf)) <= goal_tolerance_rad
     ]
     first_goal_s = None if not goal_hits else min(goal_hits)
-    ratio = None if first_goal_s is None or requested_duration_s <= 0.0 else first_goal_s / requested_duration_s
+    completion_s = None if valid_completion_time_s is None else float(valid_completion_time_s)
+    ratio = None if completion_s is None or requested_duration_s <= 0.0 else completion_s / requested_duration_s
     accepted = bool(ratio is not None and (1.0 - relative_tolerance) <= ratio <= (1.0 + relative_tolerance))
     return {
         "accepted": accepted,
         "requested_duration_s": float(requested_duration_s),
         "first_goal_tolerance_time_s": first_goal_s,
+        "valid_completion_time_s": completion_s,
+        "completion_to_requested_ratio": ratio,
+        # Compatibility alias retained for existing result readers.
         "actual_to_requested_ratio": ratio,
         "relative_tolerance": float(relative_tolerance),
         "reason": "timing_consistent" if accepted else "authorized_time_axis_not_followed",
@@ -1358,6 +1363,7 @@ def execute_authorized_trajectory_offline_track(
     log["timing_check"] = authorized_execution_timing_check(
         requested_duration,
         feedback_samples,
+        valid_completion_time_s=(float(goal_check["elapsed_s"]) if goal_check.get("reached", False) else None),
         goal_tolerance_rad=args.candidate_goal_tolerance_rad,
     )
     log["elapsed_s"] = time.perf_counter() - started
