@@ -299,6 +299,51 @@ def test_fresh_obstacle_fit_fails_closed_on_short_capture():
     assert result["reason"] == "insufficient_fresh_frames"
 
 
+def test_r34_fresh_bootstrap_replay():
+    trigger_timestamp = 1786433371.408877
+    trigger_raw_cluster_center = np.array([0.532074, -0.293245, 0.323890])
+    trigger_velocity = np.array([-0.12168755184164848, -0.08369360107180769, -0.04977319265044797])
+    replay = [
+        (1786433371.8314953, [0.5406672963405228, -0.2780102538420974, 0.3332786570948649]),
+        (1786433371.9615479, [0.5233946411604286, -0.2758505165741201, 0.3255380943953102]),
+        (1786433372.0912097, [0.5019498506374160, -0.2783695640209339, 0.3276268681055270]),
+        (1786433372.2214808, [0.4994716108695837, -0.27374477138165965, 0.3216477724811940]),
+        (1786433372.3547300, [0.4912779928036916, -0.28198743924259667, 0.31825513114650317]),
+    ]
+    samples = []
+    first_association = None
+    for timestamp, center in replay:
+        association = trial.associate_fresh_cluster(
+            [np.asarray(center)],
+            samples,
+            timestamp=timestamp,
+            trigger_cluster_center=trigger_raw_cluster_center,
+            trigger_velocity=trigger_velocity,
+            trigger_timestamp=trigger_timestamp,
+            bootstrap_threshold_m=0.12,
+            continuity_threshold_m=0.08,
+        )
+        assert association["associated"]
+        if first_association is None:
+            first_association = association
+        samples.append(
+            {
+                "timestamp": timestamp,
+                "center": np.asarray(center),
+                "radius": 0.10,
+                "association_error_m": association["association_error_m"],
+            }
+        )
+
+    assert first_association is not None
+    assert first_association["bootstrap_model"] == "stopped_or_decelerated"
+    assert first_association["error_hold_m"] < first_association["error_cv_m"]
+    result = trial.fit_fresh_obstacle_motion(samples, minimum_frames=3, minimum_span_s=0.25)
+    assert result["accepted"]
+    assert result["reason"] == "fresh_obstacle_ready"
+    assert result["sample_count"] == 5
+
+
 def test_clearance_only_query_matches_full_dynamic_risk_geometry():
     class SurfaceModel:
         def surface_by_link(self, q, density="medium", links=None):

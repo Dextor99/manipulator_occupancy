@@ -1446,6 +1446,69 @@ def fit_fresh_obstacle_motion(samples: list[dict[str, Any]], *, minimum_frames: 
     }
 
 
+def associate_fresh_cluster(
+    cluster_centers: list[np.ndarray],
+    samples: list[dict[str, Any]],
+    *,
+    timestamp: float,
+    trigger_cluster_center: np.ndarray,
+    trigger_velocity: np.ndarray,
+    trigger_timestamp: float,
+    bootstrap_threshold_m: float,
+    continuity_threshold_m: float,
+) -> dict[str, Any]:
+    """Associate one fresh frame using CV/hold bootstrap then frame continuity."""
+    centers = [np.asarray(center, dtype=np.float64) for center in cluster_centers]
+    if not centers:
+        return {
+            "associated": False,
+            "association_mode": "fresh_continuity" if samples else "trigger_bootstrap_v2",
+            "association_threshold_m": float(continuity_threshold_m if samples else bootstrap_threshold_m),
+            "cluster_index": None,
+        }
+
+    if samples:
+        expected_center = np.asarray(samples[-1]["center"], dtype=np.float64)
+        errors = [float(np.linalg.norm(center - expected_center)) for center in centers]
+        index = int(np.argmin(errors))
+        selected_error = errors[index]
+        return {
+            "associated": bool(selected_error <= continuity_threshold_m),
+            "association_mode": "fresh_continuity",
+            "association_threshold_m": float(continuity_threshold_m),
+            "association_error_m": selected_error,
+            "selected_error_m": selected_error,
+            "expected_center": expected_center,
+            "candidate_cluster_center": centers[index],
+            "cluster_index": index,
+        }
+
+    elapsed = max(0.0, float(timestamp) - float(trigger_timestamp))
+    hold_center = np.asarray(trigger_cluster_center, dtype=np.float64)
+    cv_center = hold_center + np.asarray(trigger_velocity, dtype=np.float64) * elapsed
+    errors_cv = np.asarray([np.linalg.norm(center - cv_center) for center in centers], dtype=np.float64)
+    errors_hold = np.asarray([np.linalg.norm(center - hold_center) for center in centers], dtype=np.float64)
+    selected_errors = np.minimum(errors_cv, errors_hold)
+    index = int(np.argmin(selected_errors))
+    use_cv = bool(errors_cv[index] <= errors_hold[index])
+    selected_error = float(selected_errors[index])
+    return {
+        "associated": bool(selected_error <= bootstrap_threshold_m),
+        "association_mode": "trigger_bootstrap_v2",
+        "association_threshold_m": float(bootstrap_threshold_m),
+        "association_error_m": selected_error,
+        "selected_error_m": selected_error,
+        "bootstrap_model": "constant_velocity" if use_cv else "stopped_or_decelerated",
+        "error_cv_m": float(errors_cv[index]),
+        "error_hold_m": float(errors_hold[index]),
+        "expected_center_cv": cv_center,
+        "expected_center_hold": hold_center,
+        "expected_center": cv_center if use_cv else hold_center,
+        "candidate_cluster_center": centers[index],
+        "cluster_index": index,
+    }
+
+
 def fit_pca_multisphere(points: np.ndarray, *, fit_margin_m: float = 0.005, max_components: int = 4) -> dict[str, Any]:
     """Cover one fresh cluster by consecutive PCA-axis spheres with a coverage audit."""
     values = np.asarray(points, dtype=np.float64)
@@ -1502,7 +1565,7 @@ def capture_post_stop_obstacle(
     denoiser: Any,
     args: argparse.Namespace,
     *,
-    trigger_center: np.ndarray,
+    trigger_cluster_center: np.ndarray,
     trigger_velocity: np.ndarray,
     trigger_timestamp: float,
     stop_when_ready: bool = False,
@@ -1533,37 +1596,40 @@ def capture_post_stop_obstacle(
             min_volume=args.cluster_min_volume,
         )
         clusters = filter_guard_clusters(list(clustered.clusters), args)
-        if samples:
-            previous = samples[-1]
-            dt_from_previous = max(0.0, timestamp - float(previous["timestamp"]))
-            expected_center = np.asarray(previous["center"], dtype=np.float64) + np.asarray(trigger_velocity, dtype=np.float64) * dt_from_previous
-            association_threshold = args.max_track_cluster_association_m
-            association_mode = "fresh_continuity"
-        else:
-            elapsed_from_trigger = max(0.0, timestamp - float(trigger_timestamp))
-            expected_center = np.asarray(trigger_center, dtype=np.float64) + np.asarray(trigger_velocity, dtype=np.float64) * elapsed_from_trigger
-            association_threshold = args.dynamic_tracker_association_distance_m
-            association_mode = "trigger_bootstrap"
         if not clusters:
-            frame_audit.append({"timestamp": timestamp, "cluster_count": 0, "associated": False})
+            frame_audit.append(
+                {
+                    "timestamp": timestamp,
+                    "cluster_count": 0,
+                    "associated": False,
+                    "association_mode": "fresh_continuity" if samples else "trigger_bootstrap_v2",
+                }
+            )
             continue
-        errors = [float(np.linalg.norm(np.asarray(cluster.center, dtype=np.float64) - expected_center)) for cluster in clusters]
-        index = int(np.argmin(errors))
-        error = errors[index]
-        associated = error <= association_threshold
+        association = associate_fresh_cluster(
+            [np.asarray(cluster.center, dtype=np.float64) for cluster in clusters],
+            samples,
+            timestamp=timestamp,
+            trigger_cluster_center=np.asarray(trigger_cluster_center, dtype=np.float64),
+            trigger_velocity=np.asarray(trigger_velocity, dtype=np.float64),
+            trigger_timestamp=trigger_timestamp,
+            bootstrap_threshold_m=args.dynamic_tracker_association_distance_m,
+            continuity_threshold_m=args.max_track_cluster_association_m,
+        )
+        index = int(association["cluster_index"])
+        error = float(association["association_error_m"])
         frame_audit.append(
             {
                 "timestamp": timestamp,
                 "cluster_count": len(clusters),
-                "associated": associated,
-                "association_mode": association_mode,
-                "association_threshold_m": association_threshold,
-                "association_error_m": error,
-                "expected_center": expected_center.tolist(),
-                "candidate_cluster_center": np.asarray(clusters[index].center, dtype=np.float64).tolist(),
+                **{
+                    key: value.tolist() if isinstance(value, np.ndarray) else value
+                    for key, value in association.items()
+                    if key != "cluster_index"
+                },
             }
         )
-        if not associated:
+        if not association["associated"]:
             continue
         detection = make_occupancy_object(np.asarray(clusters[index].points), timestamp=timestamp, margin=0.0)
         latest_points = np.asarray(clusters[index].points, dtype=np.float64).copy()
@@ -2256,6 +2322,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         "window_velocity_m_s": None if trigger_audit is None else trigger_audit["window_velocity"].tolist(),
                         "window_speed_m_s": None if trigger_audit is None else trigger_audit["window_speed_m_s"],
                         "tracked_radius_m": None if trigger_audit is None else trigger_audit["track_radius"],
+                        "tracker_center_m": None if trigger_audit is None else trigger_audit["center"].tolist(),
+                        "raw_cluster_center_m": None if trigger_audit is None else trigger_audit["associated_cluster_center"].tolist(),
+                        "tracker_raw_center_offset_m": None if trigger_audit is None else float(
+                            np.linalg.norm(trigger_audit["center"] - trigger_audit["associated_cluster_center"])
+                        ),
                     }
                 )
                 if args.mode == "moving-shadow-stop":
@@ -2314,7 +2385,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         state_reader,
                         denoiser,
                         args,
-                        trigger_center=np.asarray(obstacle["center"], dtype=np.float64),
+                        trigger_cluster_center=np.asarray(obstacle["associated_cluster_center"], dtype=np.float64),
                         trigger_velocity=np.asarray(obstacle["window_velocity"], dtype=np.float64),
                         trigger_timestamp=timestamp,
                     )
@@ -2418,7 +2489,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         state_reader,
                         denoiser,
                         args,
-                        trigger_center=np.asarray(fresh_recheck["center"], dtype=np.float64),
+                        trigger_cluster_center=np.asarray(fresh_recheck["center"], dtype=np.float64),
                         trigger_velocity=np.asarray(fresh_recheck["velocity"], dtype=np.float64),
                         trigger_timestamp=float(fresh_recheck["last_timestamp"]),
                         stop_when_ready=True,

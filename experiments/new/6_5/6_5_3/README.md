@@ -202,14 +202,19 @@ The candidate and reference profiles are written separately as
 `fast_candidate_risk_profile.csv` and `fast_reference_risk_profile.csv`.
 
 After a trigger, robot motion is stopped before planning. The system then
-captures a fresh 0.6 s RGB-D window and associates observations against the
-trigger track's predicted position. At least three associated frames spanning
-0.25 s are required. The latest center, conservative maximum observed radius,
-and a timestamped linear-regression velocity replace the trigger-time state
-for repair and bounded-rejoin validation. Missing, stale, or unassociated data
-produces `REJECTED_FRESH_RECHECK` and keeps the robot stopped. The acquisition
-time is logged separately; the unchanged 150 ms budget starts with Fast repair.
-`post_stop_fresh_recheck.json` records every association decision.
+captures a fresh 0.6 s RGB-D window. Fresh Association v2 bootstraps its first
+frame from the trigger frame's actual associated raw-cluster center, testing
+both constant-velocity and stopped/decelerated hypotheses under the unchanged
+0.12 m gate. After bootstrap, each frame is associated to the previous fresh
+center under the unchanged 0.08 m continuity gate; trigger velocity is not
+reused. At least three associated frames spanning 0.25 s are required. The
+latest center, conservative maximum observed radius, and a timestamped
+linear-regression velocity replace the trigger-time state for repair and
+bounded-rejoin validation. Missing, stale, or unassociated data produces
+`REJECTED_FRESH_RECHECK` and keeps the robot stopped. The acquisition time is
+logged separately; the unchanged 150 ms budget starts with Fast repair.
+`post_stop_fresh_recheck.json` records the bootstrap model, CV/hold errors,
+selected error, and every subsequent continuity decision.
 
 The latest associated fresh cluster (only the final frame, never an
 uncompensated multi-frame union) is decomposed along its first PCA axis into
