@@ -29,6 +29,27 @@ The experiment reuses the safe 6.5.2 tabletop reference:
 Use `moving-shadow-stop` as the required pilot before enabling true online
 trajectory switching.
 
+## Empty-scene v2 local-first state-machine calibration
+
+Before the first v2 D2 live trial, validate the fallback as one complete
+empty-scene sequence: Fresh #2-authorized local repair, hold, Fresh #3,
+verified delayed C2 bridge, and guarded Cartesian resume. The dedicated tool
+defaults to a non-commanding artifact audit:
+
+```bash
+/home/hzy/miniconda3/envs/py310/bin/python \
+  experiments/new/6_5/6_5_3/calibrate_653_local_delayed_rejoin.py \
+  --repeat 1
+```
+
+Real execution additionally requires `--execute`, the exact phrase
+`CCRO_653_EMPTY_SCENE_LOCAL_DELAYED_REJOIN_APPROVED`, a clean worktree, three
+clear hard-guard preview frames, and a start-joint match. A mismatch returns
+`BLOCKED_START_MISMATCH` without commanding the robot. During local and bridge
+Offline Track execution the existing 0.10 m RGB-D hard guard remains active.
+Fresh #3 must authorize the bridge; otherwise the robot remains at the local
+repair tail. This calibration never invokes a second Fast solve.
+
 ## Empty-scene local Offline Track calibration
 
 Before the first live dynamic execution, calibrate only the already authorized

@@ -22,6 +22,9 @@ linearization = importlib.import_module("experiments.new.6_4.repair.nubs_lineari
 calibration = importlib.import_module("experiments.new.6_5.6_5_3.calibrate_653_local_offline_track")
 alignment = importlib.import_module("experiments.new.6_5.6_5_3.align_653_authorized_start")
 candidate_return = importlib.import_module("experiments.new.6_5.6_5_3.return_653_local_candidate_start")
+delayed_calibration = importlib.import_module(
+    "experiments.new.6_5.6_5_3.calibrate_653_local_delayed_rejoin"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -202,6 +205,12 @@ def test_reference_preparation_defaults_match_formal_motion_protocol():
     assert args.line_velocity_m_s == trial.FORMAL_PROTOCOL["line_velocity_m_s"]
     assert args.line_acc_m_s2 == trial.FORMAL_PROTOCOL["line_acc_m_s2"]
     assert not args.stop_after_start
+
+
+def test_delayed_rejoin_calibration_is_noncommanding_by_default():
+    args = delayed_calibration.build_parser().parse_args(["--repeat", "1"])
+    assert not args.execute
+    assert delayed_calibration.PHRASE == "CCRO_653_EMPTY_SCENE_LOCAL_DELAYED_REJOIN_APPROVED"
 
 
 def test_d1_and_d2_share_one_scene_independent_formal_protocol():
