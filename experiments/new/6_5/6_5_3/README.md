@@ -229,6 +229,15 @@ Ten complete r26 offline replays then produced `LOCAL_REPAIR_READY` in every
 run, with a 127.92 ms median and 123.56--129.45 ms range; all ten met the
 unchanged 150 ms deadline. See `offline_fast_budget_replay.json`.
 
+In r27 the dense active scan exhausted the deadline before QP because it built
+Jacobians for every time/link/sphere candidate before discarding all but eight.
+The implementation now sorts the exact vertex distances first and evaluates
+Jacobians only until the same first eight valid constraints are obtained. Ten
+r27 offline replays reduced the risk-scan median from the recorded 145.03 ms to
+11.91 ms and the complete Fast median to 59.14 ms, with accepted steps in all
+ten runs. The unchanged 3 mm gain gate still rejected this particular geometry
+(representative gain 1.88 mm), so it is not labeled `LOCAL_REPAIR_READY`.
+
 If repair returns `accepted_steps=0`, the online decision ends immediately.
 At most one reference verification may run afterwards as diagnostics and is
 reported as `diagnostic_reference_verification_ms`, outside

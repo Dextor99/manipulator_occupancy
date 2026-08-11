@@ -79,6 +79,10 @@ def extract_dense_nearest_distances(
 ) -> list[ActiveDistance]:
     """Extract active constraints from dense Mesh nearest surface vertices."""
     model = evaluator.surface_model
+    # Collect exact nearest-vertex candidates first.  Jacobians are needed only
+    # by the final top-k constraints; computing one for every time/link/sphere
+    # candidate dominated the real-system Fast budget and discarded nearly all
+    # of that work after sorting.
     rows = []
     for tau in np.asarray(sample_times, dtype=np.float64):
         q = trajectory.evaluate(float(tau))
@@ -100,22 +104,39 @@ def extract_dense_nearest_distances(
                 radial = np.linalg.norm(vectors, axis=1)
                 point_index = int(np.argmin(radial - sphere.radius))
                 norm = float(radial[point_index])
-                direction = np.array([1.0, 0.0, 0.0]) if norm < 1.0e-12 else vectors[point_index] / norm
                 distance = float(norm - sphere.radius)
-                jac_point = model.point_jacobian(q, link, local_points[point_index])
-                gradient = direction @ jac_point
-                if np.linalg.norm(gradient) < 1.0e-12 or not np.all(np.isfinite(gradient)):
-                    continue
                 rows.append(
-                    ActiveDistance(
-                        tau=float(tau),
-                        q=q,
-                        distance=distance,
-                        gradient_q=np.asarray(gradient, dtype=np.float64),
-                        nearest_link=link,
-                        local_point=local_points[point_index].copy(),
-                        world_point=world_points[point_index].copy(),
+                    (
+                        distance,
+                        float(tau),
+                        q,
+                        link,
+                        local_points[point_index].copy(),
+                        world_points[point_index].copy(),
+                        vectors[point_index].copy(),
+                        norm,
                     )
                 )
-    rows.sort(key=lambda item: item.distance)
-    return rows[: max(1, int(top_k))]
+    rows.sort(key=lambda item: item[0])
+    selected: list[ActiveDistance] = []
+    target = max(1, int(top_k))
+    for distance, tau, q, link, local_point, world_point, vector, norm in rows:
+        direction = np.array([1.0, 0.0, 0.0]) if norm < 1.0e-12 else vector / norm
+        jac_point = model.point_jacobian(q, link, local_point)
+        gradient = direction @ jac_point
+        if np.linalg.norm(gradient) < 1.0e-12 or not np.all(np.isfinite(gradient)):
+            continue
+        selected.append(
+            ActiveDistance(
+                tau=tau,
+                q=q,
+                distance=distance,
+                gradient_q=np.asarray(gradient, dtype=np.float64),
+                nearest_link=link,
+                local_point=local_point,
+                world_point=world_point,
+            )
+        )
+        if len(selected) >= target:
+            break
+    return selected
