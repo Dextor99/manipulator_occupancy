@@ -218,6 +218,16 @@ A 20-repeat r26 A/B found exact agreement between serial and threaded paired
 verification, but threading was slower (67.75 ms versus 55.18 ms median).
 Therefore the production Fast path retains serial candidate/reference
 verification; `paired_verifier_audit.json` records the rejected optimization.
+The retained serial verifier uses an exact clearance-only geometry kernel:
+it keeps the same 0.04 s samples, medium surface density, forecast occupancy,
+joint checks, and thresholds, while omitting risk-cost/contact fields that the
+verifier never consumes. On the same r26 26-sample trajectory it matched every
+minimum distance/link/object result and reduced one verification median from
+22.74 ms to 12.20 ms. The audit is stored in
+`verifier_clearance_kernel_audit.json`.
+Ten complete r26 offline replays then produced `LOCAL_REPAIR_READY` in every
+run, with a 127.92 ms median and 123.56--129.45 ms range; all ten met the
+unchanged 150 ms deadline. See `offline_fast_budget_replay.json`.
 
 If repair returns `accepted_steps=0`, the online decision ends immediately.
 At most one reference verification may run afterwards as diagnostics and is

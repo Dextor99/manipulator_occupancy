@@ -86,10 +86,16 @@ class SpatioTemporalRiskEvaluator:
         matrix = np.column_stack(all_distances)
         sphere_indices = np.argmin(matrix, axis=1)
         distances = matrix[np.arange(len(points)), sphere_indices]
-        object_ids = np.asarray(
-            [occupancy.spheres[index].object_id for index in sphere_indices],
+        # Map the nearest-sphere indices in native NumPy code.  This method is
+        # called for every link at every verifier sample; a Python loop over
+        # every surface point made the otherwise identical medium verification
+        # unnecessarily expensive.
+        sphere_object_ids = np.fromiter(
+            (sphere.object_id for sphere in occupancy.spheres),
             dtype=np.int64,
+            count=len(occupancy.spheres),
         )
+        object_ids = sphere_object_ids[sphere_indices]
         return distances, sphere_indices, object_ids
 
     def _link_clearance_cost(self, distances: np.ndarray) -> float:
@@ -199,6 +205,56 @@ class SpatioTemporalRiskEvaluator:
                 )
         result.gradient_q = gradient
         return result
+
+    def configuration_clearance(
+        self,
+        q: np.ndarray,
+        forecast: ObstacleForecast,
+        tau: float,
+        *,
+        links: set[str] | None = None,
+        density: str | None = None,
+    ) -> DynamicConfigurationRisk:
+        """Evaluate the exact minimum clearance without unused risk-cost data.
+
+        Dense trajectory verification needs only minimum distance, nearest link,
+        and forecast-horizon status.  Avoiding per-point object-ID construction,
+        hinge costs, and nearest-contact reconstruction preserves the geometric
+        query and sampling protocol while reducing authorization latency.
+        """
+        values = np.asarray(q, dtype=np.float64)
+        if values.shape != (6,) or not np.all(np.isfinite(values)):
+            raise ValueError("q must be a finite array with shape (6,)")
+        occupancy = forecast.occupancy_at(float(tau))
+        surfaces = self.surface_model.surface_by_link(
+            values, density=density or self.density, links=links
+        )
+        if not surfaces or not occupancy.spheres:
+            return DynamicConfigurationRisk(
+                0.0, math.inf, None, None, None, None, {}, occupancy.extrapolated
+            )
+        min_distance = math.inf
+        nearest_link = None
+        nearest_object_id = None
+        for link, points in surfaces.items():
+            for sphere in occupancy.spheres:
+                distances = np.linalg.norm(points - sphere.center[None, :], axis=1) - sphere.radius
+                index = int(np.argmin(distances))
+                distance = float(distances[index])
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_link = link
+                    nearest_object_id = sphere.object_id
+        return DynamicConfigurationRisk(
+            cost=0.0,
+            min_distance=min_distance,
+            nearest_link=nearest_link,
+            nearest_object_id=nearest_object_id,
+            robot_point=None,
+            obstacle_point=None,
+            per_link_cost={},
+            extrapolated=occupancy.extrapolated,
+        )
 
     def trajectory(
         self,

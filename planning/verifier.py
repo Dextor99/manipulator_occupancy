@@ -202,8 +202,8 @@ class DynamicTrajectoryVerifier:
         nearest_link = None
         extrapolated = 0
         for tau, q in zip(times, samples.q):
-            result = self.risk_evaluator.configuration(
-                q, forecast, float(tau), density=self.density, with_gradient=False
+            result = self.risk_evaluator.configuration_clearance(
+                q, forecast, float(tau), density=self.density
             )
             extrapolated += int(result.extrapolated)
             if result.min_distance < min_distance:

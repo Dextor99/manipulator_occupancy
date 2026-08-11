@@ -10,6 +10,8 @@ import numpy as np
 
 from planning.nubs_trajectory import NUBSTrajectory6D
 from planning.optimizer import JointLimits
+from planning.obstacle_forecast import ConstantVelocitySphereForecast
+from planning.spatiotemporal_risk import SpatioTemporalRiskEvaluator
 
 
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
@@ -271,6 +273,30 @@ def test_fresh_obstacle_fit_fails_closed_on_short_capture():
     result = trial.fit_fresh_obstacle_motion(samples, minimum_frames=3, minimum_span_s=0.25)
     assert not result["accepted"]
     assert result["reason"] == "insufficient_fresh_frames"
+
+
+def test_clearance_only_query_matches_full_dynamic_risk_geometry():
+    class SurfaceModel:
+        def surface_by_link(self, q, density="medium", links=None):
+            del density
+            surfaces = {
+                "upperArm_Link": np.array([[q[0], 0.0, 0.0], [q[0], 0.1, 0.0]]),
+                "foreArm_Link": np.array([[q[0] + 0.2, 0.0, 0.0]]),
+            }
+            return surfaces if links is None else {name: surfaces[name] for name in links}
+
+    evaluator = SpatioTemporalRiskEvaluator(SurfaceModel(), d_safe=0.09, d_activate=0.14)
+    forecast = ConstantVelocitySphereForecast(
+        np.array([0.35, 0.02, 0.0]), np.array([-0.05, 0.01, 0.0]), 0.06, 1.0, object_id=17
+    )
+    for tau in np.linspace(0.0, 1.0, 11):
+        q = np.array([0.03 * tau, 0.0, 0.0, 0.0, 0.0, 0.0])
+        full = evaluator.configuration(q, forecast, float(tau), density="medium", with_gradient=False)
+        clearance = evaluator.configuration_clearance(q, forecast, float(tau), density="medium")
+        assert clearance.min_distance == full.min_distance
+        assert clearance.nearest_link == full.nearest_link
+        assert clearance.nearest_object_id == full.nearest_object_id
+        assert clearance.extrapolated == full.extrapolated
 
 
 def test_pca_multisphere_covers_every_point_and_splits_elongated_cluster():
