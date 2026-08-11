@@ -850,6 +850,7 @@ def run_fast_repair(
     rejoin_goals: list[tuple[float, tuple[np.ndarray, np.ndarray, np.ndarray]]] | None,
     obstacle_audit: dict[str, Any],
     multisphere_geometry: dict[str, Any] | None = None,
+    artifacts_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
     if multisphere_geometry is None:
@@ -893,49 +894,10 @@ def run_fast_repair(
     reference_full_trajectory: Any = reference_trajectory
     selected_rejoin_offset_s = None
     rejoin_search_audit = []
-    if rejoin_goals and np.max(np.abs(result.tail_delta_q)) > 0.0:
-        # Select the earliest C2 bridge that satisfies cheap kinematic gates.
-        # Geometric authorization is still performed once by the full verifier.
-        for offset_s, state in rejoin_goals:
-            bridge_duration = float(offset_s) - float(args.local_horizon_s)
-            if bridge_duration <= 0.0:
-                continue
-            endpoint_risk = evaluator.configuration(
-                np.asarray(state[0], dtype=np.float64),
-                forecast,
-                float(offset_s),
-                density="medium",
-                with_gradient=False,
-            )
-            endpoint_safe = bool(endpoint_risk.min_distance >= args.online_accept_m)
-            audit = {
-                "offset_s": float(offset_s),
-                "endpoint_distance_m": float(endpoint_risk.min_distance),
-                "endpoint_nearest_link": endpoint_risk.nearest_link,
-                "endpoint_safe": endpoint_safe,
-                "motion_feasible": False,
-            }
-            rejoin_search_audit.append(audit)
-            if not endpoint_safe:
-                continue
-            bridge = make_rejoin_bridge(repair_trajectory, state, bridge_duration)
-            candidate_full = CompositeTrajectory6D([repair_trajectory, bridge])
-            samples = candidate_full.dense_sample(0.04)
-            q_ok = bool(np.all(samples.q >= limits.q_min[None, :]) and np.all(samples.q <= limits.q_max[None, :]))
-            qd_ok = bool(np.all(np.abs(samples.qd) <= limits.qd_max[None, :]))
-            qdd_ok = bool(np.all(np.abs(samples.qdd) <= limits.qdd_max[None, :]))
-            audit["motion_feasible"] = bool(q_ok and qd_ok and qdd_ok)
-            if not (q_ok and qd_ok and qdd_ok):
-                continue
-            nominal_bridge = make_rejoin_bridge(reference_trajectory, state, bridge_duration)
-            candidate_trajectory = candidate_full
-            reference_full_trajectory = CompositeTrajectory6D([reference_trajectory, nominal_bridge])
-            selected_rejoin_offset_s = float(offset_s)
-            q_goal = np.asarray(state[0], dtype=np.float64)
-            break
-    if selected_rejoin_offset_s is None and np.max(np.abs(result.tail_delta_q)) > 0.0:
+    if np.max(np.abs(result.tail_delta_q)) > 0.0:
         q_goal = result.tail_state[:, 0].copy()
     diagnostic_reference_verification_ms = 0.0
+    paired_verification_wall_ms = 0.0
     if not repair_step_ok:
         # The candidate is exactly the reference, so execution is already
         # impossible. Finish the online decision now and run at most one
@@ -956,6 +918,7 @@ def run_fast_repair(
         candidate_verification_ms = 0.0
         reference_verification_ms = 0.0
     else:
+        verification_pair_started = time.perf_counter()
         candidate_verify_started = time.perf_counter()
         verification = verifier.verify(
             candidate_trajectory,
@@ -978,6 +941,7 @@ def run_fast_repair(
             solver_success=True,
         )
         reference_verification_ms = (time.perf_counter() - reference_verify_started) * 1000.0
+        paired_verification_wall_ms = (time.perf_counter() - verification_pair_started) * 1000.0
     post_check_started = time.perf_counter()
     clearance_gain = float(verification.min_distance - reference_verification.min_distance)
     candidate_samples = candidate_trajectory.dense_sample(0.02).q
@@ -986,14 +950,12 @@ def run_fast_repair(
     post_check_ms = (time.perf_counter() - post_check_started) * 1000.0
     if repair_step_ok:
         online_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
-    rejoin_ok = selected_rejoin_offset_s is not None
-    accepted = bool(
+    local_repair_ready = bool(
         online_elapsed_ms <= args.fast_budget_ms
         and not result.budget_exhausted
         and verification.min_distance >= args.online_accept_m
         and all({**verification.checks, "solver_ok": True}.values())
         and repair_step_ok
-        and rejoin_ok
         and clearance_gain >= args.min_clearance_improvement_m
         and max_delta_q >= args.min_candidate_delta_q_rad
     )
@@ -1007,8 +969,6 @@ def run_fast_repair(
         rejection_reasons.append("verification_checks_failed:" + ",".join(failed_checks))
     if not repair_step_ok:
         rejection_reasons.append("no_accepted_repair_step")
-    if repair_step_ok and not rejoin_ok:
-        rejection_reasons.append("safe_rejoin_not_found")
     if clearance_gain < args.min_clearance_improvement_m:
         rejection_reasons.append("insufficient_clearance_improvement")
     if max_delta_q < args.min_candidate_delta_q_rad:
@@ -1053,8 +1013,11 @@ def run_fast_repair(
     )
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "status": "ACCEPTED_CANDIDATE" if accepted else "REJECTED_CANDIDATE",
-        "accepted_for_switch": accepted,
+        "status": "LOCAL_REPAIR_READY" if local_repair_ready else "FAST_REPAIR_FAILED",
+        "local_repair_status": "LOCAL_REPAIR_READY" if local_repair_ready else "FAST_REPAIR_FAILED",
+        "local_repair_ready": local_repair_ready,
+        "execution_authorization_status": "PENDING_POST_PLAN_FRESH_RECHECK" if local_repair_ready else "NOT_ELIGIBLE",
+        "accepted_for_switch": False,
         "repair_step_ok": repair_step_ok,
         "rejection_reasons": rejection_reasons,
         "candidate_is_reference_continuation": not repair_step_ok,
@@ -1064,6 +1027,7 @@ def run_fast_repair(
         "candidate_verification_ms": candidate_verification_ms,
         "reference_verification_ms": reference_verification_ms,
         "diagnostic_reference_verification_ms": diagnostic_reference_verification_ms,
+        "paired_verification_wall_ms": paired_verification_wall_ms,
         "diagnostic_total_wall_ms": (time.perf_counter() - online_started) * 1000.0,
         "post_check_ms": post_check_ms,
         "budget_exhausted": result.budget_exhausted,
@@ -1117,6 +1081,120 @@ def run_fast_repair(
         "candidate_csv": str(candidate_dir / "fast_ccro_nubs_candidate.csv"),
     }
     write_json(candidate_dir / "candidate_summary.json", payload)
+    if artifacts_out is not None:
+        artifacts_out.update(
+            {
+                "candidate_trajectory": candidate_trajectory,
+                "reference_trajectory": reference_full_trajectory,
+                "q_now": np.asarray(q_now, dtype=np.float64).copy(),
+                "qd_now": np.asarray(qd_now, dtype=np.float64).copy(),
+                "local_tail_state": result.tail_state.copy(),
+            }
+        )
+    return payload
+
+
+def authorize_candidate_execution(
+    args: argparse.Namespace,
+    stage4_config: dict[str, Any],
+    stage4_model: RobotSurfaceModel,
+    *,
+    local_artifacts: dict[str, Any],
+    fresh_geometry: dict[str, Any],
+    fresh_velocity: np.ndarray,
+    rejoin_goals: list[tuple[float, tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    trial_dir: Path,
+) -> dict[str, Any]:
+    """Authorize a local repair only after Fresh #2 validates repair plus rejoin."""
+    started = time.perf_counter()
+    evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
+    forecast = constant_multisphere_forecast(
+        np.asarray(fresh_geometry["component_centers"], dtype=np.float64),
+        np.asarray(fresh_geometry["component_base_radii"], dtype=np.float64),
+        np.asarray(fresh_velocity, dtype=np.float64),
+    )
+    repair = local_artifacts["candidate_trajectory"]
+    q_now = np.asarray(local_artifacts["q_now"], dtype=np.float64)
+    qd_now = np.asarray(local_artifacts["qd_now"], dtype=np.float64)
+    search_audit = []
+    accepted_trajectory = None
+    accepted_verification = None
+    selected_offset = None
+    for offset_s, state in rejoin_goals:
+        bridge_duration = float(offset_s) - float(args.local_horizon_s)
+        if bridge_duration <= 0.0:
+            continue
+        endpoint_risk = evaluator.configuration(
+            np.asarray(state[0], dtype=np.float64), forecast, float(offset_s), density="medium", with_gradient=False
+        )
+        audit = {
+            "offset_s": float(offset_s),
+            "endpoint_distance_m": float(endpoint_risk.min_distance),
+            "endpoint_nearest_link": endpoint_risk.nearest_link,
+            "endpoint_safe": bool(endpoint_risk.min_distance >= args.online_accept_m),
+            "motion_feasible": False,
+            "full_candidate_valid": False,
+        }
+        search_audit.append(audit)
+        if not audit["endpoint_safe"]:
+            continue
+        bridge = make_rejoin_bridge(repair, state, bridge_duration)
+        full_candidate = CompositeTrajectory6D([repair, bridge])
+        samples = full_candidate.dense_sample(0.04)
+        audit["motion_feasible"] = bool(
+            np.all(samples.q >= limits.q_min[None, :])
+            and np.all(samples.q <= limits.q_max[None, :])
+            and np.all(np.abs(samples.qd) <= limits.qd_max[None, :])
+            and np.all(np.abs(samples.qdd) <= limits.qdd_max[None, :])
+        )
+        if not audit["motion_feasible"]:
+            continue
+        verification = verifier.verify(
+            full_candidate,
+            forecast,
+            current_q=q_now,
+            current_qd=qd_now,
+            current_qdd=np.zeros(6),
+            q_goal=np.asarray(state[0], dtype=np.float64),
+            solver_success=True,
+        )
+        audit.update(
+            {
+                "full_candidate_valid": bool(verification.accepted),
+                "full_candidate_min_distance_m": float(verification.min_distance),
+                "verification_checks": verification.checks,
+                "verification_ms": float(verification.validation_ms),
+            }
+        )
+        if verification.accepted:
+            accepted_trajectory = full_candidate
+            accepted_verification = verification
+            selected_offset = float(offset_s)
+            break
+    authorized = accepted_trajectory is not None
+    output_dir = trial_dir / "post_plan_authorization"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if authorized:
+        save_trajectory_csv(output_dir / "authorized_repair_rejoin.csv", accepted_trajectory, dt=0.01)
+        save_dynamic_risk_profile(
+            output_dir / "authorized_candidate_risk_profile.csv",
+            accepted_trajectory,
+            evaluator,
+            forecast,
+            density="medium",
+            dt=0.04,
+        )
+    payload = {
+        "status": "EXECUTION_AUTHORIZED" if authorized else "POST_PLAN_RECHECK_FAILED",
+        "authorization_mode": "SHADOW",
+        "execution_authorized": authorized,
+        "selected_rejoin_offset_s": selected_offset,
+        "full_candidate_min_distance_m": None if accepted_verification is None else float(accepted_verification.min_distance),
+        "rejoin_search_audit": search_audit,
+        "authorization_compute_ms": (time.perf_counter() - started) * 1000.0,
+        "robot_executed": False,
+    }
+    write_json(output_dir / "authorization_summary.json", payload)
     return payload
 
 
@@ -1285,7 +1363,8 @@ def capture_post_stop_obstacle(
     trigger_center: np.ndarray,
     trigger_velocity: np.ndarray,
     trigger_timestamp: float,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    stop_when_ready: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], np.ndarray | None]:
     """Acquire and associate fresh RGB-D obstacle observations after stopping."""
     started = time.perf_counter()
     samples: list[dict[str, Any]] = []
@@ -1356,6 +1435,12 @@ def capture_post_stop_obstacle(
                 "association_error_m": error,
             }
         )
+        if (
+            stop_when_ready
+            and len(samples) >= args.post_stop_recheck_min_frames
+            and float(samples[-1]["timestamp"] - samples[0]["timestamp"]) >= args.post_stop_recheck_min_span_s
+        ):
+            break
     result = fit_fresh_obstacle_motion(
         samples,
         minimum_frames=args.post_stop_recheck_min_frames,
@@ -2143,6 +2228,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     (float(offset), reference.state_after(float(offset)))
                     for offset in rejoin_offsets
                 ]
+                local_artifacts: dict[str, Any] = {}
                 candidate_summary = run_fast_repair(
                     args,
                     stage4_config,
@@ -2158,8 +2244,71 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     rejoin_goals=rejoin_goals,
                     obstacle_audit=obstacle,
                     multisphere_geometry=obstacle.get("multisphere_geometry"),
+                    artifacts_out=local_artifacts,
                 )
                 log["events"].append({"type": candidate_summary["status"], "frame": frame_index, "t_s": now_rel, "candidate": candidate_summary})
+                if candidate_summary.get("local_repair_ready") and args.mode in robot_motion_modes:
+                    fresh2, fresh2_frames, fresh2_points = capture_post_stop_obstacle(
+                        processor,
+                        state_reader,
+                        denoiser,
+                        args,
+                        trigger_center=np.asarray(fresh_recheck["center"], dtype=np.float64),
+                        trigger_velocity=np.asarray(fresh_recheck["velocity"], dtype=np.float64),
+                        trigger_timestamp=float(fresh_recheck["last_timestamp"]),
+                        stop_when_ready=True,
+                    )
+                    fresh2_geometry = None
+                    if fresh2["accepted"] and fresh2_points is not None:
+                        fresh2_geometry = fit_pca_multisphere(
+                            fresh2_points,
+                            fit_margin_m=args.multisphere_fit_margin_m,
+                            max_components=args.multisphere_max_components,
+                        )
+                        if not fresh2_geometry["covered"]:
+                            fresh2 = {**fresh2, "accepted": False, "reason": "post_plan_multisphere_coverage_failed"}
+                        np.save(trial_dir / "post_plan_fresh_cluster_points.npy", fresh2_points)
+                        write_json(trial_dir / "post_plan_fresh_multisphere.json", fresh2_geometry)
+                    write_json(trial_dir / "post_plan_fresh_recheck.json", {"result": fresh2, "frames": fresh2_frames})
+                    log["events"].append(
+                        {
+                            "type": "POST_PLAN_FRESH_RECHECK_READY" if fresh2["accepted"] else "POST_PLAN_FRESH_RECHECK_FAILED",
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "recheck": fresh2,
+                        }
+                    )
+                    if fresh2["accepted"] and fresh2_geometry is not None:
+                        authorization = authorize_candidate_execution(
+                            args,
+                            stage4_config,
+                            stage4_model,
+                            local_artifacts=local_artifacts,
+                            fresh_geometry=fresh2_geometry,
+                            fresh_velocity=np.asarray(fresh2["velocity"], dtype=np.float64),
+                            rejoin_goals=rejoin_goals,
+                            trial_dir=trial_dir,
+                        )
+                    else:
+                        authorization = {
+                            "status": "POST_PLAN_RECHECK_FAILED",
+                            "execution_authorized": False,
+                            "reason": fresh2["reason"],
+                            "robot_executed": False,
+                        }
+                    candidate_summary["execution_authorization_status"] = authorization["status"]
+                    candidate_summary["execution_authorized"] = bool(authorization.get("execution_authorized", False))
+                    candidate_summary["post_plan_fresh_recheck"] = fresh2
+                    candidate_summary["execution_authorization"] = authorization
+                    write_json(trial_dir / "candidate" / "candidate_summary.json", candidate_summary)
+                    authorization_event = (
+                        "EXECUTION_AUTHORIZED_SHADOW"
+                        if authorization.get("execution_authorized", False)
+                        else authorization["status"]
+                    )
+                    log["events"].append(
+                        {"type": authorization_event, "frame": frame_index, "t_s": time.perf_counter() - started, "authorization": authorization}
+                    )
                 if args.mode == "moving-shadow-stop":
                     break
                 if args.mode == "live-stop-replan-execute":
@@ -2334,6 +2483,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "trigger_frame": trigger_frame,
             "candidate_status": None if candidate_summary is None else candidate_summary["status"],
             "candidate_accepted": None if candidate_summary is None else candidate_summary["accepted_for_switch"],
+            "local_repair_status": None if candidate_summary is None else candidate_summary.get("local_repair_status"),
+            "local_repair_ready": None if candidate_summary is None else candidate_summary.get("local_repair_ready"),
+            "execution_authorization_status": None if candidate_summary is None else candidate_summary.get("execution_authorization_status"),
+            "execution_authorized": None if candidate_summary is None else candidate_summary.get("execution_authorized", False),
             "candidate_execution_status": None if candidate_execution_summary is None else candidate_execution_summary.get("status"),
             "candidate_execution": candidate_execution_summary,
             "frame_count": len(rows),

@@ -19,9 +19,9 @@ The experiment reuses the safe 6.5.2 tabletop reference:
   never sends motion commands, never triggers STRO/Fast repair, and writes
   `clusters.csv` plus `tracks.csv`.
 - `moving-shadow-stop`: command the recorded one-way low-speed reference line, trigger Fast
-  CCRO-NUBS, then stop; no online switch yet.
+  CCRO-NUBS, then stop; perform post-planning authorization in shadow only.
 - `live-stop-replan-execute`: currently stops and plans but is fail-closed before
-  execution until a fresh post-planning RGB-D recheck is implemented.
+  execution while the shadow-authorization protocol is being validated.
 
 Use `moving-shadow-stop` as the required pilot before enabling true online
 trajectory switching.
@@ -154,8 +154,8 @@ pilot. It should trigger predicted risk at 0.14 m while current all-link
 clearance remains above the 0.12 m fallback stop and the independent raw-cloud
 guard remains above 0.10 m. The candidate criterion remains `accepted_steps >
 0`, at least 3 mm clearance gain, candidate clearance at least 0.09 m, and no
-safety-gate failure. Candidate execution remains fail-closed until a fresh
-post-stop RGB-D recheck is implemented.
+safety-gate failure. This produces `LOCAL_REPAIR_READY`; it does not by itself
+authorize execution.
 
 The stop interface is frozen based on `stop_interface_validation/r03`; do not
 repeat that validation merely to tune Fast-repair thresholds. Formal settings
@@ -171,11 +171,10 @@ repair-only time as the online latency.
 
 Fast repair optimizes `z=[Delta Q, delta q_T]`. The six elastic tail-position
 variables are part of the finite NUBS sensitivity and QP, while terminal
-velocity and acceleration remain equal to the recorded reference. A nonzero
-tail offset is followed by a C2 NUBS bridge to the earliest kinematically
-feasible reference state in the scene-independent 1.25--2.00 s bounded search
-window. The complete repair plus bridge must pass the unchanged 0.09 m and
-joint-motion gates; otherwise the robot remains stopped.
+velocity and acceleration remain equal to the recorded reference. The Fast
+stage validates only the 1 s local segment and reports either
+`FAST_REPAIR_FAILED` or `LOCAL_REPAIR_READY`. Rejoin is deliberately excluded
+from this first-stage result.
 
 Scale candidates use linearized active-distance screening plus exact motion
 checks. Only the selected candidate receives full online geometric
@@ -201,6 +200,24 @@ continues to apply its unchanged margin and uncertainty. The audit is saved as
 `fresh_multisphere.json`, and the exact source points as
 `fresh_latest_cluster_points.npy`. STRO retains its fast conservative
 object-level sphere; multi-sphere refinement is used only after stopping.
+
+After `LOCAL_REPAIR_READY`, a second post-planning RGB-D acquisition requires
+at least three associated frames spanning 0.25 s. It rebuilds the multisphere
+geometry and velocity with the candidate execution start as the new forecast
+time origin. The unchanged 1.25--2.00 s rejoin window is searched, a C2 bridge
+is appended, and the entire repair-plus-bridge trajectory is verified again
+from tau zero. Success is recorded as `EXECUTION_AUTHORIZED` and emits the
+`EXECUTION_AUTHORIZED_SHADOW` event; this pilot still sends no execution
+command. Any association, geometry, rejoin, motion, or full-verification
+failure produces `POST_PLAN_RECHECK_FAILED` and holds the robot stopped. No
+automatic second Fast repair is attempted. Fresh #2 acquisition and
+authorization latency are logged separately from the frozen 150 ms Fast
+budget.
+
+A 20-repeat r26 A/B found exact agreement between serial and threaded paired
+verification, but threading was slower (67.75 ms versus 55.18 ms median).
+Therefore the production Fast path retains serial candidate/reference
+verification; `paired_verifier_audit.json` records the rejected optimization.
 
 If repair returns `accepted_steps=0`, the online decision ends immediately.
 At most one reference verification may run afterwards as diagnostics and is
