@@ -213,6 +213,21 @@ def test_delayed_rejoin_calibration_is_noncommanding_by_default():
     assert delayed_calibration.PHRASE == "CCRO_653_EMPTY_SCENE_LOCAL_DELAYED_REJOIN_APPROVED"
 
 
+def test_delayed_rejoin_calibration_allows_only_untracked_result_artifacts(monkeypatch):
+    monkeypatch.setattr(
+        delayed_calibration.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="?? results/new/trial/\n M planning/optimizer.py\n?? notes.txt\n",
+        ),
+    )
+    assert delayed_calibration.execution_blocking_worktree_entries() == [
+        " M planning/optimizer.py",
+        "?? notes.txt",
+    ]
+
+
 def test_d1_and_d2_share_one_scene_independent_formal_protocol():
     calibrated_time = ["--candidate-playback-duration-s", "1.0"]
     d1 = trial.build_parser().parse_args(["--scene", "D1", "--mode", "moving-shadow-stop", *calibrated_time])
