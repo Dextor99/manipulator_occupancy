@@ -47,6 +47,32 @@ def test_recorded_reference_state_after_uses_future_reference_not_velocity_extra
     assert q_future[0] == 1.0
 
 
+def test_recorded_reference_remainder_is_zero_based_and_endpoint_inclusive():
+    times = np.array([0.0, 1.0, 2.0, 3.0])
+    q = np.zeros((4, 6))
+    q[:, 0] = times
+    ref = trial.RecordedReference(times, q, np.ones_like(q))
+    remainder_t, remainder_q, start_qd = ref.remainder_after(1.25)
+    assert remainder_t[0] == 0.0
+    assert remainder_t[-1] == 1.75
+    assert remainder_q[0, 0] == 1.25
+    assert remainder_q[-1, 0] == 3.0
+    assert start_qd.shape == (6,)
+
+
+def test_authorized_rejoin_is_located_from_full_trajectory_endpoint(tmp_path):
+    times = np.array([0.0, 1.0, 2.0])
+    q = np.zeros((3, 6))
+    q[:, 0] = [0.0, 0.1, 0.2]
+    ref = trial.RecordedReference(times, q, np.zeros_like(q))
+    path = tmp_path / "authorized_repair_rejoin.csv"
+    trial.save_joint_waypoint_csv(path, np.array([0.0, 1.25]), np.vstack([np.zeros(6), q[-1]]))
+    match = trial.locate_authorized_rejoin_on_reference(ref, path)
+    assert match["index"] == 2
+    assert match["time_s"] == 2.0
+    assert match["max_abs_error_rad"] == 0.0
+
+
 def test_future_risk_uses_q_reference_at_each_tau():
     class SurfaceModel:
         def surface_by_link(self, q, density):
@@ -572,6 +598,62 @@ def test_executor_rejects_authorized_csv_playback_time_mismatch(tmp_path):
             processor=object(),
             denoiser=None,
         )
+
+
+def test_generic_executor_accepts_native_full_trajectory_time_before_robot_check(tmp_path):
+    q0 = np.zeros(6)
+    q1 = np.ones(6) * 0.01
+    trajectory = NUBSTrajectory6D().generate(
+        np.empty((0, 6)),
+        NUBSTrajectory6D.make_boundary_state(q0),
+        NUBSTrajectory6D.make_boundary_state(q1),
+        np.array([1.25]),
+    )
+    path = tmp_path / "authorized_repair_rejoin.csv"
+    trial.save_trajectory_csv(path, trajectory, dt=0.01)
+    args = SimpleNamespace(
+        candidate_controller_waypoint_period_s=0.005,
+        candidate_max_waypoints=0,
+        candidate_min_execution_wait_s=0.0,
+        candidate_joint_velc=0.006,
+        candidate_joint_acc=0.012,
+    )
+    with pytest.raises(RuntimeError, match="does not expose offline_track_execute_joints"):
+        trial.execute_authorized_trajectory_offline_track(
+            object(), path, args, processor=object(), denoiser=None, playback_duration_s=None
+        )
+
+
+def test_fresh3_reference_resume_requires_current_future_and_hard_guard(monkeypatch):
+    class Evaluator:
+        def configuration(self, q, forecast, tau, density, with_gradient):
+            return SimpleNamespace(min_distance=0.16, nearest_link="upperArm_Link")
+
+    monkeypatch.setattr(trial, "make_risk_stack", lambda *a, **k: (Evaluator(), None, None))
+    monkeypatch.setattr(trial, "constant_multisphere_forecast", lambda *a, **k: object())
+    args = SimpleNamespace(
+        prediction_horizon_s=0.5,
+        prediction_step_s=0.1,
+        guided_hard_stop_m=0.10,
+        moving_shadow_current_stop_m=0.12,
+        moving_shadow_replan_in_m=0.14,
+    )
+    fresh = {"accepted": True, "velocity": [0.1, 0.0, 0.0]}
+    geometry = {"component_centers": [[0.5, 0.0, 0.5]], "component_base_radii": [0.05]}
+    times = np.array([0.0, 1.0])
+    qs = np.zeros((2, 6))
+    accepted = trial.authorize_reference_resume_after_fresh3(
+        args, {}, object(), fresh3=fresh, fresh3_geometry=geometry,
+        remainder_times=times, remainder_q=qs, hard_guard_distance_m=0.20,
+    )
+    assert accepted["authorized"]
+
+    held = trial.authorize_reference_resume_after_fresh3(
+        args, {}, object(), fresh3=fresh, fresh3_geometry=geometry,
+        remainder_times=times, remainder_q=qs, hard_guard_distance_m=0.08,
+    )
+    assert not held["authorized"]
+    assert not held["checks"]["hard_guard_safe"]
 
 
 def test_candidate_tracking_metrics_use_authorized_time_axis():

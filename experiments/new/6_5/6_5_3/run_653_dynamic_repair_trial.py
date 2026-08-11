@@ -9,9 +9,9 @@ This first real-system implementation is intentionally staged:
 * ``--mode moving-shadow-stop`` additionally commands the familiar 6.5.2
   low-speed reference line and stops on trigger/hold.  It still does not switch
   to the candidate trajectory; it is the required pilot before live switching.
-* ``--mode live-stop-replan-execute`` can execute only an explicitly saved
-  local-repair trajectory revalidated on Fresh #2 at the exact playback time
-  scale. It stops at the repaired state; automatic rejoin remains disabled.
+* ``--mode live-stop-replan-execute`` executes only a Fresh #2-authorized full
+  repair+rejoin trajectory at its native time scale.  A Fresh #3 current/future
+  risk gate must pass before the guarded recorded-reference remainder resumes.
 """
 
 from __future__ import annotations
@@ -372,6 +372,18 @@ class RecordedReference:
             np.asarray([np.interp(target, self.times, values[:, j]) for j in range(6)], dtype=np.float64)
             for values in (self.q, self.qd, self.qdd)
         )
+
+    def remainder_after(self, absolute_time_s: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return a zero-based, endpoint-inclusive joint remainder."""
+        target = float(np.clip(absolute_time_s, self.times[0], self.times[-1]))
+        q0 = np.asarray([np.interp(target, self.times, self.q[:, j]) for j in range(6)])
+        later = np.flatnonzero(self.times > target + 1.0e-9)
+        times = np.r_[target, self.times[later]] - target
+        qs = np.vstack([q0, self.q[later]])
+        if len(times) == 1:
+            times = np.asarray([0.0, 0.01])
+            qs = np.vstack([q0, q0])
+        return times, qs, np.asarray([np.interp(target, self.times, self.qd[:, j]) for j in range(6)])
 
 
 def future_reference_sphere_distance(
@@ -1049,40 +1061,110 @@ def candidate_tracking_metrics(
     }
 
 
-def execute_fast_candidate_offline_track(
+def save_joint_waypoint_csv(path: Path, times: np.ndarray, qs: np.ndarray) -> None:
+    rows = []
+    for i, t_s in enumerate(times):
+        rows.append({"t_s": f"{float(t_s):.8f}", **{f"q{j + 1}_rad": f"{float(qs[i, j]):.8f}" for j in range(6)}})
+    write_csv(path, rows, ["t_s", *[f"q{j + 1}_rad" for j in range(6)]])
+
+
+def locate_authorized_rejoin_on_reference(
+    reference: RecordedReference,
+    authorized_trajectory_csv: Path,
+    *,
+    tolerance_rad: float = 0.01,
+) -> dict[str, Any]:
+    """Locate the authorized trajectory endpoint on the recorded reference."""
+    _, qs = load_fast_candidate_csv(authorized_trajectory_csv)
+    errors = np.max(np.abs(reference.q - qs[-1][None, :]), axis=1)
+    index = int(np.argmin(errors))
+    error = float(errors[index])
+    if error > tolerance_rad:
+        raise RuntimeError(f"authorized rejoin endpoint is not on reference: {error:.6f} rad > {tolerance_rad:.6f} rad")
+    return {"index": index, "time_s": float(reference.times[index]), "max_abs_error_rad": error}
+
+
+def trajectory_workspace_deviation(
+    surface_model: RobotSurfaceModel,
+    trajectory_csv: Path,
+    reference: RecordedReference,
+    reference_start_time_s: float,
+    *,
+    tcp_link: str = "gripper_base_link",
+) -> dict[str, Any]:
+    """Report candidate/reference workspace deviation; never gate execution."""
+    times, qs = load_fast_candidate_csv(trajectory_csv)
+    ref_q = np.vstack([
+        [np.interp(min(reference.times[-1], reference_start_time_s + float(t)), reference.times, reference.q[:, j]) for j in range(6)]
+        for t in times
+    ])
+    joint_max = float(np.max(np.abs(qs - ref_q)))
+    tcp_delta = []
+    body_delta = []
+    for q_candidate, q_reference in zip(qs, ref_q):
+        candidate_fk = surface_model.urdf.link_transforms(
+            {name: float(q_candidate[i]) for i, name in enumerate(surface_model.joint_names)}
+        )
+        reference_fk = surface_model.urdf.link_transforms(
+            {name: float(q_reference[i]) for i, name in enumerate(surface_model.joint_names)}
+        )
+        if tcp_link in candidate_fk and tcp_link in reference_fk:
+            tcp_delta.append(float(np.linalg.norm(candidate_fk[tcp_link][:3, 3] - reference_fk[tcp_link][:3, 3])))
+        common = set(candidate_fk).intersection(reference_fk)
+        if common:
+            body_delta.append(max(float(np.linalg.norm(candidate_fk[name][:3, 3] - reference_fk[name][:3, 3])) for name in common))
+    return {
+        "metric_only": True,
+        "max_joint_deviation_rad": joint_max,
+        "max_tcp_deviation_m": None if not tcp_delta else max(tcp_delta),
+        "max_body_link_origin_deviation_m": None if not body_delta else max(body_delta),
+        "tcp_link": tcp_link,
+        "sample_count": int(len(times)),
+    }
+
+
+def execute_authorized_trajectory_offline_track(
     robot: Any,
     trajectory_csv: Path,
     args: argparse.Namespace,
     *,
     processor: Any,
     denoiser: Any,
+    playback_duration_s: float | None = None,
+    controller_period_s: float | None = None,
+    execution_label: str = "authorized trajectory",
 ) -> dict[str, Any]:
     times, qs = load_fast_candidate_csv(trajectory_csv)
     source_duration = float(times[-1] - times[0])
-    expected_duration = float(args.candidate_playback_duration_s if args.candidate_playback_duration_s > 0.0 else source_duration)
+    requested_duration = source_duration if playback_duration_s is None else float(playback_duration_s)
+    expected_duration = requested_duration
     if abs(source_duration - expected_duration) > 0.02:
         raise RuntimeError(
             "authorized trajectory time axis does not match requested playback: "
             f"csv={source_duration:.3f}s requested={expected_duration:.3f}s"
         )
+    waypoint_period = float(
+        args.candidate_controller_waypoint_period_s if controller_period_s is None else controller_period_s
+    )
     times_exec, qs_exec = resample_for_offline_track(
         times,
         qs,
-        playback_duration_s=args.candidate_playback_duration_s,
-        controller_period_s=args.candidate_controller_waypoint_period_s,
+        playback_duration_s=requested_duration,
+        controller_period_s=waypoint_period,
     )
     times_exec, qs_exec = maybe_downsample(times_exec, qs_exec, args.candidate_max_waypoints)
     min_wait = args.candidate_min_execution_wait_s
-    if min_wait <= 0.0 and args.candidate_playback_duration_s > 0.0:
-        min_wait = 0.90 * args.candidate_playback_duration_s
+    if min_wait <= 0.0:
+        min_wait = 0.90 * requested_duration
 
     log: dict[str, Any] = {
         "trajectory_csv": str(trajectory_csv),
         "robot_commanded": False,
         "source_trajectory_stats": trajectory_stats(times, qs),
         "execution_waypoint_stats": trajectory_stats(times_exec, qs_exec),
-        "playback_duration_s": args.candidate_playback_duration_s,
-        "controller_waypoint_period_s": args.candidate_controller_waypoint_period_s,
+        "execution_label": execution_label,
+        "playback_duration_s": requested_duration,
+        "controller_waypoint_period_s": waypoint_period,
         "joint_velc": args.candidate_joint_velc,
         "joint_acc": args.candidate_joint_acc,
         "min_execution_wait_s": min_wait,
@@ -1104,8 +1186,8 @@ def execute_fast_candidate_offline_track(
     if args.candidate_execute_confirm:
         require_confirmation(
             True,
-            "Step 2/2: candidate has passed software checks. "
-            "Confirm obstacle state and emergency stop, then press Enter to execute the local candidate.",
+            f"{execution_label} has passed software checks. "
+            "Confirm obstacle state and emergency stop, then press Enter to execute.",
         )
 
     started = time.perf_counter()
@@ -1144,8 +1226,30 @@ def execute_fast_candidate_offline_track(
     log["elapsed_s"] = time.perf_counter() - started
     if not goal_check["reached"]:
         raise RuntimeError(f"dynamic candidate offline track did not reach goal: {goal_check}")
-    log["status"] = "COMPLETED_DYNAMIC_CANDIDATE_EXECUTION"
+    log["status"] = "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
     return log
+
+
+def execute_fast_candidate_offline_track(
+    robot: Any,
+    trajectory_csv: Path,
+    args: argparse.Namespace,
+    *,
+    processor: Any,
+    denoiser: Any,
+) -> dict[str, Any]:
+    """Compatibility wrapper for the calibrated 1 s local-only executor."""
+    result = execute_authorized_trajectory_offline_track(
+        robot,
+        trajectory_csv,
+        args,
+        processor=processor,
+        denoiser=denoiser,
+        playback_duration_s=args.candidate_playback_duration_s,
+        execution_label="local candidate",
+    )
+    result["status"] = "COMPLETED_DYNAMIC_CANDIDATE_EXECUTION"
+    return result
 
 
 def run_fast_repair(
@@ -1579,12 +1683,68 @@ def authorize_candidate_execution(
         "execution_authorized": authorized,
         "selected_rejoin_offset_s": selected_offset,
         "full_candidate_min_distance_m": None if accepted_verification is None else float(accepted_verification.min_distance),
+        "authorized_trajectory_csv": str(output_dir / "authorized_repair_rejoin.csv") if authorized else None,
+        "authorized_duration_s": None if accepted_trajectory is None else float(accepted_trajectory.total_duration),
         "rejoin_search_audit": search_audit,
         "authorization_compute_ms": (time.perf_counter() - started) * 1000.0,
         "robot_executed": False,
     }
     write_json(output_dir / "authorization_summary.json", payload)
     return payload
+
+
+def authorize_reference_resume_after_fresh3(
+    args: argparse.Namespace,
+    stage4_config: dict[str, Any],
+    stage4_model: RobotSurfaceModel,
+    *,
+    fresh3: dict[str, Any],
+    fresh3_geometry: dict[str, Any] | None,
+    remainder_times: np.ndarray,
+    remainder_q: np.ndarray,
+    hard_guard_distance_m: float,
+) -> dict[str, Any]:
+    """Gate one reference resume using current and 0.5 s predicted clearance."""
+    if not fresh3.get("accepted", False) or fresh3_geometry is None:
+        return {
+            "status": "REFERENCE_RESUME_HOLD",
+            "authorized": False,
+            "reason": fresh3.get("reason", "fresh3_not_ready"),
+            "hard_guard_distance_m": hard_guard_distance_m,
+        }
+    evaluator, _, _ = make_risk_stack(stage4_config, stage4_model, None)
+    forecast = constant_multisphere_forecast(
+        np.asarray(fresh3_geometry["component_centers"], dtype=np.float64),
+        np.asarray(fresh3_geometry["component_base_radii"], dtype=np.float64),
+        np.asarray(fresh3["velocity"], dtype=np.float64),
+    )
+    preview_t = np.arange(0.0, args.prediction_horizon_s + 0.5 * args.prediction_step_s, args.prediction_step_s)
+    preview_t = np.unique(np.r_[preview_t, min(float(remainder_times[-1]), args.prediction_horizon_s)])
+    audits = []
+    for tau in preview_t:
+        q_tau = np.asarray([
+            np.interp(min(float(tau), float(remainder_times[-1])), remainder_times, remainder_q[:, j]) for j in range(6)
+        ])
+        risk = evaluator.configuration(q_tau, forecast, float(tau), density="medium", with_gradient=False)
+        audits.append({"tau_s": float(tau), "distance_m": float(risk.min_distance), "nearest_link": risk.nearest_link})
+    current_distance = float(audits[0]["distance_m"])
+    predicted_distance = min(float(row["distance_m"]) for row in audits)
+    checks = {
+        "fresh3_ready": True,
+        "hard_guard_safe": bool(not np.isfinite(hard_guard_distance_m) or hard_guard_distance_m > args.guided_hard_stop_m),
+        "current_distance_safe": bool(current_distance > args.moving_shadow_current_stop_m),
+        "predicted_reference_safe": bool(predicted_distance >= args.moving_shadow_replan_in_m),
+    }
+    authorized = bool(all(checks.values()))
+    return {
+        "status": "REFERENCE_RESUME_AUTHORIZED" if authorized else "REFERENCE_RESUME_HOLD",
+        "authorized": authorized,
+        "checks": checks,
+        "current_distance_m": current_distance,
+        "predicted_reference_min_distance_m": predicted_distance,
+        "hard_guard_distance_m": hard_guard_distance_m,
+        "preview": audits,
+    }
 
 
 def maybe_move_stop(robot: Any) -> Any:
@@ -2030,6 +2190,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     q_history: list[tuple[float, np.ndarray]] = []
     candidate_summary: dict[str, Any] | None = None
     candidate_execution_summary: dict[str, Any] | None = None
+    full_execution_summary: dict[str, Any] | None = None
+    reference_resume_summary: dict[str, Any] | None = None
+    reference_remainder_execution_summary: dict[str, Any] | None = None
     commander: RobotCommander | None = None
     guided_controller: AdaptiveSafetyController | None = None
     triggered = False
@@ -2701,6 +2864,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 else:
                     q_repair_start = q
                     qd_repair_start = qd
+                reference_repair_start_time_s = float(reference.times[reference.index])
                 reference_goal = reference.state_after(args.local_horizon_s)
                 rejoin_offsets = np.arange(
                     args.local_horizon_s + args.rejoin_search_step_s,
@@ -2830,11 +2994,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 if args.mode == "moving-shadow-stop":
                     break
                 if args.mode == "live-stop-replan-execute":
-                    if not candidate_summary.get("local_execution_authorized", False):
+                    if not candidate_summary.get("execution_authorized", False):
                         log["events"].append(
                             {
-                                "type": "LIVE_CANDIDATE_NOT_EXECUTED",
-                                "reason": "local_execution_not_authorized_under_fresh2_and_execution_time_scale",
+                                "type": "LIVE_FULL_CANDIDATE_NOT_EXECUTED",
+                                "reason": "repair_rejoin_not_authorized_under_fresh2",
                                 "candidate_status": candidate_summary["status"],
                                 "rejection_reasons": candidate_summary.get("rejection_reasons", []),
                             }
@@ -2863,26 +3027,106 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     time.sleep(max(args.candidate_pre_execute_settle_s, 0.0))
                     candidate_dir = trial_dir / "candidate"
                     try:
-                        authorized_csv = Path(candidate_summary["local_execution_authorization"]["authorized_trajectory_csv"])
-                        candidate_execution_summary = execute_fast_candidate_offline_track(
+                        full_authorization = candidate_summary["execution_authorization"]
+                        authorized_csv = Path(full_authorization["authorized_trajectory_csv"])
+                        workspace_deviation = trajectory_workspace_deviation(
+                            stage4_model,
+                            authorized_csv,
+                            reference,
+                            reference_repair_start_time_s,
+                        )
+                        write_json(candidate_dir / "workspace_deviation_metrics.json", workspace_deviation)
+                        full_execution_summary = execute_authorized_trajectory_offline_track(
                             robot,
                             authorized_csv,
                             args,
                             processor=processor,
                             denoiser=denoiser,
+                            playback_duration_s=None,
+                            execution_label="authorized repair + rejoin",
                         )
-                        write_json(candidate_dir / "live_candidate_execution_log.json", candidate_execution_summary)
-                        log["events"].append({"type": "LIVE_CANDIDATE_EXECUTED", "execution": candidate_execution_summary})
+                        full_execution_summary["workspace_deviation_metrics"] = workspace_deviation
+                        write_json(candidate_dir / "live_full_candidate_execution_log.json", full_execution_summary)
+                        log["events"].append({"type": "LIVE_REPAIR_REJOIN_EXECUTED", "execution": full_execution_summary})
+
+                        # One fail-closed Fresh #3 gate before resuming the original task.
+                        fresh3, fresh3_frames, fresh3_points = capture_post_stop_obstacle(
+                            processor,
+                            state_reader,
+                            denoiser,
+                            args,
+                            trigger_cluster_center=np.asarray(fresh2["center"], dtype=np.float64),
+                            trigger_velocity=np.asarray(fresh2["velocity"], dtype=np.float64),
+                            trigger_timestamp=float(fresh2["last_timestamp"]),
+                            stop_when_ready=True,
+                        )
+                        fresh3_geometry = None
+                        if fresh3["accepted"] and fresh3_points is not None:
+                            fresh3_geometry = fit_pca_multisphere(
+                                fresh3_points,
+                                fit_margin_m=args.multisphere_fit_margin_m,
+                                max_components=args.multisphere_max_components,
+                            )
+                            if not fresh3_geometry["covered"]:
+                                fresh3 = {**fresh3, "accepted": False, "reason": "fresh3_multisphere_coverage_failed"}
+                            np.save(trial_dir / "fresh3_cluster_points.npy", fresh3_points)
+                            write_json(trial_dir / "fresh3_multisphere.json", fresh3_geometry)
+                        write_json(trial_dir / "fresh3_recheck.json", {"result": fresh3, "frames": fresh3_frames})
+
+                        rejoin_match = locate_authorized_rejoin_on_reference(reference, authorized_csv)
+                        rejoin_absolute_time = float(rejoin_match["time_s"])
+                        remainder_times, remainder_q, _ = reference.remainder_after(rejoin_absolute_time)
+                        remainder_csv = trial_dir / "authorized_reference_remainder.csv"
+                        save_joint_waypoint_csv(remainder_csv, remainder_times, remainder_q)
+                        fresh3_guard_distance = execution_hard_guard_distance(processor, denoiser, args)
+                        reference_resume_summary = authorize_reference_resume_after_fresh3(
+                            args,
+                            stage4_config,
+                            stage4_model,
+                            fresh3=fresh3,
+                            fresh3_geometry=fresh3_geometry,
+                            remainder_times=remainder_times,
+                            remainder_q=remainder_q,
+                            hard_guard_distance_m=fresh3_guard_distance,
+                        )
+                        reference_resume_summary.update(
+                            {
+                                "selected_rejoin_offset_s": full_authorization["selected_rejoin_offset_s"],
+                                "rejoin_reference_match": rejoin_match,
+                                "rejoin_absolute_reference_time_s": rejoin_absolute_time,
+                                "authorized_reference_remainder_csv": str(remainder_csv),
+                                "remainder_duration_s": float(remainder_times[-1]),
+                            }
+                        )
+                        write_json(trial_dir / "reference_resume_authorization.json", reference_resume_summary)
+                        log["events"].append({"type": reference_resume_summary["status"], "authorization": reference_resume_summary})
+                        if reference_resume_summary["authorized"]:
+                            reference_remainder_execution_summary = execute_authorized_trajectory_offline_track(
+                                robot,
+                                remainder_csv,
+                                args,
+                                processor=processor,
+                                denoiser=denoiser,
+                                playback_duration_s=None,
+                                controller_period_s=reference.dt_median,
+                                execution_label="authorized reference remainder",
+                            )
+                            write_json(trial_dir / "reference_remainder_execution_log.json", reference_remainder_execution_summary)
+                            log["events"].append(
+                                {"type": "REFERENCE_REMAINDER_EXECUTED", "execution": reference_remainder_execution_summary}
+                            )
+                        else:
+                            log["events"].append({"type": "REMAIN_HOLD_AFTER_REJOIN", "authorization": reference_resume_summary})
                     except Exception as exc:
                         stop_ret = maybe_move_stop(robot)
-                        candidate_execution_summary = {
-                            "status": "FAILED_DYNAMIC_CANDIDATE_EXECUTION",
+                        full_execution_summary = {
+                            "status": "FAILED_FULL_DYNAMIC_EXECUTION",
                             "error": str(exc),
                             "traceback": traceback.format_exc(limit=20),
                             "stop_return": stop_ret,
                         }
-                        write_json(candidate_dir / "live_candidate_execution_log.json", candidate_execution_summary)
-                        log["events"].append({"type": "LIVE_CANDIDATE_EXECUTION_FAILED", "execution": candidate_execution_summary})
+                        write_json(candidate_dir / "live_full_candidate_execution_log.json", full_execution_summary)
+                        log["events"].append({"type": "LIVE_FULL_EXECUTION_FAILED", "execution": full_execution_summary})
                     break
             if (
                 args.mode in robot_motion_modes
@@ -2933,6 +3177,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             final_status = "TRIGGERED_AND_DYNAMIC_CANDIDATE_EXECUTED"
         else:
             final_status = "TRIGGERED_AND_DYNAMIC_CANDIDATE_EXECUTION_FAILED"
+    if full_execution_summary is not None:
+        if full_execution_summary.get("status") == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+            final_status = "TRIGGERED_AND_REPAIR_REJOIN_EXECUTED_HOLD"
+        else:
+            final_status = "TRIGGERED_AND_REPAIR_REJOIN_EXECUTION_FAILED"
+    if reference_remainder_execution_summary is not None:
+        if reference_remainder_execution_summary.get("status") == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+            final_status = "TRIGGERED_REPAIR_REJOIN_RESUMED_AND_GOAL_REACHED"
+        else:
+            final_status = "TRIGGERED_REPAIR_REJOIN_REFERENCE_RESUME_FAILED"
     if caught_error is not None:
         final_status = "FAILED"
     alignment_rows = [row for row in rows if int(row.get("reference_armed", 0)) == 1]
@@ -3012,6 +3266,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "anomalous_cluster_files": anomalous_cluster_files,
             "candidate_execution_status": None if candidate_execution_summary is None else candidate_execution_summary.get("status"),
             "candidate_execution": candidate_execution_summary,
+            "full_candidate_execution_status": None if full_execution_summary is None else full_execution_summary.get("status"),
+            "full_candidate_execution": full_execution_summary,
+            "reference_resume_authorization": reference_resume_summary,
+            "reference_remainder_execution_status": None if reference_remainder_execution_summary is None else reference_remainder_execution_summary.get("status"),
+            "reference_remainder_execution": reference_remainder_execution_summary,
             "frame_count": len(rows),
             "duration_wall_s": time.time() - t0_wall,
             "current_min_distance_m": None if not cur_vals else float(np.min(cur_vals)),
