@@ -1000,6 +1000,49 @@ def wait_for_candidate_goal_guarded(
     )
 
 
+def candidate_tracking_metrics(
+    command_times: np.ndarray,
+    command_q: np.ndarray,
+    feedback_samples: list[dict[str, Any]],
+    *,
+    minimum_motion_rad: float,
+) -> dict[str, Any]:
+    """Compare timestamped feedback with the authorized execution time axis."""
+    if not feedback_samples:
+        return {
+            "requested_duration_s": float(command_times[-1] - command_times[0]),
+            "observed_motion_duration_s": None,
+            "duration_error_s": None,
+            "tracking_rmse_rad": None,
+            "tracking_max_error_rad": None,
+        }
+    feedback_times = np.asarray([float(row["t_s"]) for row in feedback_samples], dtype=np.float64)
+    actual_q = np.asarray([row["actual_joint_rad"] for row in feedback_samples], dtype=np.float64)
+    relative_command_times = np.asarray(command_times, dtype=np.float64) - float(command_times[0])
+    clipped_times = np.clip(feedback_times, 0.0, float(relative_command_times[-1]))
+    expected_q = np.column_stack(
+        [np.interp(clipped_times, relative_command_times, command_q[:, joint]) for joint in range(command_q.shape[1])]
+    )
+    errors = actual_q - expected_q
+    moving_indices = [
+        index for index, row in enumerate(feedback_samples)
+        if float(row.get("max_motion_from_start_rad", 0.0)) >= float(minimum_motion_rad)
+    ]
+    observed_duration = None
+    if moving_indices:
+        observed_duration = float(feedback_times[-1] - feedback_times[moving_indices[0]])
+    requested_duration = float(relative_command_times[-1])
+    return {
+        "requested_duration_s": requested_duration,
+        "command_to_last_feedback_duration_s": float(feedback_times[-1]),
+        "observed_motion_duration_s": observed_duration,
+        "duration_error_s": float(feedback_times[-1] - requested_duration),
+        "tracking_rmse_rad": float(np.sqrt(np.mean(errors**2))),
+        "tracking_max_error_rad": float(np.max(np.abs(errors))),
+        "tracking_sample_count": int(len(feedback_samples)),
+    }
+
+
 def execute_fast_candidate_offline_track(
     robot: Any,
     trajectory_csv: Path,
@@ -1086,6 +1129,12 @@ def execute_fast_candidate_offline_track(
     )
     log["goal_check"] = goal_check
     log["feedback_samples"] = feedback_samples
+    log["tracking_metrics"] = candidate_tracking_metrics(
+        times_exec,
+        qs_exec,
+        feedback_samples,
+        minimum_motion_rad=args.candidate_min_observed_motion_rad,
+    )
     log["elapsed_s"] = time.perf_counter() - started
     if not goal_check["reached"]:
         raise RuntimeError(f"dynamic candidate offline track did not reach goal: {goal_check}")
@@ -3131,7 +3180,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-z", type=float, default=0.9)
     parser.add_argument("--allow-live-candidate-execution", action="store_true")
     parser.add_argument("--live-execute-candidate-phrase", default="")
-    parser.add_argument("--candidate-playback-duration-s", type=float, default=6.0)
+    parser.add_argument(
+        "--candidate-playback-duration-s",
+        type=float,
+        default=0.0,
+        help="0 uses the authorized candidate's native time axis; formal live pilots still pass the frozen duration explicitly",
+    )
     parser.add_argument("--candidate-controller-waypoint-period-s", type=float, default=0.005)
     parser.add_argument("--candidate-max-waypoints", type=int, default=0)
     parser.add_argument("--candidate-joint-velc", type=float, default=0.006)

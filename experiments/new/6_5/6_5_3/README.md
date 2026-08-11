@@ -27,6 +27,29 @@ The experiment reuses the safe 6.5.2 tabletop reference:
 Use `moving-shadow-stop` as the required pilot before enabling true online
 trajectory switching.
 
+## Empty-scene local Offline Track calibration
+
+Before the first live dynamic execution, calibrate only the already authorized
+r35 local trajectory. The calibration utility never moves the robot to the
+candidate start: a start mismatch is logged as `BLOCKED_START_MISMATCH` with no
+motion command. Its default mode is also non-commanding. Inspect the setup with:
+
+```bash
+/home/hzy/miniconda3/envs/py310/bin/python \
+  experiments/new/6_5/6_5_3/calibrate_653_local_offline_track.py \
+  --playback-duration-s 1.0 \
+  --repeat 1
+```
+
+Real empty-scene playback additionally requires `--execute` and the exact
+phrase `CCRO_653_EMPTY_SCENE_LOCAL_TRACK_APPROVED`. It uses the authorized 1 s
+CSV, checks three hard-guard preview frames, keeps the 0.10 m guard active
+during Offline Track, and records requested/observed duration, goal error,
+nonzero motion, tracking RMSE, and maximum tracking error. Run 1.00 s three
+times; test the separately authorized 1.25 s version only if 1.00 s is unstable.
+The generic candidate playback default is `0`, meaning the authorized CSV's
+native time axis, while formal commands still state the frozen duration.
+
 The moving modes fail closed unless `--reference-feedback-csv` is supplied.
 The same recorded reference drives future STRO evaluation and supplies the
 candidate endpoint at `t + H_local`; `q + qd * lookahead` is no longer used.

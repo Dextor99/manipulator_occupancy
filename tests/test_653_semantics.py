@@ -19,6 +19,7 @@ trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repai
 prepare = importlib.import_module("experiments.new.6_5.6_5_3.prepare_653_reference")
 repair_v3 = importlib.import_module("experiments.new.6_4.repair.repair_v3")
 linearization = importlib.import_module("experiments.new.6_4.repair.nubs_linearization")
+calibration = importlib.import_module("experiments.new.6_5.6_5_3.calibrate_653_local_offline_track")
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -550,3 +551,30 @@ def test_executor_rejects_authorized_csv_playback_time_mismatch(tmp_path):
             processor=object(),
             denoiser=None,
         )
+
+
+def test_candidate_tracking_metrics_use_authorized_time_axis():
+    command_times = np.array([0.0, 0.5, 1.0])
+    command_q = np.zeros((3, 6))
+    command_q[:, 0] = [0.0, 0.01, 0.02]
+    feedback = [
+        {"t_s": 0.0, "actual_joint_rad": [0.0] * 6, "max_motion_from_start_rad": 0.0},
+        {"t_s": 0.5, "actual_joint_rad": [0.01, 0, 0, 0, 0, 0], "max_motion_from_start_rad": 0.01},
+        {"t_s": 1.0, "actual_joint_rad": [0.02, 0, 0, 0, 0, 0], "max_motion_from_start_rad": 0.02},
+    ]
+    metrics = trial.candidate_tracking_metrics(command_times, command_q, feedback, minimum_motion_rad=0.003)
+    assert metrics["requested_duration_s"] == 1.0
+    assert metrics["command_to_last_feedback_duration_s"] == 1.0
+    assert metrics["observed_motion_duration_s"] == 0.5
+    assert metrics["duration_error_s"] == 0.0
+    assert metrics["tracking_rmse_rad"] == 0.0
+    assert metrics["tracking_max_error_rad"] == 0.0
+
+
+def test_empty_scene_calibration_defaults_to_noncommanding_dry_run(tmp_path):
+    args = calibration.build_parser().parse_args(
+        ["--playback-duration-s", "1.0", "--repeat", "1", "--output", str(tmp_path)]
+    )
+    result = calibration.run(args)
+    assert result["status"] == "DRY_RUN_ONLY"
+    assert not result["robot_commanded"]
