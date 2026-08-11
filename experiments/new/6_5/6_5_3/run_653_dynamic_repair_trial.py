@@ -9,9 +9,11 @@ This first real-system implementation is intentionally staged:
 * ``--mode moving-shadow-stop`` additionally commands the familiar 6.5.2
   low-speed reference line and stops on trigger/hold.  It still does not switch
   to the candidate trajectory; it is the required pilot before live switching.
-* ``--mode live-stop-replan-execute`` executes only a Fresh #2-authorized full
-  repair+rejoin trajectory at its native time scale.  A Fresh #3 current/future
-  risk gate must pass before the guarded recorded-reference remainder resumes.
+* ``--mode live-stop-replan-execute`` prefers a Fresh #2-authorized full
+  repair+rejoin trajectory.  If only the local repair is authorized, v2 may
+  execute it, hold at its safe tail, and use Fresh #3 to authorize a separate
+  C2 bridge to a later reference state.  Every path remains fail-closed before
+  the guarded recorded-reference remainder resumes.
 """
 
 from __future__ import annotations
@@ -99,7 +101,7 @@ from utils.config import load_config_dir  # noqa: E402
 DEFAULT_OUTPUT = ROOT / "results" / "new" / "6_5" / "6_5_3" / "dynamic_repair_formal"
 REQUIRED_OPERATOR_PHRASE = "CCRO_653_DYNAMIC_SHADOW_APPROVED"
 LIVE_CANDIDATE_EXECUTE_PHRASE = "CCRO_653_LIVE_CANDIDATE_EXECUTE_APPROVED"
-FORMAL_PROTOCOL_ID = "653_unified_d1_d2_v1"
+FORMAL_PROTOCOL_ID = "653_unified_d1_d2_v2"
 
 SCENARIOS = {
     "D1": {
@@ -1833,6 +1835,174 @@ def authorize_candidate_execution(
     return payload
 
 
+def authorize_delayed_rejoin_after_fresh3(
+    args: argparse.Namespace,
+    stage4_config: dict[str, Any],
+    stage4_model: RobotSurfaceModel,
+    *,
+    local_artifacts: dict[str, Any],
+    fresh3: dict[str, Any],
+    fresh3_geometry: dict[str, Any] | None,
+    fresh3_frames: list[dict[str, Any]],
+    rejoin_goals: list[tuple[float, tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    hard_guard_distance_m: float,
+    trial_dir: Path,
+) -> tuple[dict[str, Any], Any | None]:
+    """Authorize a bridge after an already executed local-only repair.
+
+    The bridge is planned from the fixed, Fresh #2-authorized local tail.  It
+    does not invoke Fast a second time.  Fresh #3 supplies either the associated
+    moving-object geometry or a conservative stationary union of every external
+    cluster in the consecutive scene-clear audit frames.
+    """
+    started = time.perf_counter()
+    output_dir = trial_dir / "delayed_rejoin_authorization"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    hard_guard_safe = bool(
+        not np.isfinite(hard_guard_distance_m) or hard_guard_distance_m > args.guided_hard_stop_m
+    )
+    scene_clear_audit = None
+    forecast_basis = None
+    forecast = None
+    if fresh3.get("accepted", False) and fresh3_geometry is not None:
+        forecast = constant_multisphere_forecast(
+            np.asarray(fresh3_geometry["component_centers"], dtype=np.float64),
+            np.asarray(fresh3_geometry["component_base_radii"], dtype=np.float64),
+            np.asarray(fresh3["velocity"], dtype=np.float64),
+        )
+        forecast_basis = "FRESH3_TRACKED_OBSTACLE"
+    else:
+        # Reuse the same strict three-frame scene-clear predicate used by the
+        # direct resume gate.  Preserve every observed external cluster in the
+        # bridge verifier; no missing association is treated as free space.
+        repair = local_artifacts["candidate_trajectory"]
+        preview_times = np.asarray([0.0, max(args.prediction_horizon_s, repair.total_duration)], dtype=np.float64)
+        preview_q = np.vstack([repair.evaluate(repair.total_duration), repair.evaluate(repair.total_duration)])
+        scene_clear_audit = authorize_fresh3_scene_clear(
+            args,
+            stage4_model,
+            fresh3_frames=fresh3_frames,
+            remainder_times=preview_times,
+            remainder_q=preview_q,
+        )
+        if scene_clear_audit["accepted"]:
+            required = int(args.post_stop_recheck_min_frames)
+            clusters = [
+                cluster
+                for frame in fresh3_frames[-required:]
+                for cluster in frame.get("all_external_clusters", [])
+            ]
+            if clusters:
+                centers = np.asarray([cluster["center"] for cluster in clusters], dtype=np.float64).reshape(-1, 3)
+                radii = np.asarray([float(cluster["radius_m"]) for cluster in clusters], dtype=np.float64)
+            else:
+                # The camera validity and consecutive clear-scene checks above
+                # establish an empty ROI.  A remote sentinel lets the standard
+                # verifier still audit all joint/motion constraints.
+                centers = np.asarray([[100.0, 100.0, 100.0]], dtype=np.float64)
+                radii = np.asarray([1.0e-6], dtype=np.float64)
+                forecast_basis = "FRESH3_SCENE_CLEAR_EMPTY_ROI"
+            forecast = constant_multisphere_forecast(centers, radii, np.zeros(3, dtype=np.float64))
+            if forecast_basis is None:
+                forecast_basis = "FRESH3_SCENE_CLEAR_ALL_CLUSTERS_STATIC"
+
+    search_audit: list[dict[str, Any]] = []
+    accepted_bridge = None
+    accepted_verification = None
+    selected_offset = None
+    if forecast is not None and hard_guard_safe:
+        evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
+        repair = local_artifacts["candidate_trajectory"]
+        q_tail = np.asarray(repair.evaluate(repair.total_duration), dtype=np.float64)
+        qd_tail = np.asarray(repair.evaluate(repair.total_duration, 1), dtype=np.float64)
+        for offset_s, state in rejoin_goals:
+            bridge_duration = float(offset_s) - float(args.local_horizon_s)
+            if bridge_duration <= 0.0:
+                continue
+            endpoint_risk = evaluator.configuration(
+                np.asarray(state[0], dtype=np.float64),
+                forecast,
+                bridge_duration,
+                density="medium",
+                with_gradient=False,
+            )
+            audit = {
+                "offset_s": float(offset_s),
+                "bridge_duration_s": bridge_duration,
+                "endpoint_distance_m": float(endpoint_risk.min_distance),
+                "endpoint_nearest_link": endpoint_risk.nearest_link,
+                "endpoint_safe": bool(endpoint_risk.min_distance >= args.online_accept_m),
+                "motion_feasible": False,
+                "bridge_valid": False,
+            }
+            search_audit.append(audit)
+            if not audit["endpoint_safe"]:
+                continue
+            bridge = make_rejoin_bridge(repair, state, bridge_duration)
+            samples = bridge.dense_sample(0.04)
+            audit["motion_feasible"] = bool(
+                np.all(samples.q >= limits.q_min[None, :])
+                and np.all(samples.q <= limits.q_max[None, :])
+                and np.all(np.abs(samples.qd) <= limits.qd_max[None, :])
+                and np.all(np.abs(samples.qdd) <= limits.qdd_max[None, :])
+            )
+            if not audit["motion_feasible"]:
+                continue
+            verification = verifier.verify(
+                bridge,
+                forecast,
+                current_q=q_tail,
+                current_qd=qd_tail,
+                current_qdd=np.asarray(repair.evaluate(repair.total_duration, 2), dtype=np.float64),
+                q_goal=np.asarray(state[0], dtype=np.float64),
+                solver_success=True,
+            )
+            audit.update(
+                {
+                    "bridge_valid": bool(verification.accepted),
+                    "bridge_min_distance_m": float(verification.min_distance),
+                    "verification_checks": verification.checks,
+                    "verification_reasons": verification.reasons,
+                    "verification_ms": float(verification.validation_ms),
+                }
+            )
+            if verification.accepted:
+                accepted_bridge = bridge
+                accepted_verification = verification
+                selected_offset = float(offset_s)
+                save_trajectory_csv(output_dir / "authorized_delayed_rejoin_bridge.csv", bridge, dt=0.01)
+                save_dynamic_risk_profile(
+                    output_dir / "authorized_delayed_rejoin_risk_profile.csv",
+                    bridge,
+                    evaluator,
+                    forecast,
+                    density="medium",
+                    dt=0.04,
+                )
+                break
+
+    authorized = accepted_bridge is not None
+    payload = {
+        "status": "DELAYED_REJOIN_AUTHORIZED" if authorized else "DELAYED_REJOIN_HOLD",
+        "authorized": authorized,
+        "forecast_basis": forecast_basis,
+        "hard_guard_distance_m": hard_guard_distance_m,
+        "hard_guard_safe": hard_guard_safe,
+        "scene_clear_audit": scene_clear_audit,
+        "selected_rejoin_offset_s": selected_offset,
+        "bridge_min_distance_m": None if accepted_verification is None else float(accepted_verification.min_distance),
+        "authorized_trajectory_csv": (
+            str(output_dir / "authorized_delayed_rejoin_bridge.csv") if authorized else None
+        ),
+        "authorized_duration_s": None if accepted_bridge is None else float(accepted_bridge.total_duration),
+        "rejoin_search_audit": search_audit,
+        "authorization_compute_ms": (time.perf_counter() - started) * 1000.0,
+        "robot_executed": False,
+    }
+    write_json(output_dir / "authorization_summary.json", payload)
+    return payload, accepted_bridge
+
+
 def authorize_fresh3_scene_clear(
     args: argparse.Namespace,
     stage4_model: RobotSurfaceModel,
@@ -2445,6 +2615,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     candidate_summary: dict[str, Any] | None = None
     candidate_execution_summary: dict[str, Any] | None = None
     full_execution_summary: dict[str, Any] | None = None
+    execution_path: str | None = None
     reference_resume_summary: dict[str, Any] | None = None
     reference_remainder_execution_summary: dict[str, Any] | None = None
     commander: RobotCommander | None = None
@@ -3248,11 +3419,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 if args.mode == "moving-shadow-stop":
                     break
                 if args.mode == "live-stop-replan-execute":
-                    if not candidate_summary.get("execution_authorized", False):
+                    full_path_authorized = bool(candidate_summary.get("execution_authorized", False))
+                    local_path_authorized = bool(candidate_summary.get("local_execution_authorized", False))
+                    if not full_path_authorized and not local_path_authorized:
                         log["events"].append(
                             {
-                                "type": "LIVE_FULL_CANDIDATE_NOT_EXECUTED",
-                                "reason": "repair_rejoin_not_authorized_under_fresh2",
+                                "type": "LIVE_CANDIDATE_NOT_EXECUTED",
+                                "reason": "neither_full_nor_local_repair_authorized_under_fresh2",
                                 "candidate_status": candidate_summary["status"],
                                 "rejection_reasons": candidate_summary.get("rejection_reasons", []),
                             }
@@ -3282,7 +3455,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     candidate_dir = trial_dir / "candidate"
                     try:
                         full_authorization = candidate_summary["execution_authorization"]
-                        authorized_csv = Path(full_authorization["authorized_trajectory_csv"])
+                        local_authorization = candidate_summary["local_execution_authorization"]
+                        execution_path = "FULL_FIRST" if full_path_authorized else "LOCAL_FIRST_DELAYED_REJOIN"
+                        active_authorization = full_authorization if full_path_authorized else local_authorization
+                        authorized_csv = Path(active_authorization["authorized_trajectory_csv"])
                         workspace_deviation = trajectory_workspace_deviation(
                             stage4_model,
                             authorized_csv,
@@ -3290,23 +3466,38 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             reference_repair_start_time_s,
                         )
                         write_json(candidate_dir / "workspace_deviation_metrics.json", workspace_deviation)
-                        full_execution_summary = execute_authorized_trajectory_offline_track(
+                        first_execution_summary = execute_authorized_trajectory_offline_track(
                             robot,
                             authorized_csv,
                             args,
                             processor=processor,
                             denoiser=denoiser,
                             playback_duration_s=None,
-                            execution_label="authorized repair + rejoin",
+                            execution_label=(
+                                "authorized repair + rejoin" if full_path_authorized else "Fresh #2-authorized local repair"
+                            ),
                         )
-                        if full_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+                        if first_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
                             raise RuntimeError(
-                                "repair+rejoin did not follow its authorized time axis: "
-                                f"{full_execution_summary.get('timing_check')}"
+                                "authorized first segment did not follow its time axis: "
+                                f"{first_execution_summary.get('timing_check')}"
                             )
-                        full_execution_summary["workspace_deviation_metrics"] = workspace_deviation
-                        write_json(candidate_dir / "live_full_candidate_execution_log.json", full_execution_summary)
-                        log["events"].append({"type": "LIVE_REPAIR_REJOIN_EXECUTED", "execution": full_execution_summary})
+                        first_execution_summary["workspace_deviation_metrics"] = workspace_deviation
+                        first_execution_summary["execution_path"] = execution_path
+                        full_execution_summary = first_execution_summary
+                        first_log_name = (
+                            "live_full_candidate_execution_log.json"
+                            if full_path_authorized
+                            else "live_local_candidate_execution_log.json"
+                        )
+                        write_json(candidate_dir / first_log_name, first_execution_summary)
+                        log["events"].append(
+                            {
+                                "type": "LIVE_REPAIR_REJOIN_EXECUTED" if full_path_authorized else "LIVE_LOCAL_REPAIR_EXECUTED_HOLD",
+                                "execution_path": execution_path,
+                                "execution": first_execution_summary,
+                            }
+                        )
 
                         # One fail-closed Fresh #3 gate before resuming the original task.
                         fresh3, fresh3_frames, fresh3_points = capture_post_stop_obstacle(
@@ -3332,26 +3523,93 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             write_json(trial_dir / "fresh3_multisphere.json", fresh3_geometry)
                         write_json(trial_dir / "fresh3_recheck.json", {"result": fresh3, "frames": fresh3_frames})
 
-                        rejoin_match = locate_authorized_rejoin_on_reference(reference, authorized_csv)
-                        rejoin_absolute_time = float(rejoin_match["time_s"])
+                        fresh3_guard_distance = execution_hard_guard_distance(processor, denoiser, args)
+                        if full_path_authorized:
+                            rejoin_match = locate_authorized_rejoin_on_reference(reference, authorized_csv)
+                            rejoin_absolute_time = float(rejoin_match["time_s"])
+                            selected_rejoin_offset_s = float(full_authorization["selected_rejoin_offset_s"])
+                            delayed_rejoin_summary = None
+                        else:
+                            delayed_rejoin_summary, _ = authorize_delayed_rejoin_after_fresh3(
+                                args,
+                                stage4_config,
+                                stage4_model,
+                                local_artifacts=local_artifacts,
+                                fresh3=fresh3,
+                                fresh3_geometry=fresh3_geometry,
+                                fresh3_frames=fresh3_frames,
+                                rejoin_goals=rejoin_goals,
+                                hard_guard_distance_m=fresh3_guard_distance,
+                                trial_dir=trial_dir,
+                            )
+                            log["events"].append(
+                                {"type": delayed_rejoin_summary["status"], "authorization": delayed_rejoin_summary}
+                            )
+                            if not delayed_rejoin_summary["authorized"]:
+                                log["events"].append(
+                                    {"type": "REMAIN_HOLD_AT_LOCAL_REPAIR_TAIL", "authorization": delayed_rejoin_summary}
+                                )
+                                break
+                            bridge_csv = Path(delayed_rejoin_summary["authorized_trajectory_csv"])
+                            bridge_execution = execute_authorized_trajectory_offline_track(
+                                robot,
+                                bridge_csv,
+                                args,
+                                processor=processor,
+                                denoiser=denoiser,
+                                playback_duration_s=None,
+                                execution_label="Fresh #3-authorized delayed C2 rejoin bridge",
+                            )
+                            if bridge_execution["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+                                raise RuntimeError(
+                                    "delayed rejoin bridge did not follow its authorized time axis: "
+                                    f"{bridge_execution.get('timing_check')}"
+                                )
+                            delayed_rejoin_summary["robot_executed"] = True
+                            write_json(
+                                trial_dir / "delayed_rejoin_authorization" / "bridge_execution_log.json",
+                                bridge_execution,
+                            )
+                            log["events"].append({"type": "LIVE_DELAYED_REJOIN_EXECUTED", "execution": bridge_execution})
+                            selected_rejoin_offset_s = float(delayed_rejoin_summary["selected_rejoin_offset_s"])
+                            rejoin_absolute_time = min(
+                                float(reference.times[-1]),
+                                reference_repair_start_time_s + selected_rejoin_offset_s,
+                            )
+                            rejoin_match = {
+                                "time_s": rejoin_absolute_time,
+                                "source": "delayed_rejoin_selected_reference_state",
+                            }
                         remainder_times, remainder_q, _ = reference.remainder_after(rejoin_absolute_time)
                         remainder_csv = trial_dir / "authorized_reference_remainder.csv"
                         save_joint_waypoint_csv(remainder_csv, remainder_times, remainder_q)
-                        fresh3_guard_distance = execution_hard_guard_distance(processor, denoiser, args)
-                        reference_resume_summary = authorize_reference_resume_after_fresh3(
-                            args,
-                            stage4_config,
-                            stage4_model,
-                            fresh3=fresh3,
-                            fresh3_geometry=fresh3_geometry,
-                            fresh3_frames=fresh3_frames,
-                            remainder_times=remainder_times,
-                            remainder_q=remainder_q,
-                            hard_guard_distance_m=fresh3_guard_distance,
-                        )
+                        if full_path_authorized:
+                            reference_resume_summary = authorize_reference_resume_after_fresh3(
+                                args,
+                                stage4_config,
+                                stage4_model,
+                                fresh3=fresh3,
+                                fresh3_geometry=fresh3_geometry,
+                                fresh3_frames=fresh3_frames,
+                                remainder_times=remainder_times,
+                                remainder_q=remainder_q,
+                                hard_guard_distance_m=fresh3_guard_distance,
+                            )
+                        else:
+                            # The delayed bridge and its endpoint were already fully
+                            # checked against this Fresh #3 forecast.  The following
+                            # Cartesian remainder retains its independent raw guard.
+                            reference_resume_summary = {
+                                "status": "REFERENCE_RESUME_AUTHORIZED",
+                                "authorized": True,
+                                "resume_basis": "FRESH3_AUTHORIZED_DELAYED_REJOIN",
+                                "delayed_rejoin_authorization": delayed_rejoin_summary,
+                                "hard_guard_distance_m": fresh3_guard_distance,
+                            }
                         reference_resume_summary.update(
                             {
-                                "selected_rejoin_offset_s": full_authorization["selected_rejoin_offset_s"],
+                                "execution_path": execution_path,
+                                "selected_rejoin_offset_s": selected_rejoin_offset_s,
                                 "rejoin_reference_match": rejoin_match,
                                 "rejoin_absolute_reference_time_s": rejoin_absolute_time,
                                 "authorized_reference_remainder_csv": str(remainder_csv),
@@ -3377,13 +3635,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     except Exception as exc:
                         stop_ret = maybe_move_stop(robot)
                         full_execution_summary = {
-                            "status": "FAILED_FULL_DYNAMIC_EXECUTION",
+                            "status": "FAILED_DYNAMIC_EXECUTION",
+                            "execution_path": execution_path,
                             "error": str(exc),
                             "traceback": traceback.format_exc(limit=20),
                             "stop_return": stop_ret,
                         }
-                        write_json(candidate_dir / "live_full_candidate_execution_log.json", full_execution_summary)
-                        log["events"].append({"type": "LIVE_FULL_EXECUTION_FAILED", "execution": full_execution_summary})
+                        write_json(candidate_dir / "live_dynamic_execution_failure.json", full_execution_summary)
+                        log["events"].append({"type": "LIVE_DYNAMIC_EXECUTION_FAILED", "execution": full_execution_summary})
                     break
             if (
                 args.mode in robot_motion_modes
@@ -3436,7 +3695,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             final_status = "TRIGGERED_AND_DYNAMIC_CANDIDATE_EXECUTION_FAILED"
     if full_execution_summary is not None:
         if full_execution_summary.get("status") == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
-            final_status = "TRIGGERED_AND_REPAIR_REJOIN_EXECUTED_HOLD"
+            final_status = (
+                "TRIGGERED_AND_REPAIR_REJOIN_EXECUTED_HOLD"
+                if execution_path == "FULL_FIRST"
+                else "TRIGGERED_AND_LOCAL_REPAIR_EXECUTED_HOLD"
+            )
         else:
             final_status = "TRIGGERED_AND_REPAIR_REJOIN_EXECUTION_FAILED"
     if reference_remainder_execution_summary is not None:
@@ -3525,6 +3788,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "candidate_execution": candidate_execution_summary,
             "full_candidate_execution_status": None if full_execution_summary is None else full_execution_summary.get("status"),
             "full_candidate_execution": full_execution_summary,
+            "execution_path": execution_path,
             "reference_resume_authorization": reference_resume_summary,
             "reference_remainder_execution_status": None if reference_remainder_execution_summary is None else reference_remainder_execution_summary.get("status"),
             "reference_remainder_execution": reference_remainder_execution_summary,

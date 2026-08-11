@@ -213,6 +213,30 @@ def test_d1_and_d2_share_one_scene_independent_formal_protocol():
     assert trial.formal_protocol_signature(d1) == trial.formal_protocol_signature(d2)
     assert "risk_links" not in trial.SCENARIOS["D1"]
     assert "risk_links" not in trial.SCENARIOS["D2"]
+    assert trial.FORMAL_PROTOCOL_ID == "653_unified_d1_d2_v2"
+
+
+def test_delayed_rejoin_bridge_is_c2_at_local_tail_and_reference_target():
+    q0 = np.zeros(6)
+    q_tail = np.array([0.03, -0.02, 0.01, 0.0, 0.0, 0.0])
+    qd_tail = np.array([0.004, -0.003, 0.002, 0.0, 0.0, 0.0])
+    qdd_tail = np.array([0.001, 0.0, -0.001, 0.0, 0.0, 0.0])
+    repair = NUBSTrajectory6D().generate(
+        np.empty((0, 6)),
+        NUBSTrajectory6D.make_boundary_state(q0),
+        NUBSTrajectory6D.make_boundary_state(q_tail, qd_tail, qdd_tail),
+        np.array([1.0]),
+    )
+    q_goal = q_tail + np.array([0.01, 0.01, -0.005, 0.0, 0.0, 0.0])
+    qd_goal = np.array([0.002, 0.001, 0.0, 0.0, 0.0, 0.0])
+    qdd_goal = np.zeros(6)
+    bridge = trial.make_rejoin_bridge(repair, (q_goal, qd_goal, qdd_goal), 0.75)
+    np.testing.assert_allclose(bridge.evaluate(0.0), q_tail, atol=1.0e-10)
+    np.testing.assert_allclose(bridge.evaluate(0.0, 1), qd_tail, atol=1.0e-10)
+    np.testing.assert_allclose(bridge.evaluate(0.0, 2), qdd_tail, atol=1.0e-10)
+    np.testing.assert_allclose(bridge.evaluate(bridge.total_duration), q_goal, atol=1.0e-10)
+    np.testing.assert_allclose(bridge.evaluate(bridge.total_duration, 1), qd_goal, atol=1.0e-10)
+    np.testing.assert_allclose(bridge.evaluate(bridge.total_duration, 2), qdd_goal, atol=1.0e-10)
 
 
 def test_formal_protocol_rejects_scene_specific_threshold_tuning():

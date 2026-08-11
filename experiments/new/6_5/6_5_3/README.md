@@ -21,8 +21,10 @@ The experiment reuses the safe 6.5.2 tabletop reference:
 - `moving-shadow-stop`: command the recorded one-way low-speed reference line, trigger Fast
   CCRO-NUBS, then stop; perform post-planning authorization in shadow only.
 - `live-stop-replan-execute`: after explicit opt-in and phrase checks, executes
-  a Fresh #2-authorized full repair+rejoin at its native time scale. Fresh #3
-  then gates a guarded Cartesian resume of the nominal Y-line to the goal.
+  the v2 fail-closed state machine. It prefers a Fresh #2-authorized full
+  repair+rejoin. If only the local repair is authorized, it executes that
+  segment, holds at its repaired tail, and requires Fresh #3 to authorize a
+  separate C2 bridge to a later reference state before guarded Cartesian resume.
 
 Use `moving-shadow-stop` as the required pilot before enabling true online
 trajectory switching.
@@ -276,9 +278,19 @@ CSV. During Offline Track playback, the existing 0.10 m RGB-D hard guard remains
 active and immediately invokes the validated stop interface on violation.
 
 The full repair-plus-rejoin gate searches the unchanged 1.25--2.00 s rejoin
-window and verifies a C2 bridge. Formal live execution requires this full gate;
-local-only authorization is diagnostic and cannot count as a completed trial.
-After the authorized bridge executes, Fresh #3 permits resume through either
+window and verifies a C2 bridge. It remains the preferred v2 execution path.
+If this full gate fails while the independent local-only Fresh #2 gate passes,
+v2 may execute only `authorized_local_repair.csv` and then holds at its safe
+elastic tail. Fresh #3 must then authorize a newly generated C2 bridge from
+that fixed tail to the earliest safe state in the same bounded reference
+window. This is not a second Fast solve and does not relax the 0.09 m online
+acceptance threshold. The bridge is checked against either the associated
+Fresh #3 multisphere forecast or, after a strict scene-clear decision, a
+stationary conservative union of every external cluster in the three audit
+frames. Failure leaves the robot holding at the local tail.
+
+After either the preferred full rejoin or the Fresh #3-authorized delayed
+bridge executes, Fresh #3 permits resume through either
 the tracked-obstacle risk check or `FRESH3_SCENE_CLEAR`.  Scene-clear requires
 three consecutive valid RGB-D frames, failure to associate the original target,
 all-cluster current clearance above 0.12 m, raw guard clearance above 0.10 m,
@@ -330,14 +342,19 @@ actual most-at-risk link is measured rather than prescribed.
 
 ## Unified D1/D2 formal protocol
 
-D1 and D2 differ only in obstacle motion geometry. Both use protocol ID
-`653_unified_d1_d2_v1`, including the same perception, window-motion, STRO,
+D1 and D2 differ only in obstacle motion geometry. New trials use protocol ID
+`653_unified_d1_d2_v2`, including the same perception, window-motion, STRO,
 all-link safety, Fast-repair, and candidate-acceptance parameters. Every moving
 trial writes the complete `formal_protocol` signature to `summary.json`.
 Changing any frozen algorithm/safety value through the CLI causes
 `BLOCKED_NONFORMAL_PROTOCOL` before a robot connection is opened. Scene,
 repeat, duration, output path, and operator/reference inputs remain ordinary
 experimental metadata rather than algorithm parameters.
+
+The archived v1 D1/D2 runs remain immutable development evidence. They must
+not be relabeled as v2: v2 specifically denotes the added
+`full-first -> local-first/hold -> Fresh #3 delayed rejoin` execution state
+machine, while all frozen numeric safety and Fast parameters remain unchanged.
 
 ## Outputs
 
