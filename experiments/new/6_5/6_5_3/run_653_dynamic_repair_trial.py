@@ -1833,6 +1833,75 @@ def authorize_candidate_execution(
     return payload
 
 
+def authorize_fresh3_scene_clear(
+    args: argparse.Namespace,
+    stage4_model: RobotSurfaceModel,
+    *,
+    fresh3_frames: list[dict[str, Any]],
+    remainder_times: np.ndarray,
+    remainder_q: np.ndarray,
+) -> dict[str, Any]:
+    """Authorize a clear scene only from three consecutive full-frame audits."""
+    required = int(args.post_stop_recheck_min_frames)
+    tail = fresh3_frames[-required:] if len(fresh3_frames) >= required else []
+    frame_results = []
+    all_ok = len(tail) == required
+    preview_t = np.arange(0.0, args.prediction_horizon_s + 0.5 * args.prediction_step_s, args.prediction_step_s)
+    for frame in tail:
+        valid = bool(frame.get("frame_valid", False))
+        unassociated = not bool(frame.get("associated", False))
+        guard_distance = float(frame.get("raw_guard_distance_m", -math.inf))
+        current_safe = guard_distance > args.moving_shadow_current_stop_m
+        future_min = math.inf
+        future_nearest_link = None
+        clusters = list(frame.get("all_external_clusters", []))
+        for tau in preview_t:
+            q_tau = np.asarray([
+                np.interp(min(float(tau), float(remainder_times[-1])), remainder_times, remainder_q[:, j])
+                for j in range(6)
+            ])
+            surfaces = stage4_model.surface_by_link(q_tau, density="medium")
+            for cluster in clusters:
+                center = np.asarray(cluster["center"], dtype=np.float64)
+                radius = float(cluster["radius_m"]) + args.prediction_margin_m + args.prediction_uncertainty_m
+                for link, surface in surfaces.items():
+                    if len(surface) == 0:
+                        continue
+                    distance = float(cKDTree(surface).query(center, k=1)[0] - radius)
+                    if distance < future_min:
+                        future_min = distance
+                        future_nearest_link = link
+        future_safe = future_min >= args.moving_shadow_replan_in_m
+        checks = {
+            "camera_frame_valid": valid,
+            "original_target_unassociated": unassociated,
+            "raw_hard_guard_safe": guard_distance > args.guided_hard_stop_m,
+            "all_cluster_current_distance_safe": current_safe,
+            "remaining_reference_0p5s_safe": future_safe,
+        }
+        frame_ok = bool(all(checks.values()))
+        all_ok = bool(all_ok and frame_ok)
+        frame_results.append(
+            {
+                "timestamp": frame.get("timestamp"),
+                "cluster_count": len(clusters),
+                "raw_guard_distance_m": guard_distance,
+                "future_reference_min_distance_m": future_min,
+                "future_nearest_link": future_nearest_link,
+                "checks": checks,
+                "accepted": frame_ok,
+            }
+        )
+    return {
+        "status": "FRESH3_SCENE_CLEAR" if all_ok else "FRESH3_SCENE_NOT_CLEAR",
+        "accepted": all_ok,
+        "required_consecutive_frames": required,
+        "available_frames": len(fresh3_frames),
+        "evaluated_tail_frames": len(tail),
+        "frames": frame_results,
+    }
+
+
 def authorize_reference_resume_after_fresh3(
     args: argparse.Namespace,
     stage4_config: dict[str, Any],
@@ -1840,17 +1909,31 @@ def authorize_reference_resume_after_fresh3(
     *,
     fresh3: dict[str, Any],
     fresh3_geometry: dict[str, Any] | None,
+    fresh3_frames: list[dict[str, Any]] | None = None,
     remainder_times: np.ndarray,
     remainder_q: np.ndarray,
     hard_guard_distance_m: float,
 ) -> dict[str, Any]:
     """Gate one reference resume using current and 0.5 s predicted clearance."""
     if not fresh3.get("accepted", False) or fresh3_geometry is None:
+        scene_clear = authorize_fresh3_scene_clear(
+            args,
+            stage4_model,
+            fresh3_frames=[] if fresh3_frames is None else fresh3_frames,
+            remainder_times=remainder_times,
+            remainder_q=remainder_q,
+        )
+        hard_guard_safe = bool(
+            not np.isfinite(hard_guard_distance_m) or hard_guard_distance_m > args.guided_hard_stop_m
+        )
+        authorized = bool(scene_clear["accepted"] and hard_guard_safe)
         return {
-            "status": "REFERENCE_RESUME_HOLD",
-            "authorized": False,
-            "reason": fresh3.get("reason", "fresh3_not_ready"),
+            "status": "REFERENCE_RESUME_AUTHORIZED" if authorized else "REFERENCE_RESUME_HOLD",
+            "resume_basis": "FRESH3_SCENE_CLEAR" if authorized else "FRESH3_NOT_READY_OR_SCENE_UNSAFE",
+            "authorized": authorized,
+            "reason": "fresh3_scene_clear" if authorized else fresh3.get("reason", "fresh3_not_ready"),
             "hard_guard_distance_m": hard_guard_distance_m,
+            "scene_clear_audit": scene_clear,
         }
     evaluator, _, _ = make_risk_stack(stage4_config, stage4_model, None)
     forecast = constant_multisphere_forecast(
@@ -1879,6 +1962,7 @@ def authorize_reference_resume_after_fresh3(
     return {
         "status": "REFERENCE_RESUME_AUTHORIZED" if authorized else "REFERENCE_RESUME_HOLD",
         "authorized": authorized,
+        "resume_basis": "FRESH3_TRACKED_OBSTACLE",
         "checks": checks,
         "current_distance_m": current_distance,
         "predicted_reference_min_distance_m": predicted_distance,
@@ -2125,8 +2209,20 @@ def capture_post_stop_obstacle(
     while time.perf_counter() - started < args.post_stop_recheck_duration_s:
         frame = processor.process_frame()
         timestamp = float(getattr(frame, "timestamp", time.time()))
-        scene_points = np.asarray(frame.scene_points, dtype=np.float64)
+        raw_scene_points = np.asarray(frame.scene_points, dtype=np.float64)
+        scene_points = raw_scene_points
         robot_points = np.asarray(frame.robot_points, dtype=np.float64)
+        frame_valid = bool(
+            np.isfinite(timestamp)
+            and raw_scene_points.ndim == 2
+            and raw_scene_points.shape[1:] == (3,)
+            and len(raw_scene_points) > 0
+            and np.all(np.isfinite(raw_scene_points))
+            and robot_points.ndim == 2
+            and robot_points.shape[1:] == (3,)
+            and len(robot_points) > 0
+            and np.all(np.isfinite(robot_points))
+        )
         if denoiser is not None:
             scene_points = denoiser.filter(scene_points)
         plane_removal = None
@@ -2143,11 +2239,30 @@ def capture_post_stop_obstacle(
             min_volume=args.cluster_min_volume,
         )
         clusters = filter_guard_clusters(list(clustered.clusters), args)
+        cluster_summaries = []
+        for cluster in clusters:
+            detection = make_occupancy_object(np.asarray(cluster.points), timestamp=timestamp, margin=0.0)
+            cluster_summaries.append(
+                {
+                    "center": np.asarray(detection.center, dtype=np.float64).tolist(),
+                    "radius_m": float(detection.radius),
+                    "point_count": int(len(np.asarray(cluster.points))),
+                }
+            )
+        frame_guard_distance, _, _, _, _ = _find_nearest_cluster_distance_detail(robot_points, clusters, [])
+        common_audit = {
+            "timestamp": timestamp,
+            "frame_valid": frame_valid,
+            "raw_scene_point_count": int(len(raw_scene_points)) if raw_scene_points.ndim == 2 else 0,
+            "robot_point_count": int(len(robot_points)) if robot_points.ndim == 2 else 0,
+            "cluster_count": len(clusters),
+            "all_external_clusters": cluster_summaries,
+            "raw_guard_distance_m": float(frame_guard_distance),
+        }
         if not clusters:
             frame_audit.append(
                 {
-                    "timestamp": timestamp,
-                    "cluster_count": 0,
+                    **common_audit,
                     "associated": False,
                     "association_mode": "fresh_continuity" if samples else "trigger_bootstrap_v2",
                 }
@@ -2167,8 +2282,7 @@ def capture_post_stop_obstacle(
         error = float(association["association_error_m"])
         frame_audit.append(
             {
-                "timestamp": timestamp,
-                "cluster_count": len(clusters),
+                **common_audit,
                 **{
                     key: value.tolist() if isinstance(value, np.ndarray) else value
                     for key, value in association.items()
@@ -3230,6 +3344,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             stage4_model,
                             fresh3=fresh3,
                             fresh3_geometry=fresh3_geometry,
+                            fresh3_frames=fresh3_frames,
                             remainder_times=remainder_times,
                             remainder_q=remainder_q,
                             hard_guard_distance_m=fresh3_guard_distance,

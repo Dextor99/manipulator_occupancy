@@ -21,8 +21,8 @@ The experiment reuses the safe 6.5.2 tabletop reference:
 - `moving-shadow-stop`: command the recorded one-way low-speed reference line, trigger Fast
   CCRO-NUBS, then stop; perform post-planning authorization in shadow only.
 - `live-stop-replan-execute`: after explicit opt-in and phrase checks, executes
-  only a local repair revalidated on Fresh #2 at the exact requested playback
-  duration, then stops at the repaired state. Automatic rejoin is not enabled.
+  a Fresh #2-authorized full repair+rejoin at its native time scale. Fresh #3
+  then gates a guarded Cartesian resume of the nominal Y-line to the goal.
 
 Use `moving-shadow-stop` as the required pilot before enabling true online
 trajectory switching.
@@ -275,12 +275,19 @@ and records `LOCAL_EXECUTION_AUTHORIZED`; the executor never reads the raw Fast
 CSV. During Offline Track playback, the existing 0.10 m RGB-D hard guard remains
 active and immediately invokes the validated stop interface on violation.
 
-The original full repair-plus-rejoin shadow gate is retained as a separate
-diagnostic: it searches the unchanged 1.25--2.00 s rejoin window and verifies a
-C2 bridge. Failure of immediate rejoin no longer invalidates an independently
-safe local segment, but automatic rejoin is not attempted in the first live
-pilot. Any local recheck, time-axis, geometry, motion, or distance failure keeps
-the robot stopped. Fresh #2 acquisition and authorization latency remain
+The full repair-plus-rejoin gate searches the unchanged 1.25--2.00 s rejoin
+window and verifies a C2 bridge. Formal live execution requires this full gate;
+local-only authorization is diagnostic and cannot count as a completed trial.
+After the authorized bridge executes, Fresh #3 permits resume through either
+the tracked-obstacle risk check or `FRESH3_SCENE_CLEAR`.  Scene-clear requires
+three consecutive valid RGB-D frames, failure to associate the original target,
+all-cluster current clearance above 0.12 m, raw guard clearance above 0.10 m,
+and an all-cluster scan of the next 0.5 s of reference above 0.14 m.  Missing
+association alone never authorizes motion.  The nominal task is a Cartesian
+Y-line, so resume uses a guarded 0.020 m/s `movel_line` rather than replaying
+noisy timestamped joint feedback through an untimed Offline Track interface.
+Any Fresh, time-axis, geometry, motion, distance, or overspeed failure keeps the
+robot stopped. Fresh #2/#3 acquisition and authorization latency remain
 separate from the frozen 150 ms Fast budget.
 
 A 20-repeat r26 A/B found exact agreement between serial and threaded paired

@@ -656,6 +656,67 @@ def test_fresh3_reference_resume_requires_current_future_and_hard_guard(monkeypa
     assert not held["checks"]["hard_guard_safe"]
 
 
+def test_fresh3_scene_clear_accepts_three_valid_unassociated_safe_frames():
+    class SurfaceModel:
+        def surface_by_link(self, q, density):
+            return {"link": np.array([[0.0, 0.0, 0.0]])}
+
+    args = SimpleNamespace(
+        post_stop_recheck_min_frames=3,
+        prediction_horizon_s=0.5,
+        prediction_step_s=0.1,
+        prediction_margin_m=0.035,
+        prediction_uncertainty_m=0.02,
+        moving_shadow_current_stop_m=0.12,
+        moving_shadow_replan_in_m=0.14,
+        guided_hard_stop_m=0.10,
+    )
+    frames = [
+        {
+            "timestamp": float(i), "frame_valid": True, "associated": False,
+            "raw_guard_distance_m": float("inf"), "all_external_clusters": [],
+        }
+        for i in range(3)
+    ]
+    result = trial.authorize_fresh3_scene_clear(
+        args, SurfaceModel(), fresh3_frames=frames,
+        remainder_times=np.array([0.0, 1.0]), remainder_q=np.zeros((2, 6)),
+    )
+    assert result["accepted"]
+    assert result["status"] == "FRESH3_SCENE_CLEAR"
+
+
+def test_fresh3_scene_clear_rejects_unassociated_but_unsafe_external_cluster():
+    class SurfaceModel:
+        def surface_by_link(self, q, density):
+            return {"link": np.array([[0.0, 0.0, 0.0]])}
+
+    args = SimpleNamespace(
+        post_stop_recheck_min_frames=3,
+        prediction_horizon_s=0.5,
+        prediction_step_s=0.1,
+        prediction_margin_m=0.035,
+        prediction_uncertainty_m=0.02,
+        moving_shadow_current_stop_m=0.12,
+        moving_shadow_replan_in_m=0.14,
+        guided_hard_stop_m=0.10,
+    )
+    frames = [
+        {
+            "timestamp": float(i), "frame_valid": True, "associated": False,
+            "raw_guard_distance_m": 0.20,
+            "all_external_clusters": [{"center": [0.10, 0.0, 0.0], "radius_m": 0.02}],
+        }
+        for i in range(3)
+    ]
+    result = trial.authorize_fresh3_scene_clear(
+        args, SurfaceModel(), fresh3_frames=frames,
+        remainder_times=np.array([0.0, 1.0]), remainder_q=np.zeros((2, 6)),
+    )
+    assert not result["accepted"]
+    assert not result["frames"][-1]["checks"]["remaining_reference_0p5s_safe"]
+
+
 def test_candidate_tracking_metrics_use_authorized_time_axis():
     command_times = np.array([0.0, 0.5, 1.0])
     command_q = np.zeros((3, 6))
