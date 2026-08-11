@@ -674,6 +674,26 @@ def test_candidate_tracking_metrics_use_authorized_time_axis():
     assert metrics["tracking_max_error_rad"] == 0.0
 
 
+def test_authorized_timing_check_rejects_compressed_waypoint_playback():
+    feedback = [
+        {"t_s": 0.0, "goal_max_abs_error_rad": 1.0},
+        {"t_s": 3.8, "goal_max_abs_error_rad": 0.001},
+        {"t_s": 24.0, "goal_max_abs_error_rad": 0.0},
+    ]
+    result = trial.authorized_execution_timing_check(26.8, feedback, goal_tolerance_rad=0.012)
+    assert not result["accepted"]
+    assert result["actual_to_requested_ratio"] < 0.2
+
+
+def test_authorized_timing_check_accepts_calibrated_repair_duration():
+    feedback = [
+        {"t_s": 0.0, "goal_max_abs_error_rad": 1.0},
+        {"t_s": 1.19, "goal_max_abs_error_rad": 0.004},
+    ]
+    result = trial.authorized_execution_timing_check(1.25, feedback, goal_tolerance_rad=0.012)
+    assert result["accepted"]
+
+
 def test_empty_scene_calibration_defaults_to_noncommanding_dry_run(tmp_path):
     args = calibration.build_parser().parse_args(
         ["--playback-duration-s", "1.0", "--repeat", "1", "--output", str(tmp_path)]

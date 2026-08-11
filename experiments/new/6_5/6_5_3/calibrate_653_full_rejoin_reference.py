@@ -149,17 +149,20 @@ def run(args: argparse.Namespace) -> dict:
             execution_label="empty-scene authorized repair + rejoin",
         )
         log["robot_commanded"] = True
-        log["remainder_execution"] = trial.execute_authorized_trajectory_offline_track(
+        if log["full_execution"]["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+            raise RuntimeError(f"full trajectory timing failed: {log['full_execution'].get('timing_check')}")
+        log["remainder_execution"] = trial.execute_guarded_cartesian_reference_remainder(
             robot,
-            remainder_csv,
             runtime_args,
             processor=processor,
             denoiser=denoiser,
-            playback_duration_s=None,
-            controller_period_s=reference.dt_median,
-            execution_label="empty-scene authorized reference remainder",
+            target_y_m=runtime_args.y_goal,
         )
-        log["status"] = "FULL_REJOIN_REFERENCE_CALIBRATION_PASS"
+        log["status"] = (
+            "FULL_REJOIN_REFERENCE_CALIBRATION_PASS"
+            if log["remainder_execution"].get("reached", False)
+            else "FULL_REJOIN_REFERENCE_CALIBRATION_FAIL"
+        )
     except Exception as exc:
         log["status"] = "FULL_REJOIN_REFERENCE_CALIBRATION_FAIL"
         log["error"] = str(exc)

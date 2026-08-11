@@ -1061,6 +1061,136 @@ def candidate_tracking_metrics(
     }
 
 
+def authorized_execution_timing_check(
+    requested_duration_s: float,
+    feedback_samples: list[dict[str, Any]],
+    *,
+    goal_tolerance_rad: float,
+    relative_tolerance: float = 0.20,
+) -> dict[str, Any]:
+    """Reject waypoint playback that ignores the authorized time axis."""
+    goal_hits = [
+        float(row["t_s"]) for row in feedback_samples
+        if float(row.get("goal_max_abs_error_rad", math.inf)) <= goal_tolerance_rad
+    ]
+    first_goal_s = None if not goal_hits else min(goal_hits)
+    ratio = None if first_goal_s is None or requested_duration_s <= 0.0 else first_goal_s / requested_duration_s
+    accepted = bool(ratio is not None and (1.0 - relative_tolerance) <= ratio <= (1.0 + relative_tolerance))
+    return {
+        "accepted": accepted,
+        "requested_duration_s": float(requested_duration_s),
+        "first_goal_tolerance_time_s": first_goal_s,
+        "actual_to_requested_ratio": ratio,
+        "relative_tolerance": float(relative_tolerance),
+        "reason": "timing_consistent" if accepted else "authorized_time_axis_not_followed",
+    }
+
+
+def execute_guarded_cartesian_reference_remainder(
+    robot: Any,
+    args: argparse.Namespace,
+    *,
+    processor: Any,
+    denoiser: Any,
+    target_y_m: float,
+) -> dict[str, Any]:
+    """Resume the formal straight reference with a timed Cartesian line move."""
+    if not hasattr(robot, "movel_line"):
+        raise RuntimeError("current robot .so does not expose movel_line")
+    start_pose = np.asarray(robot.get_status(), dtype=np.float64)
+    target_pose = start_pose.copy()
+    target_pose[1] = float(target_y_m)
+    distance = float(abs(target_pose[1] - start_pose[1]))
+    nominal_duration = distance / float(args.line_velocity_m_s)
+    timeout = max(float(args.motion_timeout_s), 1.8 * nominal_duration + 5.0)
+    require_confirmation(
+        bool(args.candidate_execute_confirm),
+        "Cartesian reference remainder is ready. Confirm clear workspace and emergency stop before resuming to goal.",
+    )
+    ret = robot.movel_line(
+        target_pose.tolist(), args.line_velocity_m_s, args.line_acc_m_s2, False, True
+    )
+    if ret not in (None, 0):
+        raise RuntimeError(f"reference remainder movel_line returned {ret}")
+    started = time.perf_counter()
+    samples: list[dict[str, Any]] = []
+    reached_at = None
+    minimum_guard = math.inf
+    max_tcp_speed = 0.0
+    previous_t = None
+    previous_xyz = None
+    while time.perf_counter() - started <= timeout:
+        now = time.perf_counter()
+        pose = np.asarray(robot.get_status(), dtype=np.float64)
+        guard_distance = execution_hard_guard_distance(processor, denoiser, args)
+        minimum_guard = min(minimum_guard, guard_distance)
+        speed = 0.0
+        if previous_t is not None and now > previous_t:
+            speed = float(np.linalg.norm(pose[:3] - previous_xyz) / (now - previous_t))
+            max_tcp_speed = max(max_tcp_speed, speed)
+        error = float(np.linalg.norm(pose[:3] - target_pose[:3]))
+        samples.append(
+            {
+                "t_s": now - started,
+                "actual_pose": pose.tolist(),
+                "position_error_m": error,
+                "tcp_speed_m_s": speed,
+                "hard_guard_distance_m": guard_distance,
+            }
+        )
+        if guard_distance <= args.guided_hard_stop_m:
+            return {
+                "status": "REFERENCE_REMAINDER_HARD_GUARD_STOPPED",
+                "reached": False,
+                "stop_return": maybe_move_stop(robot),
+                "minimum_hard_guard_distance_m": minimum_guard,
+                "samples": samples,
+            }
+        # A sustained speed far above the commanded Cartesian limit is fail-closed.
+        if len(samples) >= 3 and speed > 1.75 * args.line_velocity_m_s:
+            return {
+                "status": "REFERENCE_REMAINDER_OVERSPEED_STOPPED",
+                "reached": False,
+                "stop_return": maybe_move_stop(robot),
+                "observed_tcp_speed_m_s": speed,
+                "commanded_tcp_speed_m_s": args.line_velocity_m_s,
+                "samples": samples,
+            }
+        if error <= args.pose_tolerance_m:
+            reached_at = now if reached_at is None else reached_at
+            if now - reached_at >= args.settle_s:
+                elapsed = now - started
+                timing_ratio = elapsed / nominal_duration if nominal_duration > 1.0e-9 else 1.0
+                return {
+                    "status": "COMPLETED_GUARDED_CARTESIAN_REFERENCE_REMAINDER",
+                    "reached": True,
+                    "start_pose": start_pose.tolist(),
+                    "target_pose": target_pose.tolist(),
+                    "final_pose": pose.tolist(),
+                    "distance_m": distance,
+                    "commanded_velocity_m_s": args.line_velocity_m_s,
+                    "commanded_acceleration_m_s2": args.line_acc_m_s2,
+                    "nominal_constant_speed_duration_s": nominal_duration,
+                    "elapsed_s": elapsed,
+                    "elapsed_to_nominal_ratio": timing_ratio,
+                    "max_observed_tcp_speed_m_s": max_tcp_speed,
+                    "minimum_hard_guard_distance_m": minimum_guard,
+                    "samples": samples,
+                }
+        else:
+            reached_at = None
+        previous_t = now
+        previous_xyz = pose[:3].copy()
+        time.sleep(args.poll_s)
+    return {
+        "status": "REFERENCE_REMAINDER_TIMEOUT",
+        "reached": False,
+        "stop_return": maybe_move_stop(robot),
+        "minimum_hard_guard_distance_m": minimum_guard,
+        "samples": samples,
+    }
+
+
 def save_joint_waypoint_csv(path: Path, times: np.ndarray, qs: np.ndarray) -> None:
     rows = []
     for i, t_s in enumerate(times):
@@ -1223,10 +1353,19 @@ def execute_authorized_trajectory_offline_track(
         feedback_samples,
         minimum_motion_rad=args.candidate_min_observed_motion_rad,
     )
+    log["timing_check"] = authorized_execution_timing_check(
+        requested_duration,
+        feedback_samples,
+        goal_tolerance_rad=args.candidate_goal_tolerance_rad,
+    )
     log["elapsed_s"] = time.perf_counter() - started
     if not goal_check["reached"]:
         raise RuntimeError(f"dynamic candidate offline track did not reach goal: {goal_check}")
-    log["status"] = "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
+    log["status"] = (
+        "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
+        if log["timing_check"]["accepted"]
+        else "FAILED_AUTHORIZED_TRAJECTORY_TIMING"
+    )
     return log
 
 
@@ -1248,7 +1387,8 @@ def execute_fast_candidate_offline_track(
         playback_duration_s=args.candidate_playback_duration_s,
         execution_label="local candidate",
     )
-    result["status"] = "COMPLETED_DYNAMIC_CANDIDATE_EXECUTION"
+    if result["status"] == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+        result["status"] = "COMPLETED_DYNAMIC_CANDIDATE_EXECUTION"
     return result
 
 
@@ -3045,6 +3185,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             playback_duration_s=None,
                             execution_label="authorized repair + rejoin",
                         )
+                        if full_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+                            raise RuntimeError(
+                                "repair+rejoin did not follow its authorized time axis: "
+                                f"{full_execution_summary.get('timing_check')}"
+                            )
                         full_execution_summary["workspace_deviation_metrics"] = workspace_deviation
                         write_json(candidate_dir / "live_full_candidate_execution_log.json", full_execution_summary)
                         log["events"].append({"type": "LIVE_REPAIR_REJOIN_EXECUTED", "execution": full_execution_summary})
@@ -3101,15 +3246,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         write_json(trial_dir / "reference_resume_authorization.json", reference_resume_summary)
                         log["events"].append({"type": reference_resume_summary["status"], "authorization": reference_resume_summary})
                         if reference_resume_summary["authorized"]:
-                            reference_remainder_execution_summary = execute_authorized_trajectory_offline_track(
+                            reference_remainder_execution_summary = execute_guarded_cartesian_reference_remainder(
                                 robot,
-                                remainder_csv,
                                 args,
                                 processor=processor,
                                 denoiser=denoiser,
-                                playback_duration_s=None,
-                                controller_period_s=reference.dt_median,
-                                execution_label="authorized reference remainder",
+                                target_y_m=args.y_goal,
                             )
                             write_json(trial_dir / "reference_remainder_execution_log.json", reference_remainder_execution_summary)
                             log["events"].append(
@@ -3183,7 +3325,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         else:
             final_status = "TRIGGERED_AND_REPAIR_REJOIN_EXECUTION_FAILED"
     if reference_remainder_execution_summary is not None:
-        if reference_remainder_execution_summary.get("status") == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+        if reference_remainder_execution_summary.get("status") == "COMPLETED_GUARDED_CARTESIAN_REFERENCE_REMAINDER":
             final_status = "TRIGGERED_REPAIR_REJOIN_RESUMED_AND_GOAL_REACHED"
         else:
             final_status = "TRIGGERED_REPAIR_REJOIN_REFERENCE_RESUME_FAILED"
