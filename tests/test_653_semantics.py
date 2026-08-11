@@ -273,6 +273,28 @@ def test_fresh_obstacle_fit_fails_closed_on_short_capture():
     assert result["reason"] == "insufficient_fresh_frames"
 
 
+def test_pca_multisphere_covers_every_point_and_splits_elongated_cluster():
+    x = np.linspace(-0.20, 0.20, 81)
+    points = np.column_stack((x, 0.02 * np.sin(10 * x), 0.015 * np.cos(8 * x)))
+    geometry = trial.fit_pca_multisphere(points, fit_margin_m=0.005, max_components=4)
+    assert geometry["covered"]
+    assert geometry["coverage_ratio"] == 1.0
+    assert 2 <= geometry["component_count"] <= 4
+    assert geometry["multi_sphere_max_radius"] < geometry["single_sphere_radius"]
+
+
+def test_multisphere_forecast_keeps_component_count_and_shared_velocity():
+    common = importlib.import_module("experiments.new.6_4.common_64")
+    centers = np.array([[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]])
+    velocity = np.array([0.2, -0.1, 0.0])
+    forecast = common.constant_multisphere_forecast(centers, np.array([0.03, 0.04]), velocity, object_id=7)
+    occupancy = forecast.occupancy_at(0.5)
+    assert len(occupancy.spheres) == 2
+    assert {sphere.object_id for sphere in occupancy.spheres} == {7}
+    np.testing.assert_allclose(occupancy.spheres[0].center, centers[0] + 0.5 * velocity)
+    np.testing.assert_allclose(occupancy.spheres[1].center, centers[1] + 0.5 * velocity)
+
+
 def test_dynamic_window_speed_and_hysteresis_tolerate_one_slow_sample():
     args = SimpleNamespace(
         default_obstacle_radius_m=0.055, dynamic_speed_window=5,

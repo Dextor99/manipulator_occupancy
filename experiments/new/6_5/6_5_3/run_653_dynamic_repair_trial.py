@@ -45,9 +45,12 @@ EXP64 = ROOT / "experiments" / "new" / "6_4"
 common64 = importlib.import_module("experiments.new.6_4.common_64")
 repair_v3_mod = importlib.import_module("experiments.new.6_4.repair.repair_v3")
 constant_forecast = common64.constant_forecast
+constant_multisphere_forecast = common64.constant_multisphere_forecast
 load_stage4_config = common64.load_stage4_config
 load_stage4_surface_model = common64.load_surface_model
 make_risk_stack = common64.make_risk_stack
+git_commit_hash = common64.git_commit_hash
+git_is_dirty = common64.git_is_dirty
 run_repair_v3 = repair_v3_mod.run_repair_v3
 from execute_652_planar_y_guarded import (  # noqa: E402
     call_cartesian_motion,
@@ -155,6 +158,8 @@ FORMAL_PROTOCOL = {
     "post_stop_recheck_duration_s": 0.6,
     "post_stop_recheck_min_frames": 3,
     "post_stop_recheck_min_span_s": 0.25,
+    "multisphere_fit_margin_m": 0.005,
+    "multisphere_max_components": 4,
     "line_velocity_m_s": 0.020,
     "line_acc_m_s2": 0.05,
 }
@@ -694,7 +699,7 @@ def wait_for_candidate_goal(
     motion_timeout_s: float,
     poll_s: float,
     min_motion_rad: float,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], np.ndarray | None]:
     started = time.perf_counter()
     samples: list[dict[str, Any]] = []
     initial = np.asarray(robot.get_joint(), dtype=np.float64)
@@ -844,9 +849,20 @@ def run_fast_repair(
     reference_goal: tuple[np.ndarray, np.ndarray, np.ndarray],
     rejoin_goals: list[tuple[float, tuple[np.ndarray, np.ndarray, np.ndarray]]] | None,
     obstacle_audit: dict[str, Any],
+    multisphere_geometry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
-    forecast = constant_forecast(center, velocity, radius)
+    if multisphere_geometry is None:
+        forecast = constant_forecast(center, velocity, radius)
+        geometry_mode = "single_sphere"
+    else:
+        forecast = constant_multisphere_forecast(
+            np.asarray(multisphere_geometry["component_centers"], dtype=np.float64),
+            np.asarray(multisphere_geometry["component_base_radii"], dtype=np.float64),
+            velocity,
+            object_id=int(obstacle_audit.get("track_id") or 1),
+        )
+        geometry_mode = "fresh_pca_multisphere"
     head, tail, durations, p_inner, q_goal = make_local_reference(
         q_now, qd_now, args, reference_goal=reference_goal
     )
@@ -871,6 +887,7 @@ def run_fast_repair(
         minimum_distance_improvement=1.10 * args.min_clearance_improvement_m,
     )
     repair_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
+    repair_step_ok = int(result.accepted_steps) > 0
     repair_trajectory = result.trajectory
     candidate_trajectory: Any = repair_trajectory
     reference_full_trajectory: Any = reference_trajectory
@@ -918,36 +935,57 @@ def run_fast_repair(
             break
     if selected_rejoin_offset_s is None and np.max(np.abs(result.tail_delta_q)) > 0.0:
         q_goal = result.tail_state[:, 0].copy()
-    candidate_verify_started = time.perf_counter()
-    verification = verifier.verify(
-        candidate_trajectory,
-        forecast,
-        current_q=q_now,
-        current_qd=qd_now,
-        current_qdd=np.zeros(6),
-        q_goal=q_goal,
-        solver_success=True,
-    )
-    candidate_verification_ms = (time.perf_counter() - candidate_verify_started) * 1000.0
-    reference_verify_started = time.perf_counter()
-    reference_verification = verifier.verify(
-        reference_full_trajectory,
-        forecast,
-        current_q=q_now,
-        current_qd=qd_now,
-        current_qdd=np.zeros(6),
-        q_goal=q_goal,
-        solver_success=True,
-    )
-    reference_verification_ms = (time.perf_counter() - reference_verify_started) * 1000.0
+    diagnostic_reference_verification_ms = 0.0
+    if not repair_step_ok:
+        # The candidate is exactly the reference, so execution is already
+        # impossible. Finish the online decision now and run at most one
+        # reference verification afterwards for diagnostics only.
+        online_elapsed_ms = repair_elapsed_ms
+        reference_verify_started = time.perf_counter()
+        reference_verification = verifier.verify(
+            reference_full_trajectory,
+            forecast,
+            current_q=q_now,
+            current_qd=qd_now,
+            current_qdd=np.zeros(6),
+            q_goal=q_goal,
+            solver_success=True,
+        )
+        diagnostic_reference_verification_ms = (time.perf_counter() - reference_verify_started) * 1000.0
+        verification = reference_verification
+        candidate_verification_ms = 0.0
+        reference_verification_ms = 0.0
+    else:
+        candidate_verify_started = time.perf_counter()
+        verification = verifier.verify(
+            candidate_trajectory,
+            forecast,
+            current_q=q_now,
+            current_qd=qd_now,
+            current_qdd=np.zeros(6),
+            q_goal=q_goal,
+            solver_success=True,
+        )
+        candidate_verification_ms = (time.perf_counter() - candidate_verify_started) * 1000.0
+        reference_verify_started = time.perf_counter()
+        reference_verification = verifier.verify(
+            reference_full_trajectory,
+            forecast,
+            current_q=q_now,
+            current_qd=qd_now,
+            current_qdd=np.zeros(6),
+            q_goal=q_goal,
+            solver_success=True,
+        )
+        reference_verification_ms = (time.perf_counter() - reference_verify_started) * 1000.0
     post_check_started = time.perf_counter()
     clearance_gain = float(verification.min_distance - reference_verification.min_distance)
     candidate_samples = candidate_trajectory.dense_sample(0.02).q
     reference_samples = reference_full_trajectory.dense_sample(0.02).q
     max_delta_q = float(np.max(np.abs(candidate_samples - reference_samples)))
     post_check_ms = (time.perf_counter() - post_check_started) * 1000.0
-    online_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
-    repair_step_ok = int(result.accepted_steps) > 0
+    if repair_step_ok:
+        online_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
     rejoin_ok = selected_rejoin_offset_s is not None
     accepted = bool(
         online_elapsed_ms <= args.fast_budget_ms
@@ -969,7 +1007,7 @@ def run_fast_repair(
         rejection_reasons.append("verification_checks_failed:" + ",".join(failed_checks))
     if not repair_step_ok:
         rejection_reasons.append("no_accepted_repair_step")
-    if not rejoin_ok:
+    if repair_step_ok and not rejoin_ok:
         rejection_reasons.append("safe_rejoin_not_found")
     if clearance_gain < args.min_clearance_improvement_m:
         rejection_reasons.append("insufficient_clearance_improvement")
@@ -1025,6 +1063,8 @@ def run_fast_repair(
         "repair_elapsed_ms": repair_elapsed_ms,
         "candidate_verification_ms": candidate_verification_ms,
         "reference_verification_ms": reference_verification_ms,
+        "diagnostic_reference_verification_ms": diagnostic_reference_verification_ms,
+        "diagnostic_total_wall_ms": (time.perf_counter() - online_started) * 1000.0,
         "post_check_ms": post_check_ms,
         "budget_exhausted": result.budget_exhausted,
         "tail_delta_q_rad": result.tail_delta_q.tolist(),
@@ -1070,6 +1110,8 @@ def run_fast_repair(
         "obstacle_center": center.tolist(),
         "obstacle_velocity": velocity.tolist(),
         "obstacle_radius": radius,
+        "obstacle_geometry_mode": geometry_mode,
+        "multisphere_geometry": multisphere_geometry,
         "obstacle_association": obstacle_audit,
         "risk_links": sorted(risk_links),
         "candidate_csv": str(candidate_dir / "fast_ccro_nubs_candidate.csv"),
@@ -1184,6 +1226,56 @@ def fit_fresh_obstacle_motion(samples: list[dict[str, Any]], *, minimum_frames: 
     }
 
 
+def fit_pca_multisphere(points: np.ndarray, *, fit_margin_m: float = 0.005, max_components: int = 4) -> dict[str, Any]:
+    """Cover one fresh cluster by consecutive PCA-axis spheres with a coverage audit."""
+    values = np.asarray(points, dtype=np.float64)
+    if values.ndim != 2 or values.shape[1] != 3 or len(values) < 3 or not np.all(np.isfinite(values)):
+        raise ValueError("fresh cluster points must be a finite (N,3) array with N >= 3")
+    mean = np.mean(values, axis=0)
+    centered = values - mean
+    _, _, vh = np.linalg.svd(centered, full_matrices=False)
+    axis = np.asarray(vh[0], dtype=np.float64)
+    projection = centered @ axis
+    axial_length = float(np.ptp(projection))
+    transverse = centered - projection[:, None] * axis[None, :]
+    transverse_radius = max(float(np.percentile(np.linalg.norm(transverse, axis=1), 90)), 1.0e-3)
+    component_count = int(np.clip(np.ceil(axial_length / max(2.0 * transverse_radius, 1.0e-6)), 1, max_components))
+    component_count = min(component_count, len(values))
+    ordered_groups = np.array_split(np.argsort(projection), component_count)
+    centers = []
+    radii = []
+    for indices in ordered_groups:
+        local = values[indices]
+        center = np.mean(local, axis=0)
+        radius = float(np.max(np.linalg.norm(local - center[None, :], axis=1)) + fit_margin_m)
+        centers.append(center)
+        radii.append(radius)
+    center_values = np.asarray(centers, dtype=np.float64)
+    radius_values = np.asarray(radii, dtype=np.float64)
+    signed_union_distance = np.min(
+        np.linalg.norm(values[:, None, :] - center_values[None, :, :], axis=2) - radius_values[None, :],
+        axis=1,
+    )
+    coverage_ratio = float(np.mean(signed_union_distance <= 1.0e-9))
+    single_center = np.mean(values, axis=0)
+    single_radius = float(np.max(np.linalg.norm(values - single_center[None, :], axis=1)))
+    return {
+        "source_point_count": int(len(values)),
+        "component_count": int(component_count),
+        "component_centers": center_values,
+        "component_base_radii": radius_values,
+        "pca_axis": axis,
+        "axial_length_m": axial_length,
+        "transverse_radius_m": transverse_radius,
+        "fit_margin_m": float(fit_margin_m),
+        "max_point_to_union_distance": float(np.max(signed_union_distance)),
+        "coverage_ratio": coverage_ratio,
+        "single_sphere_radius": single_radius,
+        "multi_sphere_max_radius": float(np.max(radius_values)),
+        "covered": bool(coverage_ratio >= 1.0 and np.max(signed_union_distance) <= 1.0e-9),
+    }
+
+
 def capture_post_stop_obstacle(
     processor: Any,
     state_reader: Any,
@@ -1198,6 +1290,7 @@ def capture_post_stop_obstacle(
     started = time.perf_counter()
     samples: list[dict[str, Any]] = []
     frame_audit: list[dict[str, Any]] = []
+    latest_points: np.ndarray | None = None
     while time.perf_counter() - started < args.post_stop_recheck_duration_s:
         frame = processor.process_frame()
         timestamp = float(getattr(frame, "timestamp", time.time()))
@@ -1234,6 +1327,9 @@ def capture_post_stop_obstacle(
         if not associated:
             continue
         detection = make_occupancy_object(np.asarray(clusters[index].points), timestamp=timestamp, margin=0.0)
+        latest_points = np.asarray(clusters[index].points, dtype=np.float64).copy()
+        frame_audit[-1]["center"] = np.asarray(detection.center, dtype=np.float64).tolist()
+        frame_audit[-1]["radius"] = float(detection.radius)
         samples.append(
             {
                 "timestamp": timestamp,
@@ -1249,7 +1345,7 @@ def capture_post_stop_obstacle(
     )
     result["capture_elapsed_s"] = time.perf_counter() - started
     result["frame_count"] = len(frame_audit)
-    return result, frame_audit
+    return result, frame_audit, latest_points
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -1272,6 +1368,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "formal_protocol_id": FORMAL_PROTOCOL_ID,
             "violations": protocol_violations,
             "parameters": vars(args),
+            "git_commit": git_commit_hash(),
+            "git_dirty": git_is_dirty(),
         }
         write_json(trial_dir / "summary.json", blocked)
         raise RuntimeError("formal D1/D2 protocol mismatch: " + "; ".join(protocol_violations))
@@ -1302,6 +1400,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "formal_protocol_id": FORMAL_PROTOCOL_ID,
         "protocol_scene_independent": True,
         "events": [],
+        "git_commit": git_commit_hash(),
+        "git_dirty": git_is_dirty(),
     }
     if args.mode not in {"shadow", "dynamic-track-audit"} and args.operator_phrase != REQUIRED_OPERATOR_PHRASE:
         log["status"] = "BLOCKED_BAD_OPERATOR_PHRASE"
@@ -1941,7 +2041,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 fresh_recheck = None
                 if args.mode in robot_motion_modes:
                     time.sleep(max(args.post_stop_settle_s, 0.0))
-                    fresh_recheck, fresh_frames = capture_post_stop_obstacle(
+                    fresh_recheck, fresh_frames, fresh_latest_points = capture_post_stop_obstacle(
                         processor,
                         state_reader,
                         denoiser,
@@ -1950,6 +2050,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         trigger_velocity=np.asarray(obstacle["window_velocity"], dtype=np.float64),
                         trigger_timestamp=timestamp,
                     )
+                    multisphere_geometry = None
+                    if fresh_recheck["accepted"] and fresh_latest_points is not None:
+                        multisphere_geometry = fit_pca_multisphere(
+                            fresh_latest_points,
+                            fit_margin_m=args.multisphere_fit_margin_m,
+                            max_components=args.multisphere_max_components,
+                        )
+                        if not multisphere_geometry["covered"]:
+                            fresh_recheck = {
+                                **fresh_recheck,
+                                "accepted": False,
+                                "reason": "fresh_multisphere_coverage_failed",
+                            }
+                        np.save(trial_dir / "fresh_latest_cluster_points.npy", fresh_latest_points)
+                        write_json(trial_dir / "fresh_multisphere.json", multisphere_geometry)
                     write_json(trial_dir / "post_stop_fresh_recheck.json", {"result": fresh_recheck, "frames": fresh_frames})
                     log["events"].append(
                         {
@@ -1977,6 +2092,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     obstacle["window_velocity"] = np.asarray(fresh_recheck["velocity"], dtype=np.float64)
                     obstacle["inflated_radius"] = max(float(fresh_recheck["radius"]), args.default_obstacle_radius_m)
                     obstacle["fresh_recheck"] = fresh_recheck
+                    obstacle["multisphere_geometry"] = multisphere_geometry
                 if reference is None:
                     raise RuntimeError("a recorded reference is required to construct a Fast local repair")
                 # Both active modes stop before repair. Anchor the candidate at
@@ -2023,6 +2139,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     reference_goal=reference_goal,
                     rejoin_goals=rejoin_goals,
                     obstacle_audit=obstacle,
+                    multisphere_geometry=obstacle.get("multisphere_geometry"),
                 )
                 log["events"].append({"type": candidate_summary["status"], "frame": frame_index, "t_s": now_rel, "candidate": candidate_summary})
                 if args.mode == "moving-shadow-stop":
@@ -2379,6 +2496,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--post-stop-recheck-duration-s", type=float, default=0.6)
     parser.add_argument("--post-stop-recheck-min-frames", type=int, default=3)
     parser.add_argument("--post-stop-recheck-min-span-s", type=float, default=0.25)
+    parser.add_argument("--multisphere-fit-margin-m", type=float, default=0.005)
+    parser.add_argument("--multisphere-max-components", type=int, default=4)
     parser.add_argument("--candidate-execute-confirm", action="store_true", default=True)
     parser.add_argument("--no-candidate-execute-confirm", dest="candidate_execute_confirm", action="store_false")
     return parser

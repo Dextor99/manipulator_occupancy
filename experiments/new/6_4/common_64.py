@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
 from experiments.exp_ccro_stage4 import _baseline, _limits, _load, _states  # noqa: E402
 from planning.dynamic_optimizer import DynamicRiskNUBSOptimizer  # noqa: E402
 from planning.nubs_trajectory import NUBSTrajectory6D  # noqa: E402
-from planning.obstacle_forecast import ConstantVelocitySphereForecast, ShiftedForecast  # noqa: E402
+from planning.obstacle_forecast import CompositeForecast, ConstantVelocitySphereForecast, ShiftedForecast  # noqa: E402
 from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
 from planning.spatiotemporal_risk import DynamicConfigurationRisk, SpatioTemporalRiskEvaluator  # noqa: E402
 from planning.verifier import DynamicTrajectoryVerifier  # noqa: E402
@@ -245,6 +245,38 @@ def constant_forecast(center: np.ndarray, velocity: np.ndarray, radius: float):
         velocity_radius_scale=0.080,
         beyond_horizon="hold_inflate",
     )
+
+
+def constant_multisphere_forecast(
+    centers: np.ndarray,
+    radii: np.ndarray,
+    velocity: np.ndarray,
+    *,
+    object_id: int = 1,
+):
+    """Use the standard Fast inflation for a conservative union of local spheres."""
+    center_values = np.asarray(centers, dtype=np.float64)
+    radius_values = np.asarray(radii, dtype=np.float64)
+    if center_values.ndim != 2 or center_values.shape[1] != 3:
+        raise ValueError("centers must have shape (M, 3)")
+    if radius_values.shape != (len(center_values),) or len(center_values) == 0:
+        raise ValueError("radii must have shape (M,) with M > 0")
+    forecasts = [
+        ConstantVelocitySphereForecast(
+            center,
+            np.asarray(velocity, dtype=np.float64),
+            float(radius),
+            cfg.FORECAST_HORIZON,
+            object_id=int(object_id),
+            margin=0.035,
+            uncertainty=0.015,
+            uncertainty_growth=0.0030,
+            velocity_radius_scale=0.080,
+            beyond_horizon="hold_inflate",
+        )
+        for center, radius in zip(center_values, radius_values)
+    ]
+    return CompositeForecast(forecasts)
 
 
 def ground_truth_forecast(center: np.ndarray, velocity: np.ndarray, radius: float):

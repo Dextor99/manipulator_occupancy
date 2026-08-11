@@ -193,6 +193,21 @@ produces `REJECTED_FRESH_RECHECK` and keeps the robot stopped. The acquisition
 time is logged separately; the unchanged 150 ms budget starts with Fast repair.
 `post_stop_fresh_recheck.json` records every association decision.
 
+The latest associated fresh cluster (only the final frame, never an
+uncompensated multi-frame union) is decomposed along its first PCA axis into
+one to four local spheres. Every observed point must be covered by the sphere
+union; the 5 mm fit margin is geometric only, while the existing Fast forecast
+continues to apply its unchanged margin and uncertainty. The audit is saved as
+`fresh_multisphere.json`, and the exact source points as
+`fresh_latest_cluster_points.npy`. STRO retains its fast conservative
+object-level sphere; multi-sphere refinement is used only after stopping.
+
+If repair returns `accepted_steps=0`, the online decision ends immediately.
+At most one reference verification may run afterwards as diagnostics and is
+reported as `diagnostic_reference_verification_ms`, outside
+`online_pipeline_elapsed_ms`. Every trial summary also records `git_commit`
+and `git_dirty` for source/result traceability.
+
 For D1, move the obstacle laterally across a future robot swept region,
 approximately perpendicular or oblique to the robot reference motion.
 Do not move it head-on along the reference line toward the current gripper.
