@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import importlib
 import json
 from pathlib import Path
+import subprocess
 import sys
 import time
 import traceback
@@ -28,12 +29,27 @@ trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repai
 
 DEFAULT_TRAJECTORY = (
     ROOT
-    / "results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r35"
+    / "results/new/6_5/6_5_3/dynamic_repair_formal/trials/D1_crossing_body_r01"
     / "local_execution_authorization/authorized_local_repair.csv"
 )
 DEFAULT_REFERENCE = ROOT / "results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv"
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/empty_scene_local_track_calibration"
 ALIGN_PHRASE = "CCRO_653_ALIGN_AUTHORIZED_START_APPROVED"
+
+
+def execution_blocking_worktree_entries() -> list[str]:
+    """Allow new result artifacts, but reject code/config worktree changes."""
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ["git_status_failed"]
+    entries = [line for line in result.stdout.splitlines() if line.strip()]
+    return [line for line in entries if not (line.startswith("?? ") and line[3:].startswith("results/"))]
 
 
 def load_reference_joints(path: Path) -> np.ndarray:
@@ -101,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace) -> dict:
     output_dir = args.output.resolve() / "start_alignment" / f"r{args.repeat:02d}"
     output_dir.mkdir(parents=True, exist_ok=True)
+    blocking_worktree_entries = execution_blocking_worktree_entries()
     log = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "INITIALIZING",
@@ -112,6 +129,7 @@ def run(args: argparse.Namespace) -> dict:
         "joint_acc": float(args.joint_acc),
         "git_commit": trial.git_commit_hash(),
         "git_dirty": trial.git_is_dirty(),
+        "execution_blocking_worktree_entries": blocking_worktree_entries,
         "required_operator_phrase": ALIGN_PHRASE,
     }
     if not args.execute:
@@ -122,7 +140,7 @@ def run(args: argparse.Namespace) -> dict:
         log["status"] = "BLOCKED_BAD_OPERATOR_PHRASE"
         trial.write_json(output_dir / "summary.json", log)
         return log
-    if log["git_dirty"]:
+    if blocking_worktree_entries:
         log["status"] = "BLOCKED_DIRTY_WORKTREE"
         trial.write_json(output_dir / "summary.json", log)
         return log

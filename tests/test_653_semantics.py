@@ -828,6 +828,24 @@ def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
     assert len(segment) == 4
 
 
+def test_v2_alignment_defaults_to_formal_d1_local_candidate():
+    args = alignment.build_parser().parse_args(["--repeat", "1"])
+    assert "dynamic_repair_formal/trials/D1_crossing_body_r01" in str(args.trajectory_csv)
+    assert not args.execute
+
+
+def test_alignment_allows_only_untracked_result_artifacts(monkeypatch):
+    monkeypatch.setattr(
+        alignment.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="?? results/new/alignment/\n M config/ccro_stage4.yaml\n",
+        ),
+    )
+    assert alignment.execution_blocking_worktree_entries() == [" M config/ccro_stage4.yaml"]
+
+
 def test_candidate_return_reverses_only_authorized_waypoint_geometry():
     times = np.array([0.0, 0.5, 1.0])
     qs = np.zeros((3, 6))

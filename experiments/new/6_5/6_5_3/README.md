@@ -50,6 +50,12 @@ Offline Track execution the existing 0.10 m RGB-D hard guard remains active.
 Fresh #3 must authorize the bridge; otherwise the robot remains at the local
 repair tail. This calibration never invokes a second Fast solve.
 
+If the start does not match, use `align_653_authorized_start.py`. Its v2
+default is the same formal D1 r01 local candidate, and it traverses only the
+matched recorded-reference segment rather than issuing a free-space movej.
+New files under `results/` do not block this positioning audit; any uncommitted
+source or configuration change still does.
+
 ## Empty-scene local Offline Track calibration
 
 Before the first live dynamic execution, calibrate only the already authorized
