@@ -20,8 +20,9 @@ The experiment reuses the safe 6.5.2 tabletop reference:
   `clusters.csv` plus `tracks.csv`.
 - `moving-shadow-stop`: command the recorded one-way low-speed reference line, trigger Fast
   CCRO-NUBS, then stop; perform post-planning authorization in shadow only.
-- `live-stop-replan-execute`: currently stops and plans but is fail-closed before
-  execution while the shadow-authorization protocol is being validated.
+- `live-stop-replan-execute`: after explicit opt-in and phrase checks, executes
+  only a local repair revalidated on Fresh #2 at the exact requested playback
+  duration, then stops at the repaired state. Automatic rejoin is not enabled.
 
 Use `moving-shadow-stop` as the required pilot before enabling true online
 trajectory switching.
@@ -228,15 +229,20 @@ object-level sphere; multi-sphere refinement is used only after stopping.
 After `LOCAL_REPAIR_READY`, a second post-planning RGB-D acquisition requires
 at least three associated frames spanning 0.25 s. It rebuilds the multisphere
 geometry and velocity with the candidate execution start as the new forecast
-time origin. The unchanged 1.25--2.00 s rejoin window is searched, a C2 bridge
-is appended, and the entire repair-plus-bridge trajectory is verified again
-from tau zero. Success is recorded as `EXECUTION_AUTHORIZED` and emits the
-`EXECUTION_AUTHORIZED_SHADOW` event; this pilot still sends no execution
-command. Any association, geometry, rejoin, motion, or full-verification
-failure produces `POST_PLAN_RECHECK_FAILED` and holds the robot stopped. No
-automatic second Fast repair is attempted. Fresh #2 acquisition and
-authorization latency are logged separately from the frozen 150 ms Fast
-budget.
+time origin. A local-only gate first time-scales the 1 s repair to the exact
+requested playback duration and revalidates that same physical-time trajectory.
+Only success writes `local_execution_authorization/authorized_local_repair.csv`
+and records `LOCAL_EXECUTION_AUTHORIZED`; the executor never reads the raw Fast
+CSV. During Offline Track playback, the existing 0.10 m RGB-D hard guard remains
+active and immediately invokes the validated stop interface on violation.
+
+The original full repair-plus-rejoin shadow gate is retained as a separate
+diagnostic: it searches the unchanged 1.25--2.00 s rejoin window and verifies a
+C2 bridge. Failure of immediate rejoin no longer invalidates an independently
+safe local segment, but automatic rejoin is not attempted in the first live
+pilot. Any local recheck, time-axis, geometry, motion, or distance failure keeps
+the robot stopped. Fresh #2 acquisition and authorization latency remain
+separate from the frozen 150 ms Fast budget.
 
 A 20-repeat r26 A/B found exact agreement between serial and threaded paired
 verification, but threading was slower (67.75 ms versus 55.18 ms median).

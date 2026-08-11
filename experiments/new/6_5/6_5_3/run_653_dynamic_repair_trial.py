@@ -9,9 +9,9 @@ This first real-system implementation is intentionally staged:
 * ``--mode moving-shadow-stop`` additionally commands the familiar 6.5.2
   low-speed reference line and stops on trigger/hold.  It still does not switch
   to the candidate trajectory; it is the required pilot before live switching.
-* ``--mode live-stop-replan-execute`` is currently fail-closed after candidate
-  acceptance. Live execution remains disabled until a fresh post-planning
-  RGB-D recheck is implemented and validated.
+* ``--mode live-stop-replan-execute`` can execute only an explicitly saved
+  local-repair trajectory revalidated on Fresh #2 at the exact playback time
+  scale. It stops at the repaired state; automatic rejoin remains disabled.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ from perception.geometry_fit import (  # noqa: E402
     make_occupancy_object,
 )
 from perception.occupancy_tracker import OccupancyTracker  # noqa: E402
-from planning.nubs_trajectory import CompositeTrajectory6D, NUBSTrajectory6D  # noqa: E402
+from planning.nubs_trajectory import CompositeTrajectory6D, NUBSTrajectory6D, TrajectorySamples  # noqa: E402
 from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
 from risk.prediction import RiskSphere, predict_risk_spheres  # noqa: E402
 from risk.safety_policy import SafetyPolicy  # noqa: E402
@@ -832,10 +832,91 @@ def load_fast_candidate_csv(path: Path) -> tuple[np.ndarray, np.ndarray]:
     return np.asarray(times, dtype=np.float64), np.asarray(qs, dtype=np.float64)
 
 
-def wait_for_candidate_goal(
+def reconstruct_saved_nubs_candidate(path: Path, *, segments: int) -> NUBSTrajectory6D:
+    """Reconstruct a saved NUBS candidate from boundary samples for offline replay."""
+    rows: list[dict[str, str]] = []
+    with path.open("r", newline="", encoding="utf-8") as handle:
+        rows.extend(csv.DictReader(handle))
+    if len(rows) < 2 or segments < 1:
+        raise ValueError("saved candidate needs at least two rows and one segment")
+    times = np.asarray([float(row["t_s"]) for row in rows], dtype=np.float64)
+    q = np.asarray([[float(row[f"q{i}_rad"]) for i in range(1, 7)] for row in rows], dtype=np.float64)
+    qd = np.asarray([[float(row[f"qd{i}_rad_s"]) for i in range(1, 7)] for row in rows], dtype=np.float64)
+    qdd = np.asarray([[float(row[f"qdd{i}_rad_s2"]) for i in range(1, 7)] for row in rows], dtype=np.float64)
+    boundary_times = np.linspace(float(times[0]), float(times[-1]), int(segments) + 1)
+    boundary_q = np.column_stack([np.interp(boundary_times, times, q[:, j]) for j in range(6)])
+    durations = np.diff(boundary_times)
+    head = NUBSTrajectory6D.make_boundary_state(q[0], qd[0], qdd[0])
+    tail = NUBSTrajectory6D.make_boundary_state(q[-1], qd[-1], qdd[-1])
+    return NUBSTrajectory6D().generate(boundary_q[1:-1], head, tail, durations)
+
+
+class TimeScaledTrajectory6D:
+    """Expose one geometric trajectory on an explicitly scaled physical clock."""
+
+    def __init__(self, source: Any, execution_duration_s: float) -> None:
+        source_duration = float(source.total_duration)
+        if source_duration <= 0.0 or execution_duration_s <= 0.0:
+            raise ValueError("trajectory durations must be positive")
+        self.source = source
+        self.source_duration = source_duration
+        self.total_duration = float(execution_duration_s)
+        self.time_scale = self.total_duration / self.source_duration
+
+    def evaluate(self, time_s: float, derivative_order: int = 0) -> np.ndarray:
+        source_time = float(np.clip(time_s, 0.0, self.total_duration)) / self.time_scale
+        return np.asarray(self.source.evaluate(source_time, derivative_order), dtype=np.float64) / (
+            self.time_scale ** derivative_order
+        )
+
+    def sample(self, times: np.ndarray, max_derivative: int = 3) -> TrajectorySamples:
+        values = np.asarray(times, dtype=np.float64)
+        source_samples = self.source.sample(values / self.time_scale, max_derivative=max_derivative)
+        return TrajectorySamples(
+            times=values.copy(),
+            q=source_samples.q,
+            qd=source_samples.qd / self.time_scale,
+            qdd=source_samples.qdd / (self.time_scale**2),
+            jerk=source_samples.jerk / (self.time_scale**3),
+        )
+
+    def dense_sample(self, time_step: float = 0.01) -> TrajectorySamples:
+        count = max(2, int(np.ceil(self.total_duration / time_step)) + 1)
+        return self.sample(np.linspace(0.0, self.total_duration, count))
+
+
+def execution_hard_guard_distance(processor: Any, denoiser: Any, args: argparse.Namespace) -> float:
+    """Measure the existing all-link raw-cloud guard during candidate playback."""
+    frame = processor.process_frame()
+    scene_points = np.asarray(frame.scene_points, dtype=np.float64)
+    robot_points = np.asarray(frame.robot_points, dtype=np.float64)
+    if denoiser is not None:
+        scene_points = denoiser.filter(scene_points)
+    plane_removal = None
+    if args.remove_planes:
+        plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
+    clustered = FastClusteringFilter(
+        scene_points,
+        robot_points,
+        workspace=getattr(processor, "_workspace", None),
+        plane_removal=plane_removal,
+        eps=args.cluster_eps,
+        min_samples=args.cluster_min_samples,
+        min_points=args.cluster_min_points,
+        min_volume=args.cluster_min_volume,
+    )
+    clusters = filter_guard_clusters(list(clustered.clusters), args)
+    distance, _, _, _, _ = _find_nearest_cluster_distance_detail(robot_points, clusters, [])
+    return float(distance)
+
+
+def wait_for_candidate_goal_guarded(
     robot: Any,
     q_goal: np.ndarray,
     *,
+    processor: Any,
+    denoiser: Any,
+    args: argparse.Namespace,
     goal_tolerance_rad: float,
     min_execution_wait_s: float,
     motion_timeout_s: float,
@@ -847,11 +928,14 @@ def wait_for_candidate_goal(
     initial = np.asarray(robot.get_joint(), dtype=np.float64)
     last = initial.copy()
     max_motion = 0.0
+    minimum_guard_distance = math.inf
     while time.perf_counter() - started <= motion_timeout_s:
         now = time.perf_counter()
         last = np.asarray(robot.get_joint(), dtype=np.float64)
         err = joint_error(last, q_goal)
         max_motion = max(max_motion, float(np.max(np.abs(last - initial))))
+        guard_distance = execution_hard_guard_distance(processor, denoiser, args)
+        minimum_guard_distance = min(minimum_guard_distance, guard_distance)
         samples.append(
             {
                 "t_s": now - started,
@@ -859,8 +943,25 @@ def wait_for_candidate_goal(
                 "goal_l2_error_rad": err["l2_rad"],
                 "goal_max_abs_error_rad": err["max_abs_rad"],
                 "max_motion_from_start_rad": max_motion,
+                "hard_guard_distance_m": guard_distance,
             }
         )
+        if guard_distance <= args.guided_hard_stop_m:
+            stop_return = maybe_move_stop(robot)
+            return (
+                {
+                    "reached": False,
+                    "guard_stopped": True,
+                    "elapsed_s": now - started,
+                    "hard_guard_distance_m": guard_distance,
+                    "minimum_hard_guard_distance_m": minimum_guard_distance,
+                    "stop_return": stop_return,
+                    "actual_joint_rad": last.tolist(),
+                    "sample_count": len(samples),
+                    "max_motion_from_start_rad": max_motion,
+                },
+                samples,
+            )
         elapsed = now - started
         if (
             err["max_abs_rad"] <= goal_tolerance_rad
@@ -876,6 +977,8 @@ def wait_for_candidate_goal(
                     "sample_count": len(samples),
                     "max_motion_from_start_rad": max_motion,
                     "min_motion_required_rad": min_motion_rad,
+                    "guard_stopped": False,
+                    "minimum_hard_guard_distance_m": minimum_guard_distance,
                 },
                 samples,
             )
@@ -890,6 +993,8 @@ def wait_for_candidate_goal(
             "sample_count": len(samples),
             "max_motion_from_start_rad": max_motion,
             "min_motion_required_rad": min_motion_rad,
+            "guard_stopped": False,
+            "minimum_hard_guard_distance_m": minimum_guard_distance,
         },
         samples,
     )
@@ -897,11 +1002,20 @@ def wait_for_candidate_goal(
 
 def execute_fast_candidate_offline_track(
     robot: Any,
-    candidate_dir: Path,
+    trajectory_csv: Path,
     args: argparse.Namespace,
+    *,
+    processor: Any,
+    denoiser: Any,
 ) -> dict[str, Any]:
-    candidate_csv = candidate_dir / "fast_ccro_nubs_candidate.csv"
-    times, qs = load_fast_candidate_csv(candidate_csv)
+    times, qs = load_fast_candidate_csv(trajectory_csv)
+    source_duration = float(times[-1] - times[0])
+    expected_duration = float(args.candidate_playback_duration_s if args.candidate_playback_duration_s > 0.0 else source_duration)
+    if abs(source_duration - expected_duration) > 0.02:
+        raise RuntimeError(
+            "authorized trajectory time axis does not match requested playback: "
+            f"csv={source_duration:.3f}s requested={expected_duration:.3f}s"
+        )
     times_exec, qs_exec = resample_for_offline_track(
         times,
         qs,
@@ -914,7 +1028,7 @@ def execute_fast_candidate_offline_track(
         min_wait = 0.90 * args.candidate_playback_duration_s
 
     log: dict[str, Any] = {
-        "candidate_csv": str(candidate_csv),
+        "trajectory_csv": str(trajectory_csv),
         "robot_commanded": False,
         "source_trajectory_stats": trajectory_stats(times, qs),
         "execution_waypoint_stats": trajectory_stats(times_exec, qs_exec),
@@ -958,9 +1072,12 @@ def execute_fast_candidate_offline_track(
     log["offline_track_return"] = dict(ret_info)
     if int(ret_info.get("startup_ret", -9999)) != 0:
         raise RuntimeError(f"offline track startup failed: {ret_info}")
-    goal_check, feedback_samples = wait_for_candidate_goal(
+    goal_check, feedback_samples = wait_for_candidate_goal_guarded(
         robot,
         qs_exec[-1],
+        processor=processor,
+        denoiser=denoiser,
+        args=args,
         goal_tolerance_rad=args.candidate_goal_tolerance_rad,
         min_execution_wait_s=min_wait,
         motion_timeout_s=args.candidate_motion_timeout_s,
@@ -1234,6 +1351,81 @@ def run_fast_repair(
             }
         )
     return payload
+
+
+def authorize_local_repair_execution(
+    args: argparse.Namespace,
+    stage4_config: dict[str, Any],
+    stage4_model: RobotSurfaceModel,
+    *,
+    local_repair_ready: bool,
+    local_artifacts: dict[str, Any],
+    fresh_geometry: dict[str, Any],
+    fresh_velocity: np.ndarray,
+    trial_dir: Path,
+    execution_duration_s: float | None = None,
+) -> tuple[dict[str, Any], Any | None]:
+    """Revalidate only the local repair on Fresh #2 at its execution time scale."""
+    started = time.perf_counter()
+    output_dir = trial_dir / "local_execution_authorization"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    repair = local_artifacts["candidate_trajectory"]
+    native_duration = float(repair.total_duration)
+    requested_duration = float(
+        execution_duration_s
+        if execution_duration_s is not None
+        else (args.candidate_playback_duration_s if args.candidate_playback_duration_s > 0.0 else native_duration)
+    )
+    execution_trajectory = TimeScaledTrajectory6D(repair, requested_duration)
+    evaluator, verifier, _ = make_risk_stack(stage4_config, stage4_model, None)
+    forecast = constant_multisphere_forecast(
+        np.asarray(fresh_geometry["component_centers"], dtype=np.float64),
+        np.asarray(fresh_geometry["component_base_radii"], dtype=np.float64),
+        np.asarray(fresh_velocity, dtype=np.float64),
+    )
+    q_now = np.asarray(local_artifacts["q_now"], dtype=np.float64)
+    qd_now = np.asarray(local_artifacts["qd_now"], dtype=np.float64)
+    q_goal = execution_trajectory.evaluate(execution_trajectory.total_duration)
+    verification = verifier.verify(
+        execution_trajectory,
+        forecast,
+        current_q=q_now,
+        current_qd=qd_now,
+        current_qdd=np.zeros(6),
+        q_goal=q_goal,
+        solver_success=bool(local_repair_ready),
+    )
+    authorized = bool(local_repair_ready and verification.accepted)
+    trajectory_csv = output_dir / "authorized_local_repair.csv"
+    if trajectory_csv.exists():
+        trajectory_csv.unlink()
+    if authorized:
+        save_trajectory_csv(trajectory_csv, execution_trajectory, dt=0.01)
+        save_dynamic_risk_profile(
+            output_dir / "authorized_local_repair_risk_profile.csv",
+            execution_trajectory,
+            evaluator,
+            forecast,
+            density="medium",
+            dt=0.04,
+        )
+    payload = {
+        "status": "LOCAL_EXECUTION_AUTHORIZED" if authorized else "LOCAL_EXECUTION_RECHECK_FAILED",
+        "authorization_mode": "LOCAL_ONLY",
+        "local_execution_authorized": authorized,
+        "native_candidate_duration_s": native_duration,
+        "authorized_execution_duration_s": requested_duration,
+        "time_scale": execution_trajectory.time_scale,
+        "verification_min_distance_m": float(verification.min_distance),
+        "verification_checks": verification.checks,
+        "verification_reasons": verification.reasons,
+        "verification_ms": float(verification.validation_ms),
+        "authorized_trajectory_csv": str(trajectory_csv) if authorized else None,
+        "authorization_compute_ms": (time.perf_counter() - started) * 1000.0,
+        "robot_executed": False,
+    }
+    write_json(output_dir / "authorization_summary.json", payload)
+    return payload, execution_trajectory if authorized else None
 
 
 def authorize_candidate_execution(
@@ -2514,7 +2706,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "recheck": fresh2,
                         }
                     )
+                    local_authorization = {
+                        "status": "LOCAL_EXECUTION_RECHECK_FAILED",
+                        "local_execution_authorized": False,
+                        "reason": fresh2.get("reason", "fresh2_not_ready"),
+                        "robot_executed": False,
+                    }
+                    authorized_local_trajectory = None
                     if fresh2["accepted"] and fresh2_geometry is not None:
+                        local_authorization, authorized_local_trajectory = authorize_local_repair_execution(
+                            args,
+                            stage4_config,
+                            stage4_model,
+                            local_repair_ready=bool(candidate_summary.get("local_repair_ready")),
+                            local_artifacts=local_artifacts,
+                            fresh_geometry=fresh2_geometry,
+                            fresh_velocity=np.asarray(fresh2["velocity"], dtype=np.float64),
+                            trial_dir=trial_dir,
+                        )
                         authorization = authorize_candidate_execution(
                             args,
                             stage4_config,
@@ -2534,7 +2743,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         }
                     candidate_summary["execution_authorization_status"] = authorization["status"]
                     candidate_summary["execution_authorized"] = bool(authorization.get("execution_authorized", False))
+                    candidate_summary["local_execution_authorization_status"] = local_authorization["status"]
+                    candidate_summary["local_execution_authorized"] = bool(
+                        local_authorization.get("local_execution_authorized", False)
+                    )
+                    candidate_summary["accepted_for_switch"] = candidate_summary["local_execution_authorized"]
                     candidate_summary["post_plan_fresh_recheck"] = fresh2
+                    candidate_summary["local_execution_authorization"] = local_authorization
                     candidate_summary["execution_authorization"] = authorization
                     write_json(trial_dir / "candidate" / "candidate_summary.json", candidate_summary)
                     authorization_event = (
@@ -2545,29 +2760,31 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     log["events"].append(
                         {"type": authorization_event, "frame": frame_index, "t_s": time.perf_counter() - started, "authorization": authorization}
                     )
+                    log["events"].append(
+                        {
+                            "type": (
+                                "LOCAL_EXECUTION_AUTHORIZED_SHADOW"
+                                if local_authorization.get("local_execution_authorized", False)
+                                else local_authorization["status"]
+                            ),
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "authorization": local_authorization,
+                        }
+                    )
                 if args.mode == "moving-shadow-stop":
                     break
                 if args.mode == "live-stop-replan-execute":
-                    if not candidate_summary["accepted_for_switch"]:
+                    if not candidate_summary.get("local_execution_authorized", False):
                         log["events"].append(
                             {
                                 "type": "LIVE_CANDIDATE_NOT_EXECUTED",
-                                "reason": "candidate_rejected",
+                                "reason": "local_execution_not_authorized_under_fresh2_and_execution_time_scale",
                                 "candidate_status": candidate_summary["status"],
                                 "rejection_reasons": candidate_summary.get("rejection_reasons", []),
                             }
                         )
                         break
-                    log["events"].append(
-                        {
-                            "type": "LIVE_CANDIDATE_EXECUTION_BLOCKED_PENDING_FRESH_RECHECK",
-                            "reason": (
-                                "the pre-planning fresh obstacle state must not authorize execution after planning/operator delay; "
-                                "a second post-planning fresh RGB-D verification is still required"
-                            ),
-                        }
-                    )
-                    break
                     if not args.allow_live_candidate_execution:
                         log["events"].append(
                             {
@@ -2591,7 +2808,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     time.sleep(max(args.candidate_pre_execute_settle_s, 0.0))
                     candidate_dir = trial_dir / "candidate"
                     try:
-                        candidate_execution_summary = execute_fast_candidate_offline_track(robot, candidate_dir, args)
+                        authorized_csv = Path(candidate_summary["local_execution_authorization"]["authorized_trajectory_csv"])
+                        candidate_execution_summary = execute_fast_candidate_offline_track(
+                            robot,
+                            authorized_csv,
+                            args,
+                            processor=processor,
+                            denoiser=denoiser,
+                        )
                         write_json(candidate_dir / "live_candidate_execution_log.json", candidate_execution_summary)
                         log["events"].append({"type": "LIVE_CANDIDATE_EXECUTED", "execution": candidate_execution_summary})
                     except Exception as exc:
@@ -2728,6 +2952,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "local_repair_ready": None if candidate_summary is None else candidate_summary.get("local_repair_ready"),
             "execution_authorization_status": None if candidate_summary is None else candidate_summary.get("execution_authorization_status"),
             "execution_authorized": None if candidate_summary is None else candidate_summary.get("execution_authorized", False),
+            "local_execution_authorization_status": None if candidate_summary is None else candidate_summary.get("local_execution_authorization_status"),
+            "local_execution_authorized": None if candidate_summary is None else candidate_summary.get("local_execution_authorized", False),
             "anomalous_cluster_files": anomalous_cluster_files,
             "candidate_execution_status": None if candidate_execution_summary is None else candidate_execution_summary.get("status"),
             "candidate_execution": candidate_execution_summary,

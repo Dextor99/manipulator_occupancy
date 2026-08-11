@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from planning.nubs_trajectory import NUBSTrajectory6D
 from planning.optimizer import JointLimits
@@ -460,3 +461,92 @@ def test_track_geometry_separates_cluster_tracked_and_risk_radius():
     assert np.isclose(geometry["raw_radius"], 0.05)
     assert np.isclose(geometry["track_radius"], 0.09)
     assert np.isclose(geometry["inflated_radius"], 0.09)
+
+
+def test_time_scaled_trajectory_preserves_geometry_and_scales_derivatives():
+    q0 = np.zeros(6)
+    q1 = np.array([0.03, -0.02, 0.01, 0.0, 0.0, 0.0])
+    source = NUBSTrajectory6D().generate(
+        np.empty((0, 6)),
+        NUBSTrajectory6D.make_boundary_state(q0),
+        NUBSTrajectory6D.make_boundary_state(q1),
+        np.array([1.0]),
+    )
+    scaled = trial.TimeScaledTrajectory6D(source, 2.0)
+    native = source.sample(np.array([0.0, 0.5, 1.0]))
+    stretched = scaled.sample(np.array([0.0, 1.0, 2.0]))
+    np.testing.assert_allclose(stretched.q, native.q)
+    np.testing.assert_allclose(stretched.qd, native.qd / 2.0)
+    np.testing.assert_allclose(stretched.qdd, native.qdd / 4.0)
+    assert scaled.total_duration == 2.0
+
+
+def test_saved_nubs_reconstruction_matches_saved_candidate(tmp_path):
+    q0 = np.zeros(6)
+    q1 = np.array([0.04, -0.03, 0.02, 0.0, 0.0, 0.0])
+    durations = np.full(5, 0.2)
+    source = NUBSTrajectory6D().generate(
+        NUBSTrajectory6D.linear_inner_points(q0, q1, durations),
+        NUBSTrajectory6D.make_boundary_state(q0),
+        NUBSTrajectory6D.make_boundary_state(q1),
+        durations,
+    )
+    path = tmp_path / "candidate.csv"
+    trial.save_trajectory_csv(path, source, dt=0.01)
+    reconstructed = trial.reconstruct_saved_nubs_candidate(path, segments=5)
+    times = np.linspace(0.0, 1.0, 51)
+    np.testing.assert_allclose(reconstructed.sample(times).q, source.sample(times).q, atol=1.0e-8)
+    np.testing.assert_allclose(reconstructed.sample(times).qd, source.sample(times).qd, atol=1.0e-7)
+
+
+def test_guarded_candidate_wait_stops_on_existing_hard_guard(monkeypatch):
+    class Robot:
+        def __init__(self):
+            self.stopped = False
+
+        def get_joint(self):
+            return np.zeros(6)
+
+        def move_stop(self, *args):
+            self.stopped = True
+            return 0
+
+    robot = Robot()
+    monkeypatch.setattr(trial, "execution_hard_guard_distance", lambda processor, denoiser, args: 0.05)
+    result, samples = trial.wait_for_candidate_goal_guarded(
+        robot,
+        np.ones(6),
+        processor=object(),
+        denoiser=None,
+        args=SimpleNamespace(guided_hard_stop_m=0.10),
+        goal_tolerance_rad=0.01,
+        min_execution_wait_s=0.0,
+        motion_timeout_s=1.0,
+        poll_s=0.0,
+        min_motion_rad=0.001,
+    )
+    assert result["guard_stopped"]
+    assert result["hard_guard_distance_m"] == 0.05
+    assert robot.stopped
+    assert len(samples) == 1
+
+
+def test_executor_rejects_authorized_csv_playback_time_mismatch(tmp_path):
+    q0 = np.zeros(6)
+    q1 = np.ones(6) * 0.01
+    trajectory = NUBSTrajectory6D().generate(
+        np.empty((0, 6)),
+        NUBSTrajectory6D.make_boundary_state(q0),
+        NUBSTrajectory6D.make_boundary_state(q1),
+        np.array([1.0]),
+    )
+    path = tmp_path / "authorized_local_repair.csv"
+    trial.save_trajectory_csv(path, trajectory, dt=0.01)
+    with pytest.raises(RuntimeError, match="time axis does not match"):
+        trial.execute_fast_candidate_offline_track(
+            object(),
+            path,
+            SimpleNamespace(candidate_playback_duration_s=6.0),
+            processor=object(),
+            denoiser=None,
+        )
