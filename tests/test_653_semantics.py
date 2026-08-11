@@ -20,6 +20,7 @@ prepare = importlib.import_module("experiments.new.6_5.6_5_3.prepare_653_referen
 repair_v3 = importlib.import_module("experiments.new.6_4.repair.repair_v3")
 linearization = importlib.import_module("experiments.new.6_4.repair.nubs_linearization")
 calibration = importlib.import_module("experiments.new.6_5.6_5_3.calibrate_653_local_offline_track")
+alignment = importlib.import_module("experiments.new.6_5.6_5_3.align_653_authorized_start")
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -578,3 +579,19 @@ def test_empty_scene_calibration_defaults_to_noncommanding_dry_run(tmp_path):
     result = calibration.run(args)
     assert result["status"] == "DRY_RUN_ONLY"
     assert not result["robot_commanded"]
+
+
+def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
+    reference = np.zeros((6, 6))
+    reference[:, 0] = np.linspace(0.0, 0.05, 6)
+    actual = reference[5] + np.array([1.0e-4, 0, 0, 0, 0, 0])
+    target = reference[2] + np.array([-1.0e-4, 0, 0, 0, 0, 0])
+    segment, audit = alignment.matched_reference_segment(
+        reference, actual, target, match_tolerance_rad=0.001
+    )
+    assert audit["current_reference_index"] == 5
+    assert audit["target_reference_index"] == 2
+    assert audit["reference_direction"] == "reverse"
+    np.testing.assert_allclose(segment[0], actual)
+    np.testing.assert_allclose(segment[-1], target)
+    assert len(segment) == 4

@@ -50,6 +50,14 @@ times; test the separately authorized 1.25 s version only if 1.00 s is unstable.
 The generic candidate playback default is `0`, meaning the authorized CSV's
 native time axis, while formal commands still state the frozen duration.
 
+If calibration reports `BLOCKED_START_MISMATCH`, do not relax the tolerance or
+use a free-space movej. `align_653_authorized_start.py` matches the current and
+authorized-start joints to the recorded reference, then (with explicit execute
+gates) traverses only that reference segment in the required direction. It
+uses three empty-scene guard previews and retains the 0.10 m hard guard during
+alignment. The default 4 s alignment is positioning only and does not calibrate
+the 1 s candidate playback.
+
 The moving modes fail closed unless `--reference-feedback-csv` is supplied.
 The same recorded reference drives future STRO evaluation and supplies the
 candidate endpoint at `t + H_local`; `q + qd * lookahead` is no longer used.
