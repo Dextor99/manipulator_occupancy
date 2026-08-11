@@ -353,8 +353,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reference-shape", choices=["line", "micro_curve"], default="line")
     parser.add_argument("--curve-amplitude-m", type=float, default=0.04)
     parser.add_argument("--preview-samples", type=int, default=81)
-    parser.add_argument("--line-velocity-m-s", type=float, default=0.025)
-    parser.add_argument("--line-acc-m-s2", type=float, default=0.06)
+    # Keep preparation motion consistent with the unified D1/D2 protocol.
+    parser.add_argument("--line-velocity-m-s", type=float, default=0.020)
+    parser.add_argument("--line-acc-m-s2", type=float, default=0.05)
     parser.add_argument("--record-duration-s", type=float, default=40.0)
     parser.add_argument("--record-goal-tolerance-m", type=float, default=0.002)
     parser.add_argument("--reference-endpoint-tolerance-m", type=float, default=0.015)

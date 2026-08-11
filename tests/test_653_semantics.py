@@ -171,6 +171,13 @@ def test_dynamic_track_audit_mode_is_non_motion_mode():
     assert args.guided_hard_stop_m == 0.10
 
 
+def test_reference_preparation_defaults_match_formal_motion_protocol():
+    args = prepare.build_parser().parse_args([])
+    assert args.line_velocity_m_s == trial.FORMAL_PROTOCOL["line_velocity_m_s"]
+    assert args.line_acc_m_s2 == trial.FORMAL_PROTOCOL["line_acc_m_s2"]
+    assert not args.stop_after_start
+
+
 def test_d1_and_d2_share_one_scene_independent_formal_protocol():
     calibrated_time = ["--candidate-playback-duration-s", "1.0"]
     d1 = trial.build_parser().parse_args(["--scene", "D1", "--mode", "moving-shadow-stop", *calibrated_time])
