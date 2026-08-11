@@ -59,6 +59,8 @@ def recorded_trigger_reference_progress(source: Path) -> tuple[int, float]:
 
 
 def run(args: argparse.Namespace) -> dict:
+    entry_git_commit = trial.git_commit_hash()
+    entry_git_dirty = trial.git_is_dirty()
     output_dir = args.output.resolve() / f"r{args.repeat:02d}"
     output_dir.mkdir(parents=True, exist_ok=True)
     source, full_csv, authorization = prepare_paths(args)
@@ -89,8 +91,8 @@ def run(args: argparse.Namespace) -> dict:
         "full_duration_s": float(full_times[-1] - full_times[0]),
         "remainder_duration_s": float(remainder_times[-1]),
         "full_to_remainder_endpoint_error": endpoint_error,
-        "git_commit": trial.git_commit_hash(),
-        "git_dirty": trial.git_is_dirty(),
+        "git_commit": entry_git_commit,
+        "git_dirty": entry_git_dirty,
         "required_operator_phrase": PHRASE,
     }
     if endpoint_error["max_abs_rad"] > 1.0e-4:
