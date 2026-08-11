@@ -3,13 +3,18 @@ from __future__ import annotations
 import importlib
 import csv
 import json
+import time
 from types import SimpleNamespace
 
 import numpy as np
 
+from planning.nubs_trajectory import NUBSTrajectory6D
+from planning.optimizer import JointLimits
+
 
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
 prepare = importlib.import_module("experiments.new.6_5.6_5_3.prepare_653_reference")
+repair_v3 = importlib.import_module("experiments.new.6_4.repair.repair_v3")
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -193,6 +198,24 @@ def test_nonformal_moving_trial_is_blocked_before_robot_setup(tmp_path):
     summary = json.loads((tmp_path / "trials" / "D1_crossing_body_r99" / "summary.json").read_text())
     assert summary["status"] == "BLOCKED_NONFORMAL_PROTOCOL"
     assert not summary["robot_commanded"]
+
+
+def test_fast_repair_past_deadline_fails_before_risk_scan():
+    q0 = np.zeros(6)
+    q1 = np.full(6, 0.01)
+    durations = np.full(5, 0.2)
+    head = NUBSTrajectory6D.make_boundary_state(q0)
+    tail = NUBSTrajectory6D.make_boundary_state(q1)
+    inner = NUBSTrajectory6D.linear_inner_points(q0, q1, durations)
+    limits = JointLimits.from_arrays([-6] * 6, [6] * 6, [1] * 6, [2] * 6)
+    result = repair_v3.run_repair_v3(
+        None, None, limits, inner, head, tail, durations,
+        dense_active=True, v4_mode=True, deadline_perf=time.perf_counter() - 1.0,
+    )
+    assert result.budget_exhausted
+    assert result.accepted_steps == 0
+    assert result.risk_scan_ms == 0.0
+    assert any("budget exhausted before risk scan" in message for message in result.messages)
 
 
 def test_dynamic_audit_buffers_exist_even_when_no_clusters_are_seen():

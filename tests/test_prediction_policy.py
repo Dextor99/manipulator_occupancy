@@ -27,6 +27,28 @@ def test_prediction_radius_grows_with_velocity_and_time():
     np.testing.assert_allclose(spheres[1].center, [0.2, 0.0, 0.0])
 
 
+def test_already_classified_dynamic_object_is_not_reclassified_as_static():
+    obj = OccupancyObject(
+        id=8,
+        center=np.zeros(3),
+        velocity=np.array([0.0676, 0.0, 0.0]),
+        radius=0.1,
+        shape=ShapeModel(kind="sphere", center=np.zeros(3), radius=0.1),
+        confidence=1.0,
+        risk="UNKNOWN",
+        point_count=100,
+        age=8,
+        timestamp=0.0,
+    )
+    spheres = predict_risk_spheres(
+        [obj], horizon=0.5, step=0.1,
+        static_speed_threshold=0.08,
+        already_classified=True,
+    )
+    assert [round(sphere.tau, 1) for sphere in spheres] == [0.1, 0.2, 0.3, 0.4, 0.5]
+    assert all(sphere.tau > 0.0 for sphere in spheres)
+
+
 def test_safety_policy_thresholds_and_speed_scale():
     policy = SafetyPolicy(d_safe=0.15, d_slow=0.10, d_stop=0.05)
 

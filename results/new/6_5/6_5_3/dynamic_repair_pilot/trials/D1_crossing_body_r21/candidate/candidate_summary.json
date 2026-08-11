@@ -1,0 +1,142 @@
+{
+  "created_at": "2026-08-11T02:19:19.249938+00:00",
+  "status": "REJECTED_CANDIDATE",
+  "accepted_for_switch": false,
+  "repair_step_ok": false,
+  "rejection_reasons": [
+    "fast_budget_exceeded",
+    "online_clearance_failed",
+    "verification_checks_failed:distance_ok",
+    "no_accepted_repair_step",
+    "insufficient_clearance_improvement",
+    "candidate_motion_indistinguishable_from_reference"
+  ],
+  "candidate_is_reference_continuation": true,
+  "fast_elapsed_ms": 212.42192600038834,
+  "online_pipeline_elapsed_ms": 212.42192600038834,
+  "repair_elapsed_ms": 159.93871800310444,
+  "candidate_verification_ms": 25.89964099752251,
+  "reference_verification_ms": 26.394503001938574,
+  "post_check_ms": 0.1876440001069568,
+  "budget_exhausted": true,
+  "fast_budget_ms": 150.0,
+  "online_accept_m": 0.09,
+  "verification_min_distance_m": 0.06514426974184087,
+  "reference_online_min_distance_m": 0.06514426974184087,
+  "candidate_online_min_distance_m": 0.06514426974184087,
+  "clearance_improvement_m": 0.0,
+  "min_clearance_improvement_m": 0.003,
+  "max_delta_q_from_reference_rad": 0.0,
+  "verification_reasons": [
+    "distance_ok"
+  ],
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": false,
+    "position_ok": true,
+    "velocity_ok": true,
+    "acceleration_ok": true,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "repair_iterations": 1,
+  "accepted_steps": 0,
+  "active_constraints": 8,
+  "qp_successes": 1,
+  "risk_scan_ms": 54.32749899773626,
+  "linearization_ms": 3.2841339998412877,
+  "qp_ms": 10.483314996236004,
+  "trajectory_generation_ms": 0.1718039929983206,
+  "motion_check_ms": 0.23077100195223466,
+  "candidate_distance_check_ms": 91.34131600148976,
+  "scale_attempts": 3,
+  "unaccounted_fast_ms": 0.09987901285057887,
+  "messages": [
+    "projected_qp max_violation=1.894e-02 clearance_reward=0",
+    "scale 0.85 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=4.685e-02",
+    "scale 0.65 rejected: no monotonic distance improvement",
+    "budget exhausted during scale 0.45 distance check"
+  ],
+  "q_now": [
+    0.5265894532203674,
+    -0.1697673499584198,
+    1.3823035955429077,
+    -0.018659260123968124,
+    1.5708403587341309,
+    0.5266004800796509
+  ],
+  "qd_now": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "q_goal": [
+    0.49906963047907665,
+    -0.16226525147610654,
+    1.3915206883266125,
+    -0.01703183882742134,
+    1.57079637,
+    0.4990636420981334
+  ],
+  "obstacle_center": [
+    0.720094628478417,
+    -0.2582553013386734,
+    0.40093734387365065
+  ],
+  "obstacle_velocity": [
+    -0.13100985921356537,
+    -0.0013208224385634893,
+    -0.005238349572210616
+  ],
+  "obstacle_radius": 0.17270827234205194,
+  "obstacle_association": {
+    "track_id": 1,
+    "center": [
+      0.720094628478417,
+      -0.2582553013386734,
+      0.40093734387365065
+    ],
+    "velocity": [
+      -0.13100985921356537,
+      -0.0013208224385634893,
+      -0.005238349572210616
+    ],
+    "speed": 0.13112119618625018,
+    "raw_radius": 0.14353764594657603,
+    "track_radius": 0.17270827234205194,
+    "inflated_radius": 0.17270827234205194,
+    "associated_cluster_index": 0,
+    "associated_cluster_center": [
+      0.7452018931240407,
+      -0.2566948982041756,
+      0.4112549219982463
+    ],
+    "association_error_m": 0.027189373186682204,
+    "window_velocity": [
+      -0.13100985921356537,
+      -0.0013208224385634893,
+      -0.005238349572210616
+    ],
+    "prediction_ready": true
+  },
+  "risk_links": [
+    "base_link",
+    "foreArm_Link",
+    "gripper_base_link",
+    "left_link",
+    "right_link",
+    "shoulder_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link",
+    "wrist3_Link"
+  ],
+  "candidate_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r21/candidate/fast_ccro_nubs_candidate.csv"
+}

@@ -807,7 +807,8 @@ def run_fast_repair(
         q_now, qd_now, args, reference_goal=reference_goal
     )
     reference_trajectory = NUBSTrajectory6D().generate(p_inner, head, tail, durations)
-    started = time.perf_counter()
+    online_started = time.perf_counter()
+    deadline_perf = online_started + args.fast_budget_ms / 1000.0
     result = run_repair_v3(
         evaluator,
         forecast,
@@ -818,8 +819,10 @@ def run_fast_repair(
         durations,
         dense_active=True,
         v4_mode=True,
+        deadline_perf=deadline_perf,
     )
-    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    repair_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
+    candidate_verify_started = time.perf_counter()
     verification = verifier.verify(
         result.trajectory,
         forecast,
@@ -829,6 +832,8 @@ def run_fast_repair(
         q_goal=q_goal,
         solver_success=True,
     )
+    candidate_verification_ms = (time.perf_counter() - candidate_verify_started) * 1000.0
+    reference_verify_started = time.perf_counter()
     reference_verification = verifier.verify(
         reference_trajectory,
         forecast,
@@ -838,13 +843,18 @@ def run_fast_repair(
         q_goal=q_goal,
         solver_success=True,
     )
+    reference_verification_ms = (time.perf_counter() - reference_verify_started) * 1000.0
+    post_check_started = time.perf_counter()
     clearance_gain = float(verification.min_distance - reference_verification.min_distance)
     candidate_samples = result.trajectory.dense_sample(0.02).q
     reference_samples = reference_trajectory.dense_sample(0.02).q
     max_delta_q = float(np.max(np.abs(candidate_samples - reference_samples)))
+    post_check_ms = (time.perf_counter() - post_check_started) * 1000.0
+    online_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
     repair_step_ok = int(result.accepted_steps) > 0
     accepted = bool(
-        elapsed_ms <= args.fast_budget_ms
+        online_elapsed_ms <= args.fast_budget_ms
+        and not result.budget_exhausted
         and verification.min_distance >= args.online_accept_m
         and all({**verification.checks, "solver_ok": True}.values())
         and repair_step_ok
@@ -852,7 +862,7 @@ def run_fast_repair(
         and max_delta_q >= args.min_candidate_delta_q_rad
     )
     rejection_reasons = []
-    if elapsed_ms > args.fast_budget_ms:
+    if online_elapsed_ms > args.fast_budget_ms or result.budget_exhausted:
         rejection_reasons.append("fast_budget_exceeded")
     if verification.min_distance < args.online_accept_m:
         rejection_reasons.append("online_clearance_failed")
@@ -875,7 +885,13 @@ def run_fast_repair(
         "repair_step_ok": repair_step_ok,
         "rejection_reasons": rejection_reasons,
         "candidate_is_reference_continuation": not repair_step_ok,
-        "fast_elapsed_ms": elapsed_ms,
+        "fast_elapsed_ms": online_elapsed_ms,
+        "online_pipeline_elapsed_ms": online_elapsed_ms,
+        "repair_elapsed_ms": repair_elapsed_ms,
+        "candidate_verification_ms": candidate_verification_ms,
+        "reference_verification_ms": reference_verification_ms,
+        "post_check_ms": post_check_ms,
+        "budget_exhausted": result.budget_exhausted,
         "fast_budget_ms": args.fast_budget_ms,
         "online_accept_m": args.online_accept_m,
         "verification_min_distance_m": verification.min_distance,
@@ -899,7 +915,7 @@ def run_fast_repair(
         "scale_attempts": result.scale_attempts,
         "unaccounted_fast_ms": max(
             0.0,
-            elapsed_ms
+            repair_elapsed_ms
             - result.risk_scan_ms
             - result.linearization_ms
             - result.qp_ms
@@ -1375,6 +1391,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 static_speed_threshold=float(safety.get("prediction_static_speed_threshold", 0.08)),
                 static_margin=float(safety.get("prediction_static_margin", 0.0)),
                 velocity_radius_scale=float(safety.get("prediction_velocity_radius_scale", 0.1)),
+                already_classified=True,
             )
             current_best = nearest_cluster_to_links(live_model, q, eval_clusters, density=args.surface_density)
             predicted_best = (

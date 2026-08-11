@@ -61,7 +61,9 @@ dynamic state at 0.08 m/s, and exits only after three samples below 0.04 m/s.
 The first prediction-ready frame (age/history/association/dynamic-state checks)
 may enter STRO immediately; the stricter two-frame `dynamic_valid` state remains
 an audit-quality label. STRO and Fast repair use the same frozen window velocity
-vector. Every robot link may trigger predicted risk or the 0.12 m
+vector. Because prediction-ready tracks are already classified by the window
+hysteresis, STRO does not reapply a scalar static-speed threshold and always
+emits future samples over 0.1--0.5 s. Every robot link may trigger predicted risk or the 0.12 m
 current-distance fallback stop; scene metadata has no control authority.
 It may retain identity across two missed frames, but missed tracks are never
 returned for STRO prediction. The audit passes when one ID lasts at least five
@@ -160,6 +162,12 @@ repeat that validation merely to tune Fast-repair thresholds. Formal settings
 remain `replan=0.14 m`, `H_local=1.0 s`, `online_accept=0.09 m`, and
 `fast_budget=150 ms`; current-distance fallback stop is 0.12 m and raw-cloud
 hard guard is 0.10 m.
+
+The 150 ms Fast limit is a fail-closed online deadline. The repair loop checks
+the deadline before each expensive stage and scale distance scan. Candidate
+acceptance uses complete online pipeline time (repair, candidate verification,
+required reference verification, and final comparison), rather than reporting
+repair-only time as the online latency.
 
 For D1, move the obstacle laterally across a future robot swept region,
 approximately perpendicular or oblique to the robot reference motion.

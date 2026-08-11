@@ -29,6 +29,7 @@ class RepairV3Result:
     motion_check_ms: float
     candidate_distance_check_ms: float
     scale_attempts: int
+    budget_exhausted: bool
     messages: list[str]
 
 
@@ -56,7 +57,14 @@ def run_repair_v3(
     *,
     dense_active: bool = False,
     v4_mode: bool = False,
+    deadline_perf: float | None = None,
 ) -> RepairV3Result:
+    def deadline_reached(stage: str) -> bool:
+        if deadline_perf is None or time.perf_counter() < deadline_perf:
+            return False
+        messages.append(f"budget exhausted before {stage}")
+        return True
+
     sample_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.FAST_SAMPLE_DT, cfg.FAST_SAMPLE_DT)
     motion_times = np.arange(0.0, float(np.sum(durations)) + 0.5 * cfg.DT, cfg.DT)
     points = np.asarray(p_inner, dtype=np.float64).copy()
@@ -73,8 +81,12 @@ def run_repair_v3(
     qp_successes = 0
     active_count = 0
     messages: list[str] = []
+    budget_exhausted = False
     max_iterations = cfg.FAST_V4_MAX_ITERATIONS if v4_mode else cfg.FAST_V3_MAX_ITERATIONS
     for iteration in range(max_iterations):
+        if deadline_reached("risk scan"):
+            budget_exhausted = True
+            break
         t_scan = time.perf_counter()
         if dense_active:
             active = extract_dense_nearest_distances(
@@ -98,6 +110,9 @@ def run_repair_v3(
         if not active:
             messages.append("no active constraints")
             break
+        if deadline_reached("linearization"):
+            budget_exhausted = True
+            break
         t_lin = time.perf_counter()
         sensitivity = build_local_sensitivity(
             points,
@@ -108,6 +123,9 @@ def run_repair_v3(
             epsilon=cfg.FAST_V3_SENSITIVITY_EPS,
         )
         linearization_ms += (time.perf_counter() - t_lin) * 1000.0
+        if deadline_reached("QP"):
+            budget_exhausted = True
+            break
         t_qp = time.perf_counter()
         qp = solve_local_qp(
             active,
@@ -126,6 +144,9 @@ def run_repair_v3(
         accepted_candidate = None
         scales = cfg.FAST_V4_ACCEPTANCE_SCALES if v4_mode else (cfg.FAST_V3_RELAXATION,)
         for scale in scales:
+            if deadline_reached(f"scale {float(scale):.2f}"):
+                budget_exhausted = True
+                break
             scale_attempts += 1
             candidate_points = points + float(scale) * qp.delta.reshape(points.shape)
             t_generate = time.perf_counter()
@@ -140,6 +161,9 @@ def run_repair_v3(
                     f"qd={motion['qd']:.3e} qdd={motion['qdd']:.3e}"
                 )
                 continue
+            if deadline_reached(f"scale {float(scale):.2f} distance check"):
+                budget_exhausted = True
+                break
             if dense_active:
                 t_distance = time.perf_counter()
                 next_active = extract_dense_nearest_distances(
@@ -160,12 +184,18 @@ def run_repair_v3(
                     density=cfg.SURFACE_DENSITY_LOOP,
                 )
             candidate_distance_check_ms += (time.perf_counter() - t_distance) * 1000.0
+            if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+                messages.append(f"budget exhausted during scale {float(scale):.2f} distance check")
+                budget_exhausted = True
+                break
             next_min = cfg.D_ONLINE_ACCEPT if not next_active else min(item.distance for item in next_active)
             if next_min <= current_min + cfg.FAST_V3_MIN_IMPROVEMENT:
                 messages.append(f"scale {float(scale):.2f} rejected: no monotonic distance improvement")
                 continue
             accepted_candidate = (candidate_points, candidate)
             messages.append(f"accepted scale {float(scale):.2f}")
+            break
+        if budget_exhausted:
             break
         if accepted_candidate is None:
             messages.append("rejected: no feasible monotonic step")
@@ -186,5 +216,6 @@ def run_repair_v3(
         motion_check_ms=float(motion_check_ms),
         candidate_distance_check_ms=float(candidate_distance_check_ms),
         scale_attempts=int(scale_attempts),
+        budget_exhausted=bool(budget_exhausted),
         messages=messages,
     )

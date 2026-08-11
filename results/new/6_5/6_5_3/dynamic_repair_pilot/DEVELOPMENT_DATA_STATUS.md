@@ -77,3 +77,20 @@ step. Sensing → dynamic-track → predicted-risk → trigger → stop is now p
 end to end; the Fast local repair still fails to produce an acceptable
 candidate within budget, so r19 is not formal 6.5.3 avoidance evidence.
 
+D1 r20–r23 are further development `moving-shadow-stop` pilots taken after the
+Fast-repair loop gained a hard wall-clock deadline (`deadline_perf`) and the
+online acceptance switched to complete-pipeline time (repair + candidate
+verification + reference verification + comparison) against the 150 ms budget.
+r20 (`NO_TRIGGER`) never produced a prediction-ready frame — 73 armed frames
+were all blocked `predicted_track_not_dynamic`, i.e. the track never reached the
+0.08 m/s window-speed gate. r21–r23 all `TRIGGERED` (frames 145/120/108) and
+stopped, but every candidate was `REJECTED_CANDIDATE` with `budget_exhausted =
+True`: the deadline now bounds the loop (212–237 ms vs 341 ms in r19), yet the
+dense distance scan on the candidate scale alone took 91–137 ms, so the budget
+is exceeded before an accepted step. r23 came closest to acceptance:
+`verification_min_distance = 0.104 m > 0.09 m` passed online clearance, but the
+candidate was still a reference continuation (`max_delta_q = 0`,
+`clearance_improvement = 0`) with no accepted SCvx step and a 237 ms pipeline.
+The trigger→stop pipeline is repeatably proven; the SCvx step still cannot move
+within budget, so none of r20–r23 are formal 6.5.3 avoidance evidence.
+

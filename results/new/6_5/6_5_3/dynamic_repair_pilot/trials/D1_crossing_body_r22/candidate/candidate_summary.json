@@ -1,0 +1,142 @@
+{
+  "created_at": "2026-08-11T02:23:52.967061+00:00",
+  "status": "REJECTED_CANDIDATE",
+  "accepted_for_switch": false,
+  "repair_step_ok": false,
+  "rejection_reasons": [
+    "fast_budget_exceeded",
+    "online_clearance_failed",
+    "verification_checks_failed:distance_ok",
+    "no_accepted_repair_step",
+    "insufficient_clearance_improvement",
+    "candidate_motion_indistinguishable_from_reference"
+  ],
+  "candidate_is_reference_continuation": true,
+  "fast_elapsed_ms": 236.44873999728588,
+  "online_pipeline_elapsed_ms": 236.44873999728588,
+  "repair_elapsed_ms": 188.81397799850674,
+  "candidate_verification_ms": 23.817972003598697,
+  "reference_verification_ms": 23.645750996365678,
+  "post_check_ms": 0.16966299881460145,
+  "budget_exhausted": true,
+  "fast_budget_ms": 150.0,
+  "online_accept_m": 0.09,
+  "verification_min_distance_m": 0.0558527043274917,
+  "reference_online_min_distance_m": 0.0558527043274917,
+  "candidate_online_min_distance_m": 0.0558527043274917,
+  "clearance_improvement_m": 0.0,
+  "min_clearance_improvement_m": 0.003,
+  "max_delta_q_from_reference_rad": 0.0,
+  "verification_reasons": [
+    "distance_ok"
+  ],
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": false,
+    "position_ok": true,
+    "velocity_ok": true,
+    "acceleration_ok": true,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "repair_iterations": 1,
+  "accepted_steps": 0,
+  "active_constraints": 8,
+  "qp_successes": 1,
+  "risk_scan_ms": 44.1189229968586,
+  "linearization_ms": 3.032120999705512,
+  "qp_ms": 10.588291996100452,
+  "trajectory_generation_ms": 0.18395100050838664,
+  "motion_check_ms": 0.2427729923510924,
+  "candidate_distance_check_ms": 130.53744000353618,
+  "scale_attempts": 3,
+  "unaccounted_fast_ms": 0.11047800944652408,
+  "messages": [
+    "projected_qp max_violation=3.283e-02 clearance_reward=0",
+    "scale 0.85 rejected: no monotonic distance improvement",
+    "scale 0.65 rejected: no monotonic distance improvement",
+    "budget exhausted during scale 0.45 distance check"
+  ],
+  "q_now": [
+    0.616808295249939,
+    -0.2044045329093933,
+    1.339340090751648,
+    -0.026989350095391273,
+    1.5708403587341309,
+    0.6168229579925537
+  ],
+  "qd_now": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "q_goal": [
+    0.5921769724977752,
+    -0.19322662709791472,
+    1.3533990444825263,
+    -0.02416064442432114,
+    1.57079256,
+    0.592195045194699
+  ],
+  "obstacle_center": [
+    0.551379200192544,
+    -0.292971142378796,
+    0.3837382620522077
+  ],
+  "obstacle_velocity": [
+    -0.10115034413796867,
+    -0.028344689280508845,
+    -0.004906646438234911
+  ],
+  "obstacle_radius": 0.1819557938555666,
+  "obstacle_association": {
+    "track_id": 1,
+    "center": [
+      0.551379200192544,
+      -0.292971142378796,
+      0.3837382620522077
+    ],
+    "velocity": [
+      -0.10115034413796867,
+      -0.028344689280508845,
+      -0.004906646438234911
+    ],
+    "speed": 0.10516125098584521,
+    "raw_radius": 0.14341196481113608,
+    "track_radius": 0.1819557938555666,
+    "inflated_radius": 0.1819557938555666,
+    "associated_cluster_index": 0,
+    "associated_cluster_center": [
+      0.5834103662593275,
+      -0.2851152109786895,
+      0.38532200697753244
+    ],
+    "association_error_m": 0.03301847218981417,
+    "window_velocity": [
+      -0.10115034413796867,
+      -0.028344689280508845,
+      -0.004906646438234911
+    ],
+    "prediction_ready": true
+  },
+  "risk_links": [
+    "base_link",
+    "foreArm_Link",
+    "gripper_base_link",
+    "left_link",
+    "right_link",
+    "shoulder_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link",
+    "wrist3_Link"
+  ],
+  "candidate_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_repair_pilot/trials/D1_crossing_body_r22/candidate/fast_ccro_nubs_candidate.csv"
+}

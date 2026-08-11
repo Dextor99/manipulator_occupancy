@@ -22,14 +22,21 @@ def predict_risk_spheres(
     static_speed_threshold: float = 0.01,
     static_margin: float = 0.02,
     velocity_radius_scale: float = 1.0,
+    already_classified: bool = False,
 ) -> list[RiskSphere]:
+    """Predict occupancy spheres.
+
+    ``already_classified`` is for callers that have already applied their own
+    dynamic-state hysteresis. Such objects always receive future samples, even
+    when their current speed has fallen below the entry threshold.
+    """
     if step <= 0.0:
         raise ValueError("step must be positive")
     taus = np.arange(step, horizon + 1e-9, step)
     predictions = []
     for obj in objects:
         speed = float(np.linalg.norm(obj.velocity))
-        if speed < static_speed_threshold:
+        if not already_classified and speed < static_speed_threshold:
             # 静态障碍：只使用 obj.radius + 薄边 0.02m
             # 不加 margin(0.05) 和 uncertainty(0.02) 是因为：
             #   - 静态障碍不需要预测膨胀
