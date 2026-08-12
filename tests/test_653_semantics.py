@@ -28,6 +28,7 @@ delayed_calibration = importlib.import_module(
 delayed_resume = importlib.import_module(
     "experiments.new.6_5.6_5_3.resume_653_from_delayed_rejoin"
 )
+d2_sweep = importlib.import_module("experiments.new.6_5.6_5_3.offline_d2_geometry_sweep")
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -220,6 +221,28 @@ def test_delayed_rejoin_resume_recovery_is_noncommanding_by_default():
     args = delayed_resume.build_parser().parse_args(["--repeat", "1"])
     assert not args.execute
     assert delayed_resume.PHRASE == "CCRO_653_DELAYED_REJOIN_RESUME_APPROVED"
+
+
+def test_d2_geometry_sweep_defaults_to_offline_lateral_scan():
+    args = d2_sweep.build_parser().parse_args([])
+    assert args.axis == "x"
+    assert args.offset_min_m == -0.20
+    assert args.offset_max_m == 0.20
+    assert args.offset_step_m == 0.01
+
+
+def test_d2_geometry_sweep_reports_contiguous_feasible_intervals():
+    rows = [
+        {"offset_m": 0.10, "formal_scene_feasible": False, "candidate_clearance_m": 0.08},
+        {"offset_m": 0.11, "formal_scene_feasible": True, "candidate_clearance_m": 0.091},
+        {"offset_m": 0.12, "formal_scene_feasible": True, "candidate_clearance_m": 0.095},
+        {"offset_m": 0.13, "formal_scene_feasible": False, "candidate_clearance_m": 0.10},
+        {"offset_m": 0.14, "formal_scene_feasible": True, "candidate_clearance_m": 0.092},
+    ]
+    intervals = d2_sweep.contiguous_intervals(rows, 0.01)
+    assert len(intervals) == 2
+    assert intervals[0]["sample_count"] == 2
+    assert intervals[0]["midpoint_offset_m"] == pytest.approx(0.115)
 
 
 def test_delayed_rejoin_calibration_allows_only_untracked_result_artifacts(monkeypatch):

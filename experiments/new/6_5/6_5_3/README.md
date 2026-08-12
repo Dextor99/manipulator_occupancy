@@ -397,6 +397,30 @@ not be relabeled as v2: v2 specifically denotes the added
 `full-first -> local-first/hold -> Fresh #3 delayed rejoin` execution state
 machine, while all frozen numeric safety and Fast parameters remain unchanged.
 
+## Frozen D2 geometry-feasibility calibration
+
+The deep head-on D2 v2 r02 is retained as a fail-closed negative example: Fast
+produced a nonzero repair and improved clearance, but the candidate remained
+below 0.09 m and was not executed. Before fixing the final physical D2 lane,
+`offline_d2_geometry_sweep.py` replays that saved trigger/Fresh geometry and
+the production Fast implementation while translating only the obstacle's
+physical X or Z position. It never initializes a camera or robot:
+
+```bash
+/home/hzy/miniconda3/envs/py310/bin/python \
+  experiments/new/6_5/6_5_3/offline_d2_geometry_sweep.py
+```
+
+A point is feasible only when predicted risk still triggers below 0.14 m, the
+unmodified reference remains below 0.09 m, the repaired candidate reaches at
+least 0.09 m, clearance gain remains at least 3 mm, and the unchanged Fast
+pipeline accepts within 150 ms. The script reports contiguous intervals rather
+than selecting an isolated threshold-crossing sample. The r02 X sweep found a
+continuous +0.13--+0.20 m interval; its midpoint, +0.165 m relative to the r02
+observed obstacle centerline, is the fixed physical-lane target. This offset is
+an experimental fixture calibration, not a controller parameter. Once marked
+physically, it is not changed across the final three D2 repeats.
+
 ## Outputs
 
 Each trial writes:
