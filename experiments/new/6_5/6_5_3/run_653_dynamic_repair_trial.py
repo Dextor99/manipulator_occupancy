@@ -174,6 +174,9 @@ FORMAL_PROTOCOL = {
     "candidate_controller_waypoint_period_s": 0.005,
     "candidate_joint_velc": 0.006,
     "candidate_joint_acc": 0.012,
+    # The lateral initializer remains an offline diagnostic only.  Formal
+    # robot trials retain the production linear NUBS initialization.
+    "fast_warm_start": "linear",
 }
 ROBOT_MOTION_MODES = {"moving-shadow-stop", "live-stop-replan-execute"}
 
@@ -2620,6 +2623,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "operator_phrase_ok": args.operator_phrase == REQUIRED_OPERATOR_PHRASE,
         "required_operator_phrase": REQUIRED_OPERATOR_PHRASE,
         "trial_dir": str(trial_dir),
+        "task_geometry_id": args.task_geometry_id,
+        "reference_x_offset_m": float(args.x_offset),
         "parameters": vars(args),
         "formal_protocol": formal_protocol_signature(args),
         "formal_protocol_id": FORMAL_PROTOCOL_ID,
@@ -3906,6 +3911,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="shadow",
     )
     parser.add_argument("--operator-phrase", default="")
+    parser.add_argument(
+        "--task-geometry-id",
+        default="UNSPECIFIED",
+        help="audit-only label for the frozen physical task geometry; has no control authority",
+    )
     parser.add_argument("--robot-ip", default="192.168.123.96")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--config-dir", type=Path, default=ROOT / "config")

@@ -314,6 +314,16 @@ def test_formal_protocol_freezes_calibrated_candidate_execution_time_scale():
     assert any(item.startswith("candidate_playback_duration_s=") for item in violations)
 
 
+def test_formal_robot_protocol_keeps_lateral_warm_start_offline_only():
+    args = trial.build_parser().parse_args(
+        ["--scene", "D2", "--mode", "live-stop-replan-execute", "--candidate-playback-duration-s", "1.0"]
+    )
+    assert trial.formal_protocol_violations(args) == []
+    args.fast_warm_start = "lateral"
+    violations = trial.formal_protocol_violations(args)
+    assert any(item.startswith("fast_warm_start=") for item in violations)
+
+
 def test_nonformal_moving_trial_is_blocked_before_robot_setup(tmp_path):
     args = trial.build_parser().parse_args(
         [

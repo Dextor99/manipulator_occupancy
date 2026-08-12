@@ -208,6 +208,11 @@ Real low-speed reference recording:
 
 ## 2. D1/D2 Shadow Trial
 
+The final representative D2 tabletop demonstration uses the explicit audit
+label `D2_TABLETOP_XP10_FINAL`, the recorded `reference_xp10_line`, and
+`--x-offset 0.10`.  The label is written to `summary.json` together with
+`reference_x_offset_m`; it does not change planning or control behavior.
+
 This mode does not move the robot:
 
 ```bash
