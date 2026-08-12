@@ -712,9 +712,13 @@ class AuditVisualizer:
         self.o3d = o3d
         self.show_filtered = bool(show_filtered)
         self.show_noise = bool(show_noise)
+        self.view_initialized = False
         self.vis = o3d.visualization.Visualizer()
         self.vis.create_window(window_name="6.5.3 dynamic audit clusters", width=1280, height=800)
         self.vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.25))
+        render = self.vis.get_render_option()
+        render.background_color = np.asarray([0.04, 0.04, 0.04])
+        render.point_size = 3.0
 
         def point_cloud(color):
             cloud = o3d.geometry.PointCloud()
@@ -724,7 +728,10 @@ class AuditVisualizer:
 
         def line_set():
             lines = o3d.geometry.LineSet()
-            lines.points = o3d.utility.Vector3dVector(np.empty((0, 3)))
+            # Open3D warns while adding a completely empty LineSet.  Seed it
+            # with a zero-length line; the first update replaces this data.
+            lines.points = o3d.utility.Vector3dVector(np.zeros((2, 3)))
+            lines.lines = o3d.utility.Vector2iVector(np.asarray([[0, 1]], dtype=np.int32))
             self.vis.add_geometry(lines)
             return lines
 
@@ -787,6 +794,14 @@ class AuditVisualizer:
         for cloud, points in layers:
             cloud.points = o3d.utility.Vector3dVector(np.asarray(points, dtype=np.float64))
             self.vis.update_geometry(cloud)
+        # The window is created before the first camera frame, when all point
+        # clouds are empty.  Fit the camera once real geometry arrives;
+        # otherwise Open3D keeps looking only at the origin and appears black.
+        if not self.view_initialized:
+            visible_count = len(np.asarray(robot_points)) + sum(len(np.asarray(cluster.points)) for cluster in clusters)
+            if visible_count > 0:
+                self.vis.reset_view_point(True)
+                self.view_initialized = True
         alive = bool(self.vis.poll_events())
         self.vis.update_renderer()
         return alive
