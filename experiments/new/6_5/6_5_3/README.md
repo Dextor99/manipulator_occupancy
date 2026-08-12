@@ -6,7 +6,7 @@ are development logs and are not formal paper evidence.
 The experiment reuses the safe 6.5.2 tabletop reference:
 
 - home joints: `[0, 0, 90, 0, 90, 0] deg`
-- TCP X: home TCP + `0.10 m`
+- TCP X: home TCP, with `x-offset = 0.0 m`
 - TCP Y: `+0.40 m -> -0.40 m`
 - TCP Z / orientation: fixed from the home TCP pose
 
@@ -187,7 +187,7 @@ Dry run:
 
 ```bash
 /home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_3/prepare_653_reference.py \
-  --output results/new/6_5/6_5_3/reference_xp10_line
+  --output results/new/6_5/6_5_3/reference_xp00_line
 ```
 
 Real low-speed reference recording:
@@ -197,13 +197,13 @@ Real low-speed reference recording:
   --execute \
   --operator-phrase CCRO_653_REFERENCE_APPROVED \
   --reference-shape line \
-  --x-offset 0.10 \
+  --x-offset 0.0 \
   --y-start 0.4 \
   --y-goal -0.4 \
   --line-velocity-m-s 0.025 \
   --line-acc-m-s2 0.06 \
   --record-duration-s 40 \
-  --output results/new/6_5/6_5_3/reference_xp10_line
+  --output results/new/6_5/6_5_3/reference_xp00_line
 ```
 
 ## 2. D1/D2 Shadow Trial

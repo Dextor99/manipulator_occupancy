@@ -3953,7 +3953,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-local-motion-rad", type=float, default=0.002)
     parser.add_argument("--shadow-joint-probe-rad", type=float, default=0.025)
     parser.add_argument("--home-joints-deg", default="0,0,90,0,90,0")
-    parser.add_argument("--x-offset", type=float, default=0.10)
+    parser.add_argument("--x-offset", type=float, default=0.0)
     parser.add_argument("--y-start", type=float, default=0.4)
     parser.add_argument("--y-goal", type=float, default=-0.4)
     parser.add_argument("--line-velocity-m-s", type=float, default=0.020)

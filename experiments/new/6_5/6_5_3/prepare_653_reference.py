@@ -2,7 +2,7 @@
 """Prepare the 6.5.3 low-speed reference motion.
 
 The real dynamic repair experiment reuses the same safe tabletop start used in
-6.5.2: initial joints [0, 0, 90, 0, 90, 0] deg, then X shifted by +0.10 m and
+6.5.2: initial joints [0, 0, 90, 0, 90, 0] deg, with no additional TCP-X shift and
 Y moving from +0.40 m to -0.40 m.  This program can either:
 
 * write a dry-run plan and a simple Cartesian preview; or
@@ -347,7 +347,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sdk-dir", default=None)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--home-joints-deg", default="0,0,90,0,90,0")
-    parser.add_argument("--x-offset", type=float, default=0.10)
+    parser.add_argument("--x-offset", type=float, default=0.0)
     parser.add_argument("--y-start", type=float, default=0.4)
     parser.add_argument("--y-goal", type=float, default=-0.4)
     parser.add_argument("--reference-shape", choices=["line", "micro_curve"], default="line")
