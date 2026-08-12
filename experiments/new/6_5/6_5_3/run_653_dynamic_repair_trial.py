@@ -643,6 +643,55 @@ def make_local_reference(
     return head, tail, durations, p_inner, q_goal
 
 
+def clearance_guided_lateral_warm_start(
+    model: RobotSurfaceModel,
+    p_inner: np.ndarray,
+    durations: np.ndarray,
+    obstacle_center: np.ndarray,
+    *,
+    offset_m: float,
+    tcp_link: str = "gripper_base_link",
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Add one smooth tabletop-lateral TCP detour to a linear warm start.
+
+    The task direction is Y, so the lateral direction is signed base X.  A
+    damped translational Jacobian maps the requested midpoint displacement to
+    joint space; a sine envelope keeps the fixed head/tail unchanged.
+    """
+    points = np.asarray(p_inner, dtype=np.float64).copy()
+    if len(points) == 0 or offset_m <= 0.0:
+        return points, {"mode": "linear", "reason": "no_internal_points_or_zero_offset"}
+    midpoint_index = int(np.argmin(np.abs(np.cumsum(durations)[:-1] / np.sum(durations) - 0.5)))
+    q_mid = points[midpoint_index]
+    joint_values = {name: float(q_mid[i]) for i, name in enumerate(model.joint_names)}
+    tcp = np.asarray(model.urdf.link_transforms(joint_values)[tcp_link][:3, 3], dtype=np.float64)
+    center = np.asarray(obstacle_center, dtype=np.float64)
+    sign_x = -1.0 if center[0] >= tcp[0] else 1.0
+    desired = np.asarray([sign_x * float(offset_m), 0.0, 0.0], dtype=np.float64)
+    jacobian = model.point_jacobian(q_mid, tcp_link, np.zeros(3, dtype=np.float64))
+    damping = 1.0e-3
+    delta_q = jacobian.T @ np.linalg.solve(jacobian @ jacobian.T + damping * np.eye(3), desired)
+    # This is an initializer, not an unconstrained command.  Keep it inside a
+    # modest joint-space envelope; the unchanged motion verifier remains final.
+    peak = float(np.max(np.abs(delta_q)))
+    if peak > 0.10:
+        delta_q *= 0.10 / peak
+    ratios = np.cumsum(durations)[:-1] / np.sum(durations)
+    envelope = np.sin(np.pi * ratios)
+    points += envelope[:, None] * delta_q[None, :]
+    achieved = jacobian @ delta_q
+    return points, {
+        "mode": "clearance_guided_lateral",
+        "tcp_link": tcp_link,
+        "nominal_midpoint_tcp_m": tcp.tolist(),
+        "obstacle_center_m": center.tolist(),
+        "requested_tcp_offset_m": desired.tolist(),
+        "linearized_tcp_offset_m": achieved.tolist(),
+        "joint_seed_delta_rad": delta_q.tolist(),
+        "joint_seed_delta_max_rad": float(np.max(np.abs(delta_q))),
+    }
+
+
 def make_rejoin_bridge(
     repair_trajectory: NUBSTrajectory6D,
     rejoin_state: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -1449,13 +1498,23 @@ def run_fast_repair(
         q_now, qd_now, args, reference_goal=reference_goal
     )
     reference_trajectory = NUBSTrajectory6D().generate(p_inner, head, tail, durations)
+    warm_start_audit: dict[str, Any] = {"mode": "linear"}
+    optimization_inner = p_inner
+    if getattr(args, "fast_warm_start", "linear") == "lateral":
+        optimization_inner, warm_start_audit = clearance_guided_lateral_warm_start(
+            stage4_model,
+            p_inner,
+            durations,
+            center,
+            offset_m=float(getattr(args, "lateral_warm_start_m", 0.04)),
+        )
     online_started = time.perf_counter()
     deadline_perf = online_started + args.fast_budget_ms / 1000.0
     result = run_repair_v3(
         evaluator,
         forecast,
         limits,
-        p_inner,
+        optimization_inner,
         head,
         tail,
         durations,
@@ -1602,6 +1661,7 @@ def run_fast_repair(
         "repair_step_ok": repair_step_ok,
         "rejection_reasons": rejection_reasons,
         "candidate_is_reference_continuation": not repair_step_ok,
+        "warm_start": warm_start_audit,
         "fast_elapsed_ms": online_elapsed_ms,
         "online_pipeline_elapsed_ms": online_elapsed_ms,
         "repair_elapsed_ms": repair_elapsed_ms,
@@ -3936,6 +3996,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="recorded one-way reference_feedback.csv; mandatory for moving modes",
     )
     parser.add_argument("--local-segments", type=int, default=5)
+    parser.add_argument("--fast-warm-start", choices=["linear", "lateral"], default="linear")
+    parser.add_argument("--lateral-warm-start-m", type=float, default=0.04)
     parser.add_argument("--default-obstacle-radius-m", type=float, default=0.055)
     parser.add_argument("--max-track-cluster-association-m", type=float, default=0.08)
     parser.add_argument("--min-dynamic-trigger-speed-m-s", type=float, default=0.08)

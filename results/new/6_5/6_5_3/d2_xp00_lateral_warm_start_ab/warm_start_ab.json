@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-08-12T14:31:41.698671+00:00",
+  "status": "LATERAL_WARM_START_FAIL",
+  "robot_commanded": false,
+  "source_trial": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/d2_xp00_baseline/trials/D2_opposing_approach_r01",
+  "local_horizon_s": 1.0,
+  "lateral_offset_m": 0.04,
+  "rows": [
+    {
+      "warm_start": "linear",
+      "accepted_steps": 0,
+      "local_repair_ready": false,
+      "reference_clearance_m": 0.06453539481747833,
+      "candidate_clearance_m": 0.06453539481747833,
+      "clearance_improvement_m": 0.0,
+      "velocity_ok": true,
+      "acceleration_ok": true,
+      "fast_ms": 30.998053000075743,
+      "max_delta_q_rad": 0.0,
+      "warm_start_audit": "{\"mode\": \"linear\"}",
+      "rejection_reasons": "online_clearance_failed;verification_checks_failed:distance_ok;no_accepted_repair_step;insufficient_clearance_improvement;candidate_motion_indistinguishable_from_reference",
+      "messages": "projected_qp max_violation=4.332e-02 clearance_reward=0 | scale 1.00 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=3.727e-01 | scale 0.85 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=3.608e-02 | scale 0.65 rejected by linear screen | scale 0.45 rejected by linear screen | scale 0.30 rejected by linear screen | scale 0.20 rejected by linear screen | scale 0.10 rejected by linear screen | rejected: no feasible monotonic step"
+    },
+    {
+      "warm_start": "lateral",
+      "accepted_steps": 0,
+      "local_repair_ready": false,
+      "reference_clearance_m": 0.06453539481747833,
+      "candidate_clearance_m": 0.06453539481747833,
+      "clearance_improvement_m": 0.0,
+      "velocity_ok": true,
+      "acceleration_ok": true,
+      "fast_ms": 28.449569013901055,
+      "max_delta_q_rad": 0.06884597544844845,
+      "warm_start_audit": "{\"mode\": \"clearance_guided_lateral\", \"tcp_link\": \"gripper_base_link\", \"nominal_midpoint_tcp_m\": [0.48748727233805644, 0.21834376981784273, 0.5395965824714003], \"obstacle_center_m\": [0.55577724571465, -0.18779411494396236, 0.32159417052106265], \"requested_tcp_offset_m\": [-0.04, 0.0, 0.0], \"linearized_tcp_offset_m\": [-0.039646089107850405, 5.233241609505228e-05, 7.174994136508475e-05], \"joint_seed_delta_rad\": [0.051762851594499774, 0.07227760855292932, 0.06462981282850393, -0.03813002258294884, 0.022111969581943745, 0.0], \"joint_seed_delta_max_rad\": 0.07227760855292932}",
+      "rejection_reasons": "online_clearance_failed;verification_checks_failed:distance_ok;no_accepted_repair_step;insufficient_clearance_improvement",
+      "messages": "projected_qp max_violation=2.578e-01 clearance_reward=0 | scale 1.00 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=5.141e-01 | scale 0.85 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=6.295e-01 | scale 0.65 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=7.834e-01 | scale 0.45 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=9.372e-01 | scale 0.30 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=1.053e+00 | scale 0.20 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=1.130e+00 | scale 0.10 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=1.206e+00 | rejected: no feasible monotonic step"
+    }
+  ]
+}
