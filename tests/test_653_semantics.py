@@ -1048,6 +1048,7 @@ def test_rolling_virtual_shadow_parser_has_no_execution_option():
     assert args.seed_timeout_s == pytest.approx(8.0)
     assert args.task_geometry_id == "D2C_COMPACT_TABLETOP_XP10"
     assert args.obstacle_nominal_size_m == "0.10,0.10,0.10"
+    assert args.obstacle_motion_mode == "dynamic"
 
 
 def test_rolling_virtual_retries_same_segment_after_valid_fresh_rejection():
@@ -1081,17 +1082,37 @@ def test_rolling_virtual_retry_transitions_remain_fail_closed():
     ) == "safe_hold"
 
 
-def test_compact_geometry_audit_never_changes_planning_geometry():
-    compact = rolling_virtual.compact_geometry_audit(
-        {"axial_length_m": 0.10, "component_base_radii": [0.06, 0.07]}
+def test_geometry_quality_audit_never_changes_planning_geometry():
+    compact = rolling_virtual.geometry_quality_audit(
+        {"axial_length_m": 0.10, "component_base_radii": [0.06, 0.07]},
+        axial_limit_m=0.16,
+        component_radius_limit_m=0.12,
     )
-    elongated = rolling_virtual.compact_geometry_audit(
-        {"axial_length_m": 0.22, "component_base_radii": [0.13]}
+    elongated = rolling_virtual.geometry_quality_audit(
+        {"axial_length_m": 0.22, "component_base_radii": [0.13]},
+        axial_limit_m=0.16,
+        component_radius_limit_m=0.12,
     )
     assert compact["compact_scene_quality_ok"]
     assert compact["planning_geometry_unchanged"]
     assert not elongated["compact_scene_quality_ok"]
     assert elongated["planning_geometry_unchanged"]
+
+
+def test_static_obstacle_uses_zero_velocity_without_losing_measurement():
+    fresh = {
+        "accepted": True,
+        "velocity": [0.02, -0.01, 0.03],
+        "speed_m_s": 0.04,
+        "center": [1.0, 2.0, 3.0],
+    }
+    static = rolling_virtual.obstacle_state_for_mode(fresh, "static")
+    assert static["velocity"] == [0.0, 0.0, 0.0]
+    assert static["speed_m_s"] == 0.0
+    assert static["measured_velocity"] == fresh["velocity"]
+    assert static["measured_speed_m_s"] == fresh["speed_m_s"]
+    assert static["center"] == fresh["center"]
+    assert fresh["velocity"] != static["velocity"]
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():

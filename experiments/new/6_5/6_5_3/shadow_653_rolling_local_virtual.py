@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeat", type=int, required=True)
     parser.add_argument("--task-geometry-id", default="D2C_COMPACT_TABLETOP_XP10")
     parser.add_argument(
+        "--obstacle-motion-mode",
+        choices=("dynamic", "static"),
+        default="dynamic",
+        help="static forces the measured short-window obstacle velocity to zero",
+    )
+    parser.add_argument(
         "--obstacle-nominal-size-m",
         default="0.10,0.10,0.10",
         help="audit-only nominal obstacle dimensions dx,dy,dz; no planning authority",
@@ -197,24 +203,45 @@ def virtual_reference_risk(
     return {"min_distance_m": best["distance_m"], "best": best, "preview": rows}
 
 
-def compact_geometry_audit(geometry: dict[str, Any]) -> dict[str, Any]:
+def geometry_quality_audit(
+    geometry: dict[str, Any],
+    *,
+    axial_limit_m: float,
+    component_radius_limit_m: float,
+) -> dict[str, Any]:
     """Report scene quality without changing planning geometry or authorization."""
     axial_length = float(geometry.get("axial_length_m", math.inf))
     radii = np.asarray(geometry.get("component_base_radii", []), dtype=np.float64)
     max_radius = float(np.max(radii)) if radii.size else math.inf
     warnings = []
-    if axial_length > 0.16:
-        warnings.append("axial_length_gt_0.16m")
-    if max_radius > 0.12:
-        warnings.append("component_radius_gt_0.12m")
+    if axial_length > axial_limit_m:
+        warnings.append("axial_length_exceeds_nominal_audit_limit")
+    if max_radius > component_radius_limit_m:
+        warnings.append("component_radius_exceeds_nominal_audit_limit")
     return {
         "audit_only": True,
         "planning_geometry_unchanged": True,
         "axial_length_m": axial_length,
         "max_component_radius_m": max_radius,
+        "axial_limit_m": float(axial_limit_m),
+        "component_radius_limit_m": float(component_radius_limit_m),
         "compact_scene_quality_ok": not warnings,
         "quality_warnings": warnings,
     }
+
+
+def obstacle_state_for_mode(fresh: dict[str, Any], motion_mode: str) -> dict[str, Any]:
+    """Use one forecast interface; a static obstacle is the v=0 special case."""
+    state = copy.deepcopy(fresh)
+    if motion_mode == "static" and state.get("accepted", False):
+        state["measured_velocity"] = list(state.get("velocity", [0.0, 0.0, 0.0]))
+        state["measured_speed_m_s"] = float(state.get("speed_m_s", 0.0))
+        state["velocity"] = [0.0, 0.0, 0.0]
+        state["speed_m_s"] = 0.0
+        state["motion_model"] = "static_zero_velocity"
+    else:
+        state["motion_model"] = "measured_local_constant_velocity"
+    return state
 
 
 def retry_action(
@@ -244,6 +271,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     if obstacle_size.shape != (3,) or np.any(obstacle_size <= 0.0):
         raise ValueError("obstacle-nominal-size-m must contain three positive dimensions")
+    sorted_size = np.sort(obstacle_size)
+    geometry_axial_limit_m = float(1.5 * sorted_size[-1] + 0.01)
+    geometry_radius_limit_m = float(max(0.12, 1.5 * sorted_size[-2]))
     output = args.output.resolve() / f"r{args.repeat:02d}"
     output.mkdir(parents=True, exist_ok=True)
     summary_path = output / "summary.json"
@@ -270,6 +300,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "source_trial": str(source),
         "task_geometry_id": args.task_geometry_id,
         "obstacle_nominal_size_m": obstacle_size.tolist(),
+        "obstacle_motion_mode": args.obstacle_motion_mode,
+        "forecast_interface": (
+            "static_zero_velocity"
+            if args.obstacle_motion_mode == "static"
+            else "measured_local_constant_velocity"
+        ),
+        "geometry_quality_audit_limits": {
+            "audit_only": True,
+            "axial_limit_m": geometry_axial_limit_m,
+            "component_radius_limit_m": geometry_radius_limit_m,
+        },
         "perception_parameters_frozen": {
             "cluster_eps_m": runtime_args.cluster_eps,
             "cluster_min_samples": runtime_args.cluster_min_samples,
@@ -313,15 +354,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             if runtime_args.temporal_denoise
             else None
         )
-        trial.require_confirmation(
-            True,
-            "VIRTUAL SHADOW ONLY: the robot will not move. Press Enter, then introduce "
+        prompt = (
+            "VIRTUAL SHADOW ONLY: the robot will not move. Place the static obstacle "
+            "in the planned tabletop corridor before pressing Enter, then leave it stationary."
+            if args.obstacle_motion_mode == "static"
+            else "VIRTUAL SHADOW ONLY: the robot will not move. Press Enter, then introduce "
             f"the moving tabletop obstacle into the D2 corridor within {args.seed_timeout_s:.1f}s "
-            "and keep it moving continuously.",
+            "and keep it moving continuously."
         )
+        trial.require_confirmation(True, prompt)
         seed = first_external_seed(
             processor, denoiser, runtime_args, timeout_s=args.seed_timeout_s
         )
+        seed = obstacle_state_for_mode(seed, args.obstacle_motion_mode)
         trial.write_json(output / "seed.json", seed)
         if not seed["accepted"]:
             log["status"] = "ROLLING_LOCAL_VIRTUAL_SEED_FAILED"
@@ -349,6 +394,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 trigger_timestamp=float(previous["last_timestamp"]),
                 stop_when_ready=True,
             )
+            fresh_wait = obstacle_state_for_mode(fresh_wait, args.obstacle_motion_mode)
             wait_row = {
                 "fresh": fresh_wait,
                 "frame_count": len(wait_frames),
@@ -412,6 +458,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     trigger_timestamp=float(previous["last_timestamp"]),
                     stop_when_ready=True,
                 )
+                fresh_plan = obstacle_state_for_mode(fresh_plan, args.obstacle_motion_mode)
                 plan_geometry = None
             segment: dict[str, Any] = {
                 **item,
@@ -447,7 +494,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         fit_margin_m=runtime_args.multisphere_fit_margin_m,
                         max_components=runtime_args.multisphere_max_components,
                     )
-                attempt["geometry_quality"] = compact_geometry_audit(plan_geometry)
+                attempt["geometry_quality"] = geometry_quality_audit(
+                    plan_geometry,
+                    axial_limit_m=geometry_axial_limit_m,
+                    component_radius_limit_m=geometry_radius_limit_m,
+                )
                 artifacts: dict[str, Any] = {}
                 result = trial.run_fast_repair(
                     runtime_args,
@@ -485,6 +536,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     trigger_timestamp=float(fresh_plan["last_timestamp"]),
                     stop_when_ready=True,
                 )
+                fresh_auth = obstacle_state_for_mode(fresh_auth, args.obstacle_motion_mode)
                 trial.write_json(
                     attempt_dir / "fresh_authorization.json",
                     {"result": fresh_auth, "frames": auth_frames},
@@ -532,7 +584,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         "fast": result,
                         "fresh_authorization": fresh_auth,
                         "fresh_geometry_quality": (
-                            compact_geometry_audit(auth_geometry) if auth_geometry is not None else None
+                            geometry_quality_audit(
+                                auth_geometry,
+                                axial_limit_m=geometry_axial_limit_m,
+                                component_radius_limit_m=geometry_radius_limit_m,
+                            )
+                            if auth_geometry is not None
+                            else None
                         ),
                         "side_continuity": side,
                         "local_authorization": local_auth,
