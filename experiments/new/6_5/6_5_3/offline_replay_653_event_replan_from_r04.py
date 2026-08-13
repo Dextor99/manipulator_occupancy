@@ -26,13 +26,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
-live = importlib.import_module("experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_live")
 event = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_event_replan_live"
 )
 
 DEFAULT_SOURCE = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_live/r04"
-DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/offline_event_replan_r04"
+DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/offline_event_replan_r04_goal_directed"
 DEFAULT_REFERENCE = ROOT / "results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv"
 
 
@@ -42,9 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--reference-feedback-csv", type=Path, default=DEFAULT_REFERENCE)
     parser.add_argument("--forward-m", type=float, default=0.05)
-    parser.add_argument("--side-lengths-m", default="0.04,0.06,0.08")
     parser.add_argument("--max-joint-delta-rad", type=float, default=0.12)
     parser.add_argument("--planning-robust-target-m", type=float, default=0.11)
+    parser.add_argument("--continuation-side-m", type=float, default=0.04)
     parser.add_argument("--tcp-link", default="gripper_base_link")
     return parser
 
@@ -85,6 +84,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     fresh3 = fresh3_payload["result"]
     frames3 = fresh3_payload["frames"]
     geometry3 = read_json(trial_dir / "fresh3_multisphere.json")
+    q0 = np.asarray(execution["actual_start_joint_rad"], dtype=np.float64)
     q1 = np.asarray(execution["goal_check"]["actual_joint_rad"], dtype=np.float64)
 
     runtime_args = trial.build_parser().parse_args(["--scene", "D2", "--mode", "shadow"])
@@ -114,41 +114,33 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         trial.write_json(output / "summary.json", result)
         return result
 
-    side_lengths = tuple(float(value) for value in args.side_lengths_m.split(","))
-    if len(side_lengths) != 3 or any(value <= 0.0 for value in side_lengths):
-        raise ValueError("side-lengths-m must contain exactly three positive values")
     if args.planning_robust_target_m < 0.11:
         raise ValueError("planning-robust-target-m must remain at least 0.11 m")
     local2_goal, goal_audit = event.next_recorded_reference_goal(
         reference, q1, runtime_args.local_horizon_s
     )
     result["local2_reference_goal"] = goal_audit
-    planner = live.make_r06_fast_wrapper(
-        trial.run_fast_repair,
-        side_lengths=side_lengths,
-        forward_m=float(args.forward_m),
-        max_joint_delta_rad=float(args.max_joint_delta_rad),
-        robust_target_m=float(args.planning_robust_target_m),
-        tcp_link=args.tcp_link,
-    )
     local2_dir = output / "local2_plan"
     artifacts: dict[str, Any] = {}
-    candidate = planner(
+    candidate = event.plan_goal_directed_continuation(
+        trial.run_fast_repair,
         runtime_args,
         config,
         model,
+        q_escape_start=q0,
         q_now=q1,
-        qd_now=np.zeros(6),
-        center=np.asarray(fresh3["center"], dtype=np.float64),
-        velocity=np.asarray(fresh3["velocity"], dtype=np.float64),
-        radius=float(fresh3["radius"]),
+        q_final=np.asarray(reference.q[-1], dtype=np.float64),
+        fresh=fresh3,
+        geometry=geometry3,
         risk_links=set(model.surface_by_link(q1, density="coarse")),
         trial_dir=local2_dir,
-        reference_goal=local2_goal,
-        rejoin_goals=None,
-        obstacle_audit={"track_id": 1, "source": "archived_r04_fresh3"},
-        multisphere_geometry=geometry3,
+        nominal_reference_goal=local2_goal,
         artifacts_out=artifacts,
+        forward_m=float(args.forward_m),
+        side_m=float(args.continuation_side_m),
+        robust_target_m=float(args.planning_robust_target_m),
+        max_joint_delta_rad=float(args.max_joint_delta_rad),
+        tcp_link=args.tcp_link,
     )
     result["local2_candidate"] = candidate
     result["local2_fresh4_available"] = False

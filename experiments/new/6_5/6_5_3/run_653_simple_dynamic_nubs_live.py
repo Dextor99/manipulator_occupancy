@@ -35,6 +35,7 @@ DEFAULT_REFERENCE = ROOT / "results/new/6_5/6_5_3/reference_xp10_line/reference_
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_live"
 REFERENCE_OPERATOR_PHRASE = trial.REQUIRED_OPERATOR_PHRASE
 LOCAL_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_LOCAL_EXECUTE_APPROVED"
+ACTIVE_BASE_FAST_REPAIR = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -312,6 +313,7 @@ def make_guarded_executor(original_executor: Any, live_trial_dir: Path):
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    global ACTIVE_BASE_FAST_REPAIR
     side_lengths = validate_request(args)
     output = args.output.resolve() / f"r{args.repeat:02d}"
     output.mkdir(parents=True, exist_ok=True)
@@ -339,6 +341,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     original_executor = trial.execute_authorized_trajectory_offline_track
     original_rolling = trial.rolling_fast_until_authorized
     try:
+        ACTIVE_BASE_FAST_REPAIR = original_fast
         live_args = trial.build_parser().parse_args(
             [
                 "--scene", "D2",
@@ -410,6 +413,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         else:
             log["status"] = "SIMPLE_DYNAMIC_NUBS_LIVE_FAIL_CLOSED_HOLD"
     finally:
+        ACTIVE_BASE_FAST_REPAIR = None
         trial.fit_pca_multisphere = original_fit
         trial.run_fast_repair = original_fast
         trial.select_dynamic_execution_path = original_select

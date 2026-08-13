@@ -210,3 +210,96 @@ def risk_link_bypass_goal_candidates(
         }
     )
     return rows, direction_audit
+
+
+def goal_directed_side_continuation_candidates(
+    model: Any,
+    q_now: np.ndarray,
+    *,
+    tcp_position: np.ndarray,
+    goal_position: np.ndarray,
+    risk_link: str,
+    risk_position: np.ndarray,
+    risk_point_q: np.ndarray,
+    established_side: np.ndarray,
+    forward_m: float = 0.05,
+    side_m: float = 0.04,
+    side_weights: tuple[float, ...] = (1.0, 0.5, 0.0),
+    tcp_link: str = "gripper_base_link",
+    damping: float = 1.0e-3,
+    task_weight: float = 1.0,
+    max_joint_delta_rad: float = 0.12,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Progress toward goal while preserving a previously validated bypass side.
+
+    The side vector fixes only which side of the obstacle is retained.  Its
+    magnitude is varied from strong to release; it is not repeatedly inferred
+    from the newest obstacle point and is never interpreted as a direction that
+    must grow without bound.
+    """
+    q_values = np.asarray(q_now, dtype=np.float64)
+    task = normalized(np.asarray(goal_position) - np.asarray(tcp_position))
+    side_raw = np.asarray(established_side, dtype=np.float64)
+    side_lateral = side_raw - task * float(np.dot(task, side_raw))
+    side = normalized(side_lateral, fallback=side_raw)
+    risk_configuration = np.asarray(risk_point_q, dtype=np.float64)
+    transforms = model.urdf.link_transforms(
+        {name: float(risk_configuration[index]) for index, name in enumerate(model.joint_names)}
+    )
+    risk_transform = np.asarray(transforms[risk_link], dtype=np.float64)
+    risk_local = risk_transform[:3, :3].T @ (
+        np.asarray(risk_position, dtype=np.float64) - risk_transform[:3, 3]
+    )
+    risk_jacobian = np.asarray(model.point_jacobian(q_values, risk_link, risk_local), dtype=np.float64)
+    tcp_jacobian = np.asarray(
+        model.point_jacobian(q_values, tcp_link, np.zeros(3, dtype=np.float64)), dtype=np.float64
+    )
+    task_row = task @ tcp_jacobian
+    system = np.vstack([risk_jacobian, float(task_weight) * task_row[None, :]])
+    rows = []
+    for index, weight in enumerate(side_weights):
+        if weight < 0.0 or weight > 1.0:
+            raise ValueError("side continuation weights must lie in [0, 1]")
+        requested_risk = float(side_m) * float(weight) * side
+        target = np.r_[requested_risk, float(task_weight) * float(forward_m)]
+        delta = system.T @ np.linalg.solve(
+            system @ system.T + float(damping) * np.eye(system.shape[0]), target
+        )
+        raw_peak = float(np.max(np.abs(delta)))
+        scale = 1.0
+        if raw_peak > max_joint_delta_rad:
+            scale = float(max_joint_delta_rad / raw_peak)
+            delta *= scale
+        achieved_risk = risk_jacobian @ delta
+        achieved_tcp = tcp_jacobian @ delta
+        rows.append(
+            {
+                "candidate": index + 1,
+                "phase": ("strong" if weight == 1.0 else "release" if weight == 0.0 else "weak"),
+                "side_weight": float(weight),
+                "side_m": float(side_m) * float(weight),
+                "forward_m": float(forward_m),
+                "q_goal": q_values + delta,
+                "mapping": {
+                    "risk_link": risk_link,
+                    "risk_point_base_m": np.asarray(risk_position).tolist(),
+                    "risk_point_local_m": risk_local.tolist(),
+                    "requested_risk_delta_m": requested_risk.tolist(),
+                    "linearized_risk_delta_m": achieved_risk.tolist(),
+                    "requested_task_progress_m": float(forward_m),
+                    "linearized_tcp_delta_m": achieved_tcp.tolist(),
+                    "linearized_task_progress_m": float(np.dot(task, achieved_tcp)),
+                    "joint_delta_rad": delta.tolist(),
+                    "raw_joint_delta_max_abs_rad": raw_peak,
+                    "joint_delta_scale": scale,
+                    "joint_delta_max_abs_rad": float(np.max(np.abs(delta))),
+                },
+            }
+        )
+    return rows, {
+        "task_direction": task.tolist(),
+        "established_bypass_side": side.tolist(),
+        "side_policy": "lock_side_not_constant_direction",
+        "candidate_phases": [row["phase"] for row in rows],
+        "risk_link": risk_link,
+    }

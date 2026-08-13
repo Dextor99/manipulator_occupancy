@@ -81,6 +81,8 @@ def test_event_replan_extension_is_default_off_and_bounded():
     assert args.task_geometry_id == "D2_SIMPLE_DYNAMIC_NUBS_EVENT_REPLAN_LIVE_XP10"
     assert args.terminal_durations_s == "3.0,4.0,5.0,6.0"
     assert args.post_local_monitor_max_s == 3.0
+    assert args.continuation_side_m == 0.04
+    assert simple_live.ACTIVE_BASE_FAST_REPAIR is None
 
 
 def test_event_replan_strict_empty_scene_requires_three_valid_clear_frames():
@@ -149,6 +151,43 @@ def test_event_local2_goal_is_one_horizon_forward_of_nearest_reference():
     assert audit == {"nearest_reference_index": 2, "forward_reference_index": 4}
     assert np.allclose(state[0], q[4])
     assert reference.index == 0
+
+
+def test_goal_directed_continuation_locks_side_but_releases_magnitude():
+    class Model:
+        joint_names = [f"j{i}" for i in range(6)]
+
+        class URDF:
+            @staticmethod
+            def link_transforms(values):
+                del values
+                return {"risk": np.eye(4)}
+
+        urdf = URDF()
+
+        @staticmethod
+        def point_jacobian(q, link, point):
+            del q, link, point
+            return np.eye(3, 6)
+
+    rows, audit = simple_bypass.goal_directed_side_continuation_candidates(
+        Model(),
+        np.zeros(6),
+        tcp_position=np.zeros(3),
+        goal_position=np.array([0.0, 1.0, 0.0]),
+        risk_link="risk",
+        risk_position=np.zeros(3),
+        risk_point_q=np.zeros(6),
+        established_side=np.array([0.0, 0.0, 1.0]),
+        forward_m=0.05,
+        side_m=0.04,
+    )
+    assert [row["phase"] for row in rows] == ["strong", "weak", "release"]
+    requested = [np.asarray(row["mapping"]["requested_risk_delta_m"]) for row in rows]
+    assert np.isclose(np.linalg.norm(requested[0]), 0.04)
+    assert np.isclose(np.linalg.norm(requested[1]), 0.02)
+    assert np.isclose(np.linalg.norm(requested[2]), 0.0)
+    assert audit["side_policy"] == "lock_side_not_constant_direction"
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():

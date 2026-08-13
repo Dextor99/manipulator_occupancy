@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
 live = importlib.import_module("experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_live")
+bypass = importlib.import_module("experiments.new.6_5.6_5_3.simple_bypass_planner")
 
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_event_replan_live"
 EVENT_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_EVENT_REPLAN_EXECUTE_APPROVED"
@@ -59,6 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=3.0,
         help="bounded Fresh monitoring time while the measured tail is physically safe",
+    )
+    parser.add_argument(
+        "--continuation-side-m",
+        type=float,
+        default=0.04,
+        help="strong retained-side displacement for local #2; weak uses half and release uses zero",
     )
     return parser
 
@@ -303,6 +310,176 @@ def next_recorded_reference_goal(reference: Any, q_actual: np.ndarray, horizon_s
     ), {"nearest_reference_index": nearest, "forward_reference_index": index}
 
 
+def established_bypass_side(
+    model: Any,
+    q_escape_start: np.ndarray,
+    q_now: np.ndarray,
+    q_final: np.ndarray,
+    *,
+    tcp_link: str,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    p_start = live.simple.tcp_position(model, np.asarray(q_escape_start), tcp_link)
+    p_now = live.simple.tcp_position(model, np.asarray(q_now), tcp_link)
+    p_final = live.simple.tcp_position(model, np.asarray(q_final), tcp_link)
+    task = bypass.normalized(p_final - p_now)
+    executed = p_now - p_start
+    lateral = executed - task * float(np.dot(task, executed))
+    if np.linalg.norm(lateral) <= 1.0e-6:
+        raise RuntimeError("local #1 did not establish a measurable bypass side")
+    side = bypass.normalized(lateral)
+    return side, {
+        "tcp_escape_start_m": p_start.tolist(),
+        "tcp_now_m": p_now.tolist(),
+        "tcp_final_m": p_final.tolist(),
+        "executed_tcp_delta_m": executed.tolist(),
+        "task_direction": task.tolist(),
+        "lateral_executed_delta_m": lateral.tolist(),
+        "established_bypass_side": side.tolist(),
+        "semantic": "lock_side_not_constant_direction",
+    }
+
+
+def plan_goal_directed_continuation(
+    base_fast: Any,
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    q_escape_start: np.ndarray,
+    q_now: np.ndarray,
+    q_final: np.ndarray,
+    fresh: dict[str, Any],
+    geometry: dict[str, Any],
+    risk_links: set[str],
+    trial_dir: Path,
+    nominal_reference_goal: tuple[np.ndarray, np.ndarray, np.ndarray],
+    artifacts_out: dict[str, Any],
+    forward_m: float,
+    side_m: float,
+    robust_target_m: float,
+    max_joint_delta_rad: float,
+    tcp_link: str,
+) -> dict[str, Any]:
+    """Select strong/weak/release goal progress, then invoke unchanged Fast."""
+    forecast = trial.constant_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.asarray(fresh["velocity"], dtype=np.float64),
+    )
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    nominal = live.nominal_local_risk(
+        runtime_args,
+        model,
+        evaluator,
+        forecast,
+        np.asarray(q_now, dtype=np.float64),
+        nominal_reference_goal,
+    )
+    risk = nominal["risk_object"]
+    if risk.robot_point is None or risk.obstacle_point is None:
+        return {
+            "status": "REJECTED_GOAL_DIRECTED_MISSING_RISK_POINTS",
+            "local_repair_status": "REJECTED_GOAL_DIRECTED_MISSING_RISK_POINTS",
+            "local_repair_ready": False,
+            "accepted_for_switch": False,
+            "rejection_reasons": ["missing_ccro_surface_points"],
+        }
+    side, side_audit = established_bypass_side(
+        model, q_escape_start, q_now, q_final, tcp_link=tcp_link
+    )
+    tcp_now = live.simple.tcp_position(model, np.asarray(q_now), tcp_link)
+    tcp_final = live.simple.tcp_position(model, np.asarray(q_final), tcp_link)
+    goals, direction = bypass.goal_directed_side_continuation_candidates(
+        model,
+        np.asarray(q_now),
+        tcp_position=tcp_now,
+        goal_position=tcp_final,
+        risk_link=str(nominal["nearest_link"]),
+        risk_position=np.asarray(risk.robot_point),
+        risk_point_q=np.asarray(nominal["q_risk"]),
+        established_side=side,
+        forward_m=float(forward_m),
+        side_m=float(side_m),
+        side_weights=(1.0, 0.5, 0.0),
+        tcp_link=tcp_link,
+        max_joint_delta_rad=float(max_joint_delta_rad),
+    )
+    task = np.asarray(direction["task_direction"], dtype=np.float64)
+    rows = []
+    for item in goals:
+        goal_state = (np.asarray(item["q_goal"]), np.zeros(6), np.zeros(6))
+        head, tail, durations, inner, _ = trial.make_local_reference(
+            np.asarray(q_now), np.zeros(6), runtime_args, reference_goal=goal_state
+        )
+        trajectory = trial.NUBSTrajectory6D().generate(inner, head, tail, durations)
+        minimum, profile = live.simple.trajectory_minimum(evaluator, forecast, trajectory)
+        tcp_end = live.simple.tcp_position(
+            model, trajectory.evaluate(trajectory.total_duration), tcp_link
+        )
+        progress = float(np.dot(tcp_end - tcp_now, task))
+        rows.append(
+            {
+                **{key: item[key] for key in ("candidate", "phase", "side_weight", "side_m", "forward_m")},
+                "mapping": item["mapping"],
+                "coarse_min_distance_m": float(minimum["distance_m"]),
+                "coarse_min_tau_s": float(minimum["tau_s"]),
+                "coarse_nearest_link": minimum["nearest_link"],
+                "task_progress_m": progress,
+                "goal_distance_m": float(np.linalg.norm(tcp_final - tcp_end)),
+                "task_progress_ok": bool(progress > 0.0),
+                "profile": profile,
+            }
+        )
+    safe = [
+        row for row in rows
+        if row["coarse_min_distance_m"] >= robust_target_m and row["task_progress_ok"]
+    ]
+    selected = max(safe, key=lambda row: (row["task_progress_m"], -row["goal_distance_m"])) if safe else None
+    audit = {
+        "policy": "goal_directed_bypass_continuation",
+        "q_escape_start_rad": np.asarray(q_escape_start).tolist(),
+        "q_actual_continuation_start_rad": np.asarray(q_now).tolist(),
+        "side_audit": side_audit,
+        "direction": direction,
+        "candidates": rows,
+        "planning_robust_target_m": float(robust_target_m),
+        "selected_candidate": None if selected is None else int(selected["candidate"]),
+        "selected_phase": None if selected is None else selected["phase"],
+        "fast_invoked": selected is not None,
+    }
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    trial.write_json(trial_dir / "goal_directed_continuation_audit.json", audit)
+    if selected is None:
+        return {
+            "status": "REJECTED_NO_GOAL_DIRECTED_ROBUST_CONTINUATION",
+            "local_repair_status": "REJECTED_NO_GOAL_DIRECTED_ROBUST_CONTINUATION",
+            "local_repair_ready": False,
+            "accepted_for_switch": False,
+            "rejection_reasons": ["no_goal_directed_candidate_at_or_above_0.11m"],
+            "goal_directed_continuation_audit": audit,
+        }
+    selected_goal = goals[int(selected["candidate"]) - 1]
+    result = base_fast(
+        runtime_args,
+        config,
+        model,
+        q_now=np.asarray(q_now),
+        qd_now=np.zeros(6),
+        center=np.asarray(fresh["center"]),
+        velocity=np.asarray(fresh["velocity"]),
+        radius=float(fresh["radius"]),
+        risk_links=risk_links,
+        trial_dir=trial_dir,
+        reference_goal=(np.asarray(selected_goal["q_goal"]), np.zeros(6), np.zeros(6)),
+        rejoin_goals=None,
+        obstacle_audit={"track_id": 1, "event_local_index": 2, "phase": "bypass_progression"},
+        multisphere_geometry=geometry,
+        artifacts_out=artifacts_out,
+    )
+    result["goal_directed_continuation_audit"] = audit
+    return result
+
+
 def authorize_terminal_goal(
     args: argparse.Namespace,
     config: dict[str, Any],
@@ -432,22 +609,27 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 context["reference"], q_actual, args.local_horizon_s
             )
             result["local2_reference_goal"] = local2_reference_audit
-            candidate = trial.run_fast_repair(
+            if live.ACTIVE_BASE_FAST_REPAIR is None:
+                raise RuntimeError("validated base Fast implementation is unavailable")
+            candidate = plan_goal_directed_continuation(
+                live.ACTIVE_BASE_FAST_REPAIR,
                 args,
                 config,
                 model,
+                q_escape_start=np.asarray(context["local_artifacts"]["q_now"], dtype=np.float64),
                 q_now=q_actual,
-                qd_now=np.zeros(6),
-                center=np.asarray(monitor1["fresh"]["center"], dtype=np.float64),
-                velocity=np.asarray(monitor1["fresh"]["velocity"], dtype=np.float64),
-                radius=float(monitor1["fresh"]["radius"]),
+                q_final=q_goal,
+                fresh=monitor1["fresh"],
+                geometry=monitor1["geometry"],
                 risk_links=set(context["risk_links"]),
                 trial_dir=local2_dir,
-                reference_goal=local2_reference_goal,
-                rejoin_goals=None,
-                obstacle_audit={"track_id": 1, "event_local_index": 2},
-                multisphere_geometry=monitor1["geometry"],
+                nominal_reference_goal=local2_reference_goal,
                 artifacts_out=artifacts,
+                forward_m=float(event_args.forward_m),
+                side_m=float(event_args.continuation_side_m),
+                robust_target_m=float(event_args.planning_robust_target_m),
+                max_joint_delta_rad=float(event_args.max_joint_delta_rad),
+                tcp_link=event_args.tcp_link,
             )
             result["local2_candidate"] = candidate
             if not candidate.get("local_repair_ready", False):
