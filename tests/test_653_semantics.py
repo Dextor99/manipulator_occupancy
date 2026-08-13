@@ -63,6 +63,9 @@ simple_bypass = importlib.import_module(
 simple_dynamic = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_avoidance"
 )
+simple_live = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_live"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1448,6 +1451,38 @@ def test_quasi_static_obstacle_uses_zero_prediction_velocity_but_remains_present
     assert classified["motion_class"] == "quasi_static"
     np.testing.assert_allclose(classified["prediction_velocity"], np.zeros(3))
     np.testing.assert_allclose(classified["velocity"], obstacle["velocity"])
+
+
+def test_simple_live_parser_forbids_external_candidate_input():
+    parser = simple_live.build_parser()
+    destinations = {action.dest for action in parser._actions}
+    assert "candidate_csv" not in destinations
+    assert "source_trial" not in destinations
+    assert "execute" in destinations
+    assert simple_live.LOCAL_EXECUTE_PHRASE == "CCRO_653_SIMPLE_DYNAMIC_LOCAL_EXECUTE_APPROVED"
+
+
+def test_simple_live_requires_both_reference_and_candidate_phrases():
+    parser = simple_live.build_parser()
+    args = parser.parse_args(["--repeat", "1"])
+    with pytest.raises(RuntimeError, match="reference operator phrase"):
+        simple_live.validate_request(args)
+    args.reference_operator_phrase = simple_live.REFERENCE_OPERATOR_PHRASE
+    assert simple_live.validate_request(args) == (0.04, 0.06, 0.08)
+    args.execute = True
+    with pytest.raises(RuntimeError, match="local execute phrase"):
+        simple_live.validate_request(args)
+    args.operator_phrase = simple_live.LOCAL_EXECUTE_PHRASE
+    assert simple_live.validate_request(args) == (0.04, 0.06, 0.08)
+
+
+def test_simple_live_fixed_geometry_adapter_always_returns_two_spheres():
+    points = np.asarray(
+        [[x, y, 0.3] for x in (-0.08, -0.04, 0.04, 0.08) for y in (-0.01, 0.01)]
+    )
+    geometry = simple_live.fixed_two_sphere_adapter(points, max_components=4)
+    assert geometry["component_count"] == 2
+    assert geometry["covered"]
 
 
 def test_simple_dynamic_summary_allows_missing_fresh_verification():
