@@ -40,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=ROOT / "results/new/6_5/6_5_3/rolling_local_virtual_shadow",
     )
     parser.add_argument("--repeat", type=int, required=True)
+    parser.add_argument("--task-geometry-id", default="D2C_COMPACT_TABLETOP_XP10")
+    parser.add_argument(
+        "--obstacle-nominal-size-m",
+        default="0.10,0.10,0.10",
+        help="audit-only nominal obstacle dimensions dx,dy,dz; no planning authority",
+    )
     parser.add_argument("--max-segments", type=int, default=3)
     parser.add_argument("--max-wall-s", type=float, default=10.0)
     parser.add_argument("--seed-timeout-s", type=float, default=8.0)
@@ -195,6 +201,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.max_segments < 1 or args.max_wall_s <= 0.0 or args.seed_timeout_s <= 0.0:
         raise ValueError("max-segments, max-wall-s, and seed-timeout-s must be positive")
     source = args.source_trial.resolve()
+    obstacle_size = np.asarray(
+        [float(value.strip()) for value in args.obstacle_nominal_size_m.split(",")],
+        dtype=np.float64,
+    )
+    if obstacle_size.shape != (3,) or np.any(obstacle_size <= 0.0):
+        raise ValueError("obstacle-nominal-size-m must contain three positive dimensions")
     output = args.output.resolve() / f"r{args.repeat:02d}"
     output.mkdir(parents=True, exist_ok=True)
     summary_path = output / "summary.json"
@@ -219,6 +231,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "real_rgbd": True,
         "virtual_robot_state": True,
         "source_trial": str(source),
+        "task_geometry_id": args.task_geometry_id,
+        "obstacle_nominal_size_m": obstacle_size.tolist(),
+        "perception_parameters_frozen": {
+            "cluster_eps_m": runtime_args.cluster_eps,
+            "cluster_min_samples": runtime_args.cluster_min_samples,
+            "cluster_min_points": runtime_args.cluster_min_points,
+            "cluster_min_volume_m3": runtime_args.cluster_min_volume,
+            "temporal_denoise": runtime_args.temporal_denoise,
+        },
+        "safety_parameters_frozen": {
+            "online_accept_m": runtime_args.online_accept_m,
+            "raw_hard_guard_m": runtime_args.guided_hard_stop_m,
+            "local_horizon_s": runtime_args.local_horizon_s,
+            "fast_budget_ms": runtime_args.fast_budget_ms,
+        },
         "runtime_git_commit": trial.git_commit_hash(),
         "requested_segments": len(schedule),
         "max_wall_s": float(args.max_wall_s),

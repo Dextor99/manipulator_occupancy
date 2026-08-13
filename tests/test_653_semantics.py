@@ -1046,6 +1046,8 @@ def test_rolling_virtual_shadow_parser_has_no_execution_option():
     assert "allow_live_candidate_execution" not in destinations
     args = parser.parse_args(["--repeat", "1"])
     assert args.seed_timeout_s == pytest.approx(8.0)
+    assert args.task_geometry_id == "D2C_COMPACT_TABLETOP_XP10"
+    assert args.obstacle_nominal_size_m == "0.10,0.10,0.10"
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
