@@ -69,6 +69,9 @@ simple_live = importlib.import_module(
 event_replan_live = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_event_replan_live"
 )
+event_replan_r04 = importlib.import_module(
+    "experiments.new.6_5.6_5_3.offline_replay_653_event_replan_from_r04"
+)
 
 
 def test_event_replan_extension_is_default_off_and_bounded():
@@ -77,6 +80,7 @@ def test_event_replan_extension_is_default_off_and_bounded():
     assert not args.execute
     assert args.task_geometry_id == "D2_SIMPLE_DYNAMIC_NUBS_EVENT_REPLAN_LIVE_XP10"
     assert args.terminal_durations_s == "3.0,4.0,5.0,6.0"
+    assert args.post_local_monitor_max_s == 3.0
 
 
 def test_event_replan_strict_empty_scene_requires_three_valid_clear_frames():
@@ -92,6 +96,36 @@ def test_event_replan_strict_empty_scene_requires_three_valid_clear_frames():
     assert event_replan_live.strict_empty_scene(args, frames)
     frames[-1]["all_external_clusters"] = [{"center": [0, 0, 0]}]
     assert not event_replan_live.strict_empty_scene(args, frames)
+
+
+def test_event_monitor_returns_scene_clear_before_terminal_planning(tmp_path):
+    args = SimpleNamespace(post_stop_recheck_min_frames=3, guided_hard_stop_m=0.10)
+    frames = [
+        {"frame_valid": True, "all_external_clusters": [], "raw_guard_distance_m": 0.20}
+        for _ in range(3)
+    ]
+    result = event_replan_live.monitor_measured_tail(
+        args,
+        {},
+        None,
+        None,
+        None,
+        None,
+        np.zeros(6),
+        initial_fresh={"accepted": False},
+        initial_frames=frames,
+        initial_geometry=None,
+        output_dir=tmp_path,
+        max_wall_s=0.0,
+    )
+    assert result["status"] == "STRICT_SCENE_CLEAR"
+    assert result["cycles"][0]["strict_empty_scene"]
+
+
+def test_r04_offline_replay_validates_archived_hashes():
+    result = event_replan_r04.validate_archive(event_replan_r04.DEFAULT_SOURCE)
+    assert result["accepted"]
+    assert all(item["match"] for item in result["checks"].values())
 
 
 def test_event_terminal_nubs_has_zero_boundary_rates_and_exact_goal():

@@ -20,6 +20,7 @@ import json
 import math
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 import numpy as np
@@ -52,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--event-operator-phrase",
         default="",
         help=f"required with --execute: {EVENT_EXECUTE_PHRASE}",
+    )
+    parser.add_argument(
+        "--post-local-monitor-max-s",
+        type=float,
+        default=3.0,
+        help="bounded Fresh monitoring time while the measured tail is physically safe",
     )
     return parser
 
@@ -171,6 +178,107 @@ def capture_next_fresh(
     return fresh, frames, points, fit_fresh_geometry(args, fresh, points)
 
 
+def monitor_measured_tail(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    processor: Any,
+    state_reader: Any,
+    denoiser: Any,
+    q_actual: np.ndarray,
+    *,
+    initial_fresh: dict[str, Any],
+    initial_frames: list[dict[str, Any]],
+    initial_geometry: dict[str, Any] | None,
+    output_dir: Path,
+    max_wall_s: float,
+) -> dict[str, Any]:
+    """Monitor a stopped measured tail without equating it to task safety."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    started = time.perf_counter()
+    fresh = initial_fresh
+    frames = initial_frames
+    geometry = initial_geometry
+    cycles = []
+    while True:
+        scene_clear = strict_empty_scene(args, frames)
+        forecast, basis = forecast_from_fresh(args, fresh, geometry, frames)
+        cycle: dict[str, Any] = {
+            "cycle": len(cycles),
+            "elapsed_s": time.perf_counter() - started,
+            "fresh": fresh,
+            "forecast_basis": basis,
+            "strict_empty_scene": scene_clear,
+        }
+        if scene_clear and forecast is not None:
+            cycle["decision"] = "STRICT_SCENE_CLEAR"
+            cycles.append(cycle)
+            result = {
+                "status": "STRICT_SCENE_CLEAR",
+                "cycles": cycles,
+                "fresh": fresh,
+                "frames": frames,
+                "geometry": geometry,
+                "forecast": forecast,
+            }
+            trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
+            return result
+        if forecast is None:
+            cycle["decision"] = "OBSERVATION_UNCERTAIN"
+            cycles.append(cycle)
+            result = {
+                "status": "OBSERVATION_UNCERTAIN",
+                "cycles": cycles,
+                "fresh": fresh,
+                "frames": frames,
+                "geometry": geometry,
+                "forecast": None,
+            }
+            trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
+            return result
+        hold = stationary_hold_audit(args, config, model, q_actual, forecast)
+        cycle["stationary_hold"] = hold
+        if not hold["physical_hold_safe"]:
+            cycle["decision"] = "REPLAN_REQUIRED"
+            cycles.append(cycle)
+            result = {
+                "status": "REPLAN_REQUIRED",
+                "cycles": cycles,
+                "fresh": fresh,
+                "frames": frames,
+                "geometry": geometry,
+                "forecast": forecast,
+            }
+            trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
+            return result
+        cycle["decision"] = "PHYSICAL_HOLD_SAFE_MONITORING"
+        cycles.append(cycle)
+        if time.perf_counter() - started >= max_wall_s:
+            result = {
+                "status": "PHYSICAL_HOLD_SAFE_MONITORING_TIMEOUT",
+                "cycles": cycles,
+                "fresh": fresh,
+                "frames": frames,
+                "geometry": geometry,
+                "forecast": forecast,
+            }
+            trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
+            return result
+        previous = fresh
+        fresh, frames, points, geometry = capture_next_fresh(
+            args, processor, state_reader, denoiser, previous
+        )
+        index = len(cycles)
+        trial.write_json(
+            output_dir / f"fresh_monitor_{index:02d}.json",
+            {"result": fresh, "frames": frames},
+        )
+        if points is not None:
+            np.save(output_dir / f"fresh_monitor_{index:02d}_points.npy", points)
+        if geometry is not None:
+            trial.write_json(output_dir / f"fresh_monitor_{index:02d}_geometry.json", geometry)
+
+
 def make_terminal_trajectory(
     q_now: np.ndarray, q_goal: np.ndarray, duration_s: float
 ) -> Any:
@@ -249,7 +357,7 @@ def authorize_terminal_goal(
     return payload, selected
 
 
-def make_event_handler(terminal_durations: tuple[float, ...]):
+def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple[float, ...]):
     def handler(**context: Any) -> dict[str, Any]:
         args = context["args"]
         config = context["stage4_config"]
@@ -281,22 +389,42 @@ def make_event_handler(terminal_durations: tuple[float, ...]):
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
 
-        forecast, basis = forecast_from_fresh(
-            args, context["fresh3"], context["fresh3_geometry"], context["fresh3_frames"]
-        )
-        result["fresh3_forecast_basis"] = basis
         result["fresh3_raw_guard_distance_m"] = float(context["fresh3_guard_distance"])
-        if forecast is None or context["fresh3_guard_distance"] <= args.guided_hard_stop_m:
+        if context["fresh3_guard_distance"] <= args.guided_hard_stop_m:
             result["status"] = "HOLD_UNCERTAIN_OPERATOR_INTERVENTION_REQUIRED"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
-        hold1 = stationary_hold_audit(args, config, model, q_actual, forecast)
-        result["hold_after_local1"] = hold1
+        monitor1 = monitor_measured_tail(
+            args,
+            config,
+            model,
+            processor,
+            state_reader,
+            denoiser,
+            q_actual,
+            initial_fresh=context["fresh3"],
+            initial_frames=context["fresh3_frames"],
+            initial_geometry=context["fresh3_geometry"],
+            output_dir=trial_dir / "post_local1_monitor",
+            max_wall_s=float(event_args.post_local_monitor_max_s),
+        )
+        result["post_local1_monitor"] = {
+            key: value for key, value in monitor1.items() if key not in {"forecast", "geometry"}
+        }
+        if monitor1["status"] == "PHYSICAL_HOLD_SAFE_MONITORING_TIMEOUT":
+            result["status"] = "PHYSICAL_HOLD_SAFE_MONITORING_LIMIT_OPERATOR_CONTROL_REQUIRED"
+            trial.write_json(trial_dir / "event_replan_summary.json", result)
+            return result
+        if monitor1["status"] == "OBSERVATION_UNCERTAIN":
+            result["status"] = "HOLD_UNCERTAIN_OPERATOR_INTERVENTION_REQUIRED"
+            trial.write_json(trial_dir / "event_replan_summary.json", result)
+            return result
+        forecast = monitor1["forecast"]
         q_goal = np.asarray(context["reference"].q[-1], dtype=np.float64)
 
         q_terminal_start = q_actual
 
-        if not hold1["physical_hold_safe"]:
+        if monitor1["status"] == "REPLAN_REQUIRED":
             local2_dir = trial_dir / "event_local_02"
             local2_dir.mkdir(parents=True, exist_ok=True)
             artifacts: dict[str, Any] = {}
@@ -310,15 +438,15 @@ def make_event_handler(terminal_durations: tuple[float, ...]):
                 model,
                 q_now=q_actual,
                 qd_now=np.zeros(6),
-                center=np.asarray(context["fresh3"]["center"], dtype=np.float64),
-                velocity=np.asarray(context["fresh3"]["velocity"], dtype=np.float64),
-                radius=float(context["fresh3"]["radius"]),
+                center=np.asarray(monitor1["fresh"]["center"], dtype=np.float64),
+                velocity=np.asarray(monitor1["fresh"]["velocity"], dtype=np.float64),
+                radius=float(monitor1["fresh"]["radius"]),
                 risk_links=set(context["risk_links"]),
                 trial_dir=local2_dir,
                 reference_goal=local2_reference_goal,
                 rejoin_goals=None,
                 obstacle_audit={"track_id": 1, "event_local_index": 2},
-                multisphere_geometry=context["fresh3_geometry"],
+                multisphere_geometry=monitor1["geometry"],
                 artifacts_out=artifacts,
             )
             result["local2_candidate"] = candidate
@@ -328,7 +456,7 @@ def make_event_handler(terminal_durations: tuple[float, ...]):
                 return result
 
             fresh4, frames4, points4, geometry4 = capture_next_fresh(
-                args, processor, state_reader, denoiser, context["fresh3"]
+                args, processor, state_reader, denoiser, monitor1["fresh"]
             )
             trial.write_json(local2_dir / "fresh4_recheck.json", {"result": fresh4, "frames": frames4})
             if points4 is not None:
@@ -378,14 +506,39 @@ def make_event_handler(terminal_durations: tuple[float, ...]):
                 np.save(local2_dir / "fresh5_cluster_points.npy", points5)
             if geometry5 is not None:
                 trial.write_json(local2_dir / "fresh5_multisphere.json", geometry5)
-            forecast, basis = forecast_from_fresh(args, fresh5, geometry5, frames5)
-            result["fresh5_forecast_basis"] = basis
-            if forecast is None:
+            monitor2 = monitor_measured_tail(
+                args,
+                config,
+                model,
+                processor,
+                state_reader,
+                denoiser,
+                q_terminal_start,
+                initial_fresh=fresh5,
+                initial_frames=frames5,
+                initial_geometry=geometry5,
+                output_dir=trial_dir / "post_local2_monitor",
+                max_wall_s=float(event_args.post_local_monitor_max_s),
+            )
+            result["post_local2_monitor"] = {
+                key: value for key, value in monitor2.items() if key not in {"forecast", "geometry"}
+            }
+            if monitor2["status"] == "REPLAN_REQUIRED":
+                result["status"] = "HOLD_UNSAFE_APPROACHING_OPERATOR_INTERVENTION_REQUIRED"
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
+            if monitor2["status"] == "PHYSICAL_HOLD_SAFE_MONITORING_TIMEOUT":
+                result["status"] = "PHYSICAL_HOLD_SAFE_MONITORING_LIMIT_OPERATOR_CONTROL_REQUIRED"
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
+            if monitor2["status"] != "STRICT_SCENE_CLEAR":
                 result["status"] = "POST_LOCAL2_STATE_UNCERTAIN_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
-            hold2 = stationary_hold_audit(args, config, model, q_terminal_start, forecast)
-            result["hold_after_local2"] = hold2
+            forecast = monitor2["forecast"]
+
+        if monitor1["status"] != "STRICT_SCENE_CLEAR" and "post_local2_monitor" not in result:
+            raise RuntimeError(f"unexpected post-local decision: {monitor1['status']}")
         terminal_dir = trial_dir / "terminal_goal_authorization"
         terminal, _ = authorize_terminal_goal(
             args,
@@ -399,12 +552,7 @@ def make_event_handler(terminal_durations: tuple[float, ...]):
         )
         result["terminal_authorization"] = terminal
         if not terminal.get("authorized", False):
-            hold_audit = result.get("hold_after_local2", hold1)
-            result["status"] = (
-                "PHYSICAL_HOLD_SAFE_GOAL_PATH_BLOCKED"
-                if hold_audit.get("physical_hold_safe", False)
-                else "HOLD_UNSAFE_APPROACHING_OPERATOR_INTERVENTION_REQUIRED"
-            )
+            result["status"] = "STRICT_SCENE_CLEAR_TERMINAL_GOAL_PATH_BLOCKED"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
 
@@ -448,7 +596,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     live_args.operator_phrase = live.LOCAL_EXECUTE_PHRASE if args.execute else ""
     old_handler = trial.POST_LOCAL_FRESH3_HANDLER
     try:
-        trial.POST_LOCAL_FRESH3_HANDLER = make_event_handler(durations)
+        trial.POST_LOCAL_FRESH3_HANDLER = make_event_handler(args, durations)
         result = live.run(live_args)
     finally:
         trial.POST_LOCAL_FRESH3_HANDLER = old_handler
