@@ -1316,6 +1316,7 @@ def test_simple_dynamic_nubs_parser_is_shadow_only():
     parsed = parser.parse_args(["--repeat", "1"])
     assert parsed.mode == "shadow"
     assert parsed.trigger_timeout_s == 15.0
+    assert parsed.max_demo_speed_m_s == 0.12
     destinations = {action.dest for action in parser._actions}
     assert "execute" not in destinations
     assert "allow_live_candidate_execution" not in destinations
@@ -1356,6 +1357,82 @@ def test_simple_bypass_generates_six_bounded_joint_goals():
     assert {row["side_sign"] for row in rows} == {-1, 1}
     assert {row["side_m"] for row in rows} == {0.04, 0.06, 0.08}
     assert all(np.max(np.abs(row["q_goal"])) <= 0.12 + 1.0e-12 for row in rows)
+
+
+def test_risk_link_bypass_generates_three_away_only_goals():
+    class Urdf:
+        @staticmethod
+        def link_transforms(joints):
+            return {"left_link": np.eye(4), "gripper_base_link": np.eye(4)}
+
+    class Model:
+        joint_names = tuple(f"j{index}" for index in range(6))
+        urdf = Urdf()
+
+        @staticmethod
+        def point_jacobian(q, link, point):
+            if link == "left_link":
+                return np.hstack([np.eye(3), np.zeros((3, 3))])
+            jacobian = np.zeros((3, 6))
+            jacobian[1, 3] = 1.0
+            return jacobian
+
+    rows, audit = simple_bypass.risk_link_bypass_goal_candidates(
+        Model(),
+        np.zeros(6),
+        tcp_position=np.zeros(3),
+        goal_position=np.asarray([0.0, 1.0, 0.0]),
+        risk_link="left_link",
+        risk_position=np.asarray([1.0, 0.0, 0.0]),
+        predicted_obstacle_position=np.zeros(3),
+        forward_m=0.05,
+        side_lengths_m=(0.04, 0.06, 0.08),
+        max_joint_delta_rad=0.12,
+    )
+    assert len(rows) == 3
+    assert {row["side_sign"] for row in rows} == {1}
+    assert [row["side_m"] for row in rows] == [0.04, 0.06, 0.08]
+    assert audit["risk_link"] == "left_link"
+    assert audit["candidate_side_policy"] == "away_only"
+    assert all(row["mapping"]["linearized_risk_delta_m"][0] > 0.0 for row in rows)
+    assert all(row["mapping"]["linearized_task_progress_m"] > 0.0 for row in rows)
+
+
+def test_fixed_pca_two_sphere_has_two_components_and_full_coverage():
+    points = np.asarray(
+        [
+            [-0.10, -0.01, 0.0],
+            [-0.08, 0.01, 0.0],
+            [-0.04, -0.01, 0.0],
+            [-0.02, 0.01, 0.0],
+            [0.02, -0.01, 0.0],
+            [0.04, 0.01, 0.0],
+            [0.08, -0.01, 0.0],
+            [0.10, 0.01, 0.0],
+        ]
+    )
+    geometry = simple_dynamic.fit_fixed_pca_two_sphere(points)
+    assert geometry["component_count"] == 2
+    assert geometry["fit_policy"] == "fixed_pca_two_sphere"
+    assert geometry["covered"]
+    assert geometry["coverage_ratio"] == 1.0
+
+
+def test_robust_candidate_gate_rejects_sub_target_rows():
+    rows = [
+        {"candidate": 1, "task_progress_ok": True, "coarse_min_distance_m": 0.109},
+        {"candidate": 2, "task_progress_ok": True, "coarse_min_distance_m": 0.071},
+        {"candidate": 3, "task_progress_ok": False, "coarse_min_distance_m": 0.20},
+    ]
+    assert simple_dynamic.select_robust_candidate(rows, 0.11) is None
+    rows[0]["coarse_min_distance_m"] = 0.111
+    assert simple_dynamic.select_robust_candidate(rows, 0.11)["candidate"] == 1
+
+
+def test_post_trigger_speed_uses_exit_hysteresis_not_enter_threshold():
+    assert simple_dynamic.post_trigger_speed_in_hold_domain(0.07746, 0.04, 0.12)
+    assert not simple_dynamic.post_trigger_speed_in_hold_domain(0.039, 0.04, 0.12)
+    assert not simple_dynamic.post_trigger_speed_in_hold_domain(0.121, 0.04, 0.12)
 
 
 def test_simple_dynamic_summary_allows_missing_fresh_verification():

@@ -2,9 +2,9 @@
 """Simple event-triggered dynamic NUBS bypass; shadow-only first-stage audit.
 
 The program opens real RGB-D and robot feedback for self filtering, but never
-commands the robot.  It plans one bypass event using an object-level sphere,
-coarse-screens at most six geometric goals, runs Fast once on the best goal,
-then performs one independent Fresh recheck.
+commands the robot.  STRO retains its conservative object-level sphere.  Once
+triggered, planning and verification share a Fresh fixed two-sphere forecast
+and three risk-link-driven, away-side bypass goals.
 """
 
 from __future__ import annotations
@@ -56,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--side-lengths-m", default="0.04,0.06,0.08")
     parser.add_argument("--max-joint-delta-rad", type=float, default=0.12)
     parser.add_argument("--planning-robust-target-m", type=float, default=0.11)
+    parser.add_argument("--max-demo-speed-m-s", type=float, default=0.12)
     parser.add_argument("--tcp-link", default="gripper_base_link")
     return parser
 
@@ -128,17 +129,130 @@ def stro_prediction(
     return {"minimum": {k: v for k, v in best.items() if k != "risk_object"}, "profile": rows}, best, evaluator
 
 
-def verify_fresh_single_sphere(
+def fit_fixed_pca_two_sphere(points: np.ndarray, *, fit_margin_m: float = 0.005) -> dict[str, Any]:
+    """Fit exactly two consecutive PCA-axis spheres and audit full coverage."""
+    values = np.asarray(points, dtype=np.float64)
+    if values.ndim != 2 or values.shape[1] != 3 or len(values) < 4 or not np.all(np.isfinite(values)):
+        raise ValueError("Fresh cluster points must be a finite (N,3) array with N >= 4")
+    mean = np.mean(values, axis=0)
+    centered = values - mean
+    _, _, vh = np.linalg.svd(centered, full_matrices=False)
+    axis = np.asarray(vh[0], dtype=np.float64)
+    projection = centered @ axis
+    groups = np.array_split(np.argsort(projection), 2)
+    centers = np.asarray([np.mean(values[group], axis=0) for group in groups])
+    radii = np.asarray(
+        [
+            np.max(np.linalg.norm(values[group] - centers[index], axis=1)) + fit_margin_m
+            for index, group in enumerate(groups)
+        ],
+        dtype=np.float64,
+    )
+    signed = np.min(
+        np.linalg.norm(values[:, None, :] - centers[None, :, :], axis=2) - radii[None, :],
+        axis=1,
+    )
+    transverse = centered - projection[:, None] * axis[None, :]
+    return {
+        "source_point_count": int(len(values)),
+        "component_count": 2,
+        "component_centers": centers,
+        "component_base_radii": radii,
+        "pca_axis": axis,
+        "axial_length_m": float(np.ptp(projection)),
+        "transverse_radius_m": float(np.percentile(np.linalg.norm(transverse, axis=1), 90)),
+        "fit_margin_m": float(fit_margin_m),
+        "max_point_to_union_distance": float(np.max(signed)),
+        "coverage_ratio": float(np.mean(signed <= 1.0e-9)),
+        "multi_sphere_max_radius": float(np.max(radii)),
+        "covered": bool(np.max(signed) <= 1.0e-9),
+        "fit_policy": "fixed_pca_two_sphere",
+    }
+
+
+def compact_prediction(
+    runtime_args: Any,
+    config: dict[str, Any],
+    model: Any,
+    reference: Any,
+    reference_start: float,
+    obstacle: dict[str, Any],
+    geometry: dict[str, Any],
+) -> tuple[dict[str, Any], Any, Any, Any]:
+    forecast = trial.constant_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.asarray(obstacle["velocity"], dtype=np.float64),
+        object_id=int(obstacle.get("track_id") or 1),
+    )
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    rows = []
+    best = None
+    for tau in np.arange(
+        0.0,
+        runtime_args.prediction_horizon_s + 0.5 * runtime_args.prediction_step_s,
+        runtime_args.prediction_step_s,
+    ):
+        q_tau = reference.state_at(reference_start + float(tau))[0]
+        risk = evaluator.configuration(
+            q_tau,
+            forecast,
+            float(tau),
+            density="medium",
+            with_gradient=False,
+        )
+        row = {
+            "tau_s": float(tau),
+            "distance_m": float(risk.min_distance),
+            "nearest_link": risk.nearest_link,
+            "robot_point_m": None if risk.robot_point is None else risk.robot_point.tolist(),
+            "obstacle_point_m": None if risk.obstacle_point is None else risk.obstacle_point.tolist(),
+        }
+        rows.append(row)
+        if best is None or row["distance_m"] < best["distance_m"]:
+            best = {**row, "risk_object": risk, "q_risk": np.asarray(q_tau)}
+    return (
+        {
+            "minimum": {
+                key: value.tolist() if isinstance(value, np.ndarray) else value
+                for key, value in best.items()
+                if key not in {"risk_object", "q_risk"}
+            },
+            "profile": rows,
+        },
+        best,
+        evaluator,
+        forecast,
+    )
+
+
+def select_robust_candidate(rows: list[dict[str, Any]], target_m: float) -> dict[str, Any] | None:
+    eligible = [
+        row
+        for row in rows
+        if row["task_progress_ok"] and row["coarse_min_distance_m"] >= float(target_m)
+    ]
+    return None if not eligible else max(eligible, key=lambda row: row["coarse_min_distance_m"])
+
+
+def post_trigger_speed_in_hold_domain(speed_m_s: float, exit_m_s: float, max_m_s: float) -> bool:
+    """Apply dynamic hysteresis after a valid enter/trigger event."""
+    return bool(float(exit_m_s) <= float(speed_m_s) <= float(max_m_s))
+
+
+def verify_fresh_two_sphere(
     runtime_args: Any,
     config: dict[str, Any],
     model: Any,
     trajectory: Any,
     fresh: dict[str, Any],
+    geometry: dict[str, Any],
 ) -> dict[str, Any]:
-    forecast = trial.constant_forecast(
-        np.asarray(fresh["center"], dtype=np.float64),
+    forecast = trial.constant_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
         np.asarray(fresh["velocity"], dtype=np.float64),
-        float(fresh["radius"]),
+        object_id=int(fresh.get("track_id") or 1),
     )
     _, verifier, _ = trial.make_risk_stack(config, model, forecast)
     verifier.d_stop = float(runtime_args.online_accept_m)
@@ -171,23 +285,26 @@ def plan_one_bypass_round(
     best: dict[str, Any],
     evaluator: Any,
     forecast: Any,
+    geometry: dict[str, Any],
     args: argparse.Namespace,
     side_lengths: tuple[float, ...],
     round_dir: Path,
 ) -> dict[str, Any]:
     tcp_now = tcp_position(model, q_now, args.tcp_link)
     tcp_goal = tcp_position(model, q_final, args.tcp_link)
+    if best["risk_object"].robot_point is None or best["risk_object"].obstacle_point is None:
+        return {"planning_ok": False, "reason": "missing_ccro_surface_points", "candidates": []}
     risk_position = np.asarray(best["risk_object"].robot_point, dtype=np.float64)
-    predicted_center = np.asarray(obstacle["center"], dtype=np.float64) + np.asarray(
-        obstacle["velocity"], dtype=np.float64
-    ) * float(best["tau_s"])
-    goals, direction_audit = bypass.bypass_goal_candidates(
+    predicted_obstacle_point = np.asarray(best["risk_object"].obstacle_point, dtype=np.float64)
+    goals, direction_audit = bypass.risk_link_bypass_goal_candidates(
         model,
         q_now,
         tcp_position=tcp_now,
         goal_position=tcp_goal,
+        risk_link=str(best["nearest_link"]),
         risk_position=risk_position,
-        predicted_obstacle_position=predicted_center,
+        predicted_obstacle_position=predicted_obstacle_point,
+        risk_point_q=np.asarray(best["q_risk"], dtype=np.float64),
         forward_m=args.forward_m,
         side_lengths_m=side_lengths,
         tcp_link=args.tcp_link,
@@ -222,10 +339,25 @@ def plan_one_bypass_round(
                 "profile": profile,
             }
         )
-    eligible = [row for row in candidate_rows if row["task_progress_ok"]]
-    if not eligible:
-        return {"planning_ok": False, "reason": "no_forward_bypass_goal", "candidates": candidate_rows}
-    selected = max(eligible, key=lambda row: row["coarse_min_distance_m"])
+    selected = select_robust_candidate(candidate_rows, args.planning_robust_target_m)
+    if selected is None:
+        best_attempted = max(candidate_rows, key=lambda row: row["coarse_min_distance_m"])
+        return {
+            "planning_ok": False,
+            "reason": "no_geometrically_robust_bypass",
+            "fast_invoked": False,
+            "bypass_generation": {
+                "direction": direction_audit,
+                "candidates": candidate_rows,
+                "selected_candidate": None,
+                "selected_coarse_clearance_m": None,
+                "best_attempted_candidate": int(best_attempted["candidate"]),
+                "best_attempted_coarse_clearance_m": float(
+                    best_attempted["coarse_min_distance_m"]
+                ),
+                "planning_robust_target_m": float(args.planning_robust_target_m),
+            },
+        }
     selected_goal = goals[int(selected["candidate"]) - 1]
     generation = {
         "direction": direction_audit,
@@ -249,6 +381,7 @@ def plan_one_bypass_round(
         reference_goal=(np.asarray(selected_goal["q_goal"]), np.zeros(6), np.zeros(6)),
         rejoin_goals=None,
         obstacle_audit={"simple_dynamic_nubs_shadow": True},
+        multisphere_geometry=geometry,
         artifacts_out=artifacts,
     )
     planning_ok = bool(
@@ -261,6 +394,7 @@ def plan_one_bypass_round(
     return {
         "planning_ok": planning_ok,
         "reason": "planned" if planning_ok else "fast_verification_failed",
+        "fast_invoked": True,
         "bypass_generation": generation,
         "fast": fast_result,
         "trajectory": artifacts["candidate_trajectory"],
@@ -273,6 +407,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("side-lengths-m must contain exactly three positive values")
     if args.trigger_timeout_s <= 0.0:
         raise ValueError("trigger-timeout-s must be positive")
+    if args.planning_robust_target_m < 0.11:
+        raise ValueError("planning-robust-target-m must remain at least 0.11 m")
+    if args.max_demo_speed_m_s <= 0.0:
+        raise ValueError("max-demo-speed-m-s must be positive")
     output = args.output.resolve() / f"r{args.repeat:02d}"
     output.mkdir(parents=True, exist_ok=True)
     summary_path = output / "summary.json"
@@ -296,11 +434,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "real_rgbd": True,
         "virtual_robot_state": True,
         "task_geometry_id": args.task_geometry_id,
-        "obstacle_model": "object_level_equivalent_sphere",
-        "bypass_candidate_count": 6,
+        "stro_obstacle_model": "conservative_equivalent_single_sphere",
+        "planning_obstacle_model": "fresh_fixed_pca_two_sphere",
+        "bypass_candidate_count": 3,
+        "bypass_jacobian_policy": "ccro_nearest_risk_link_plus_tcp_task_progress",
         "planning_robust_target_m": float(args.planning_robust_target_m),
         "online_accept_m": float(runtime_args.online_accept_m),
-        "production_fast_forecast": "unchanged_dynamic_single_sphere",
+        "demo_speed_domain_m_s": [
+            float(runtime_args.min_dynamic_trigger_speed_m_s),
+            float(args.max_demo_speed_m_s),
+        ],
+        "post_trigger_speed_hold_domain_m_s": [
+            float(runtime_args.dynamic_exit_speed_m_s),
+            float(args.max_demo_speed_m_s),
+        ],
+        "production_fast_forecast": "fresh_fixed_pca_two_sphere_dynamic",
     }
     processor = None
     started = time.perf_counter()
@@ -340,10 +488,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if not obstacle.get("accepted", False):
             log["status"] = "SIMPLE_DYNAMIC_NUBS_SEED_FAILED"
             return log
-        if float(obstacle["speed_m_s"]) < runtime_args.min_dynamic_trigger_speed_m_s:
-            log["status"] = "SIMPLE_DYNAMIC_NUBS_DYNAMIC_SPEED_NOT_REACHED"
-            log["measured_speed_m_s"] = float(obstacle["speed_m_s"])
-            return log
+        # A three-sample seed velocity is noisy under hand motion.  Keep it as
+        # an observation, but require an in-domain estimate inside the bounded
+        # trigger loop instead of ending the whole trial on one spike.
+        log["seed_speed_m_s"] = float(obstacle["speed_m_s"])
 
         trigger_started = time.perf_counter()
         trigger_attempts = []
@@ -354,33 +502,46 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         best = None
         evaluator = None
         forecast = None
+        in_domain_attempts = 0
+        outside_domain_attempts = 0
         while time.perf_counter() - trigger_started < args.trigger_timeout_s:
-            prediction, best, evaluator = stro_prediction(
-                trial,
-                runtime_args,
-                config,
-                model,
-                reference,
-                reference_start,
-                obstacle,
+            speed = float(obstacle["speed_m_s"])
+            speed_in_domain = bool(
+                runtime_args.min_dynamic_trigger_speed_m_s
+                <= speed
+                <= args.max_demo_speed_m_s
             )
-            trigger_attempts.append(
-                {
-                    "obstacle_center": obstacle["center"],
-                    "obstacle_velocity": obstacle["velocity"],
-                    "obstacle_speed_m_s": obstacle["speed_m_s"],
-                    "obstacle_radius_m": obstacle["radius"],
-                    "prediction_minimum": prediction["minimum"],
-                }
-            )
-            if best["distance_m"] < runtime_args.moving_shadow_replan_in_m:
-                forecast = trial.constant_forecast(
-                    np.asarray(obstacle["center"]),
-                    np.asarray(obstacle["velocity"]),
-                    float(obstacle["radius"]),
+            attempt = {
+                "obstacle_center": obstacle["center"],
+                "obstacle_velocity": obstacle["velocity"],
+                "obstacle_speed_m_s": speed,
+                "obstacle_radius_m": obstacle["radius"],
+                "speed_in_demo_domain": speed_in_domain,
+                "prediction_minimum": None,
+            }
+            trigger_attempts.append(attempt)
+            if speed_in_domain:
+                in_domain_attempts += 1
+                prediction, best, evaluator = stro_prediction(
+                    trial,
+                    runtime_args,
+                    config,
+                    model,
+                    reference,
+                    reference_start,
+                    obstacle,
                 )
-                log["stro_prediction"] = prediction
-                break
+                attempt["prediction_minimum"] = prediction["minimum"]
+                if best["distance_m"] < runtime_args.moving_shadow_replan_in_m:
+                    forecast = trial.constant_forecast(
+                        np.asarray(obstacle["center"]),
+                        np.asarray(obstacle["velocity"]),
+                        float(obstacle["radius"]),
+                    )
+                    log["stro_prediction"] = prediction
+                    break
+            else:
+                outside_domain_attempts += 1
             fresh_wait, wait_frames, _ = trial.capture_post_stop_obstacle(
                 processor,
                 reader,
@@ -391,7 +552,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 trigger_timestamp=float(obstacle["last_timestamp"]),
                 stop_when_ready=True,
             )
-            trigger_attempts[-1]["next_capture"] = {
+            attempt["next_capture"] = {
                 "accepted": bool(fresh_wait.get("accepted", False)),
                 "reason": fresh_wait.get("reason"),
                 "frame_count": len(wait_frames),
@@ -402,29 +563,69 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "timeout_s": float(args.trigger_timeout_s),
             "elapsed_s": time.perf_counter() - trigger_started,
             "attempt_count": len(trigger_attempts),
+            "in_domain_attempt_count": int(in_domain_attempts),
+            "outside_domain_attempt_count": int(outside_domain_attempts),
             "attempts": trigger_attempts,
         }
         if best is None or best["distance_m"] >= runtime_args.moving_shadow_replan_in_m:
-            log["status"] = "SIMPLE_DYNAMIC_NUBS_NO_PREDICTED_TRIGGER"
+            log["status"] = (
+                "SIMPLE_DYNAMIC_NUBS_OUTSIDE_LOW_SPEED_DEMO_DOMAIN_TIMEOUT"
+                if in_domain_attempts == 0
+                else "SIMPLE_DYNAMIC_NUBS_NO_PREDICTED_TRIGGER"
+            )
+            return log
+
+        # The conservative STRO sphere ends here.  Acquire one independent
+        # Fresh point cluster and use its fixed two-sphere fit consistently for
+        # coarse screening, Fast and the subsequent Fresh verifier.
+        planning_obstacle, planning_frames, planning_points = trial.capture_post_stop_obstacle(
+            processor,
+            reader,
+            denoiser,
+            runtime_args,
+            trigger_cluster_center=np.asarray(obstacle["center"]),
+            trigger_velocity=np.asarray(obstacle["velocity"]),
+            trigger_timestamp=float(obstacle["last_timestamp"]),
+            stop_when_ready=True,
+        )
+        trial.write_json(
+            output / "planning_fresh_capture.json",
+            {"result": planning_obstacle, "frames": planning_frames},
+        )
+        if not planning_obstacle.get("accepted", False) or planning_points is None:
+            log["status"] = "SIMPLE_DYNAMIC_NUBS_PLANNING_FRESH_NOT_READY_HOLD"
+            return log
+        planning_speed = float(planning_obstacle["speed_m_s"])
+        if planning_speed > args.max_demo_speed_m_s:
+            log["status"] = "SIMPLE_DYNAMIC_NUBS_OUTSIDE_LOW_SPEED_DEMO_DOMAIN"
+            log["measured_speed_m_s"] = planning_speed
+            return log
+        if not post_trigger_speed_in_hold_domain(
+            planning_speed,
+            runtime_args.dynamic_exit_speed_m_s,
+            args.max_demo_speed_m_s,
+        ):
+            log["status"] = "SIMPLE_DYNAMIC_NUBS_PLANNING_DYNAMIC_EXIT_HOLD"
+            log["measured_speed_m_s"] = planning_speed
+            return log
+        obstacle = planning_obstacle
+        geometry = fit_fixed_pca_two_sphere(planning_points)
+        trial.write_json(output / "planning_fresh_two_sphere.json", geometry)
+        if not geometry["covered"]:
+            log["status"] = "SIMPLE_DYNAMIC_NUBS_PLANNING_GEOMETRY_COVERAGE_HOLD"
             return log
 
         planning_rounds = []
         for round_index in (1, 2):
-            if round_index > 1:
-                prediction, best, evaluator = stro_prediction(
-                    trial,
-                    runtime_args,
-                    config,
-                    model,
-                    reference,
-                    reference_start,
-                    obstacle,
-                )
-                forecast = trial.constant_forecast(
-                    np.asarray(obstacle["center"]),
-                    np.asarray(obstacle["velocity"]),
-                    float(obstacle["radius"]),
-                )
+            prediction, best, evaluator, forecast = compact_prediction(
+                runtime_args,
+                config,
+                model,
+                reference,
+                reference_start,
+                obstacle,
+                geometry,
+            )
             round_dir = output / f"planning_round_{round_index:02d}"
             planned = plan_one_bypass_round(
                 trial=trial,
@@ -437,6 +638,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 best=best,
                 evaluator=evaluator,
                 forecast=forecast,
+                geometry=geometry,
                 args=args,
                 side_lengths=side_lengths,
                 round_dir=round_dir,
@@ -445,17 +647,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "round": round_index,
                 "q_now": q_now.tolist(),
                 "obstacle": obstacle,
-                "stro_minimum": prediction["minimum"] if round_index > 1 else log["stro_prediction"]["minimum"],
+                "stro_single_sphere_minimum": log["stro_prediction"]["minimum"],
+                "planning_two_sphere_minimum": prediction["minimum"],
+                "planning_two_sphere_geometry": geometry,
                 "planning_ok": bool(planned["planning_ok"]),
                 "reason": planned["reason"],
+                "fast_invoked": bool(planned.get("fast_invoked", False)),
                 "bypass_generation": planned.get("bypass_generation"),
                 "fast": planned.get("fast"),
             }
             if not planned["planning_ok"]:
                 planning_rounds.append(round_log)
-                log["status"] = "SIMPLE_DYNAMIC_NUBS_FAST_HOLD"
+                log["status"] = (
+                    "SIMPLE_DYNAMIC_NUBS_ROBUST_BYPASS_HOLD"
+                    if planned["reason"] == "no_geometrically_robust_bypass"
+                    else "SIMPLE_DYNAMIC_NUBS_FAST_HOLD"
+                )
                 break
-            fresh, fresh_frames, _ = trial.capture_post_stop_obstacle(
+            fresh, fresh_frames, fresh_points = trial.capture_post_stop_obstacle(
                 processor,
                 reader,
                 denoiser,
@@ -469,13 +678,38 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 round_dir / "fresh_recheck.json", {"result": fresh, "frames": fresh_frames}
             )
             round_log["fresh_recheck"] = fresh
-            if not fresh.get("accepted", False):
+            if not fresh.get("accepted", False) or fresh_points is None:
                 round_log["fresh_candidate_verification"] = None
                 planning_rounds.append(round_log)
                 log["status"] = "SIMPLE_DYNAMIC_NUBS_FRESH_NOT_READY_HOLD"
                 break
-            fresh_verification = verify_fresh_single_sphere(
-                runtime_args, config, model, planned["trajectory"], fresh
+            fresh_speed = float(fresh["speed_m_s"])
+            if fresh_speed > args.max_demo_speed_m_s:
+                round_log["fresh_candidate_verification"] = None
+                planning_rounds.append(round_log)
+                log["status"] = "SIMPLE_DYNAMIC_NUBS_OUTSIDE_LOW_SPEED_DEMO_DOMAIN"
+                log["measured_speed_m_s"] = fresh_speed
+                break
+            if not post_trigger_speed_in_hold_domain(
+                fresh_speed,
+                runtime_args.dynamic_exit_speed_m_s,
+                args.max_demo_speed_m_s,
+            ):
+                round_log["fresh_candidate_verification"] = None
+                planning_rounds.append(round_log)
+                log["status"] = "SIMPLE_DYNAMIC_NUBS_FRESH_DYNAMIC_EXIT_HOLD"
+                log["measured_speed_m_s"] = fresh_speed
+                break
+            fresh_geometry = fit_fixed_pca_two_sphere(fresh_points)
+            trial.write_json(round_dir / "fresh_two_sphere.json", fresh_geometry)
+            round_log["fresh_two_sphere_geometry"] = fresh_geometry
+            if not fresh_geometry["covered"]:
+                round_log["fresh_candidate_verification"] = None
+                planning_rounds.append(round_log)
+                log["status"] = "SIMPLE_DYNAMIC_NUBS_FRESH_GEOMETRY_COVERAGE_HOLD"
+                break
+            fresh_verification = verify_fresh_two_sphere(
+                runtime_args, config, model, planned["trajectory"], fresh, fresh_geometry
             )
             round_log["fresh_candidate_verification"] = fresh_verification
             planning_rounds.append(round_log)
@@ -486,6 +720,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 # Event-triggered replan from exactly the same physical/virtual
                 # robot state, using only the latest Fresh object estimate.
                 obstacle = fresh
+                geometry = fresh_geometry
                 continue
             log["status"] = "SIMPLE_DYNAMIC_NUBS_SECOND_FRESH_RECHECK_HOLD"
         log["planning_rounds"] = planning_rounds
@@ -523,6 +758,9 @@ def main() -> None:
                 "robot_commanded": result["robot_commanded"],
                 "selected_coarse_clearance_m": bypass_summary.get(
                     "selected_coarse_clearance_m"
+                ),
+                "best_attempted_coarse_clearance_m": bypass_summary.get(
+                    "best_attempted_coarse_clearance_m"
                 ),
                 "fresh_clearance_m": fresh_verification.get("min_distance"),
                 "output": str((args.output / f"r{args.repeat:02d}").resolve()),

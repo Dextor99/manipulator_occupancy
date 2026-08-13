@@ -111,3 +111,102 @@ def bypass_goal_candidates(
                 }
             )
     return rows, direction_audit
+
+
+def risk_link_bypass_goal_candidates(
+    model: Any,
+    q_now: np.ndarray,
+    *,
+    tcp_position: np.ndarray,
+    goal_position: np.ndarray,
+    risk_link: str,
+    risk_position: np.ndarray,
+    predicted_obstacle_position: np.ndarray,
+    risk_point_q: np.ndarray | None = None,
+    forward_m: float = 0.05,
+    side_lengths_m: tuple[float, ...] = (0.04, 0.06, 0.08),
+    tcp_link: str = "gripper_base_link",
+    damping: float = 1.0e-3,
+    task_weight: float = 1.0,
+    max_joint_delta_rad: float = 0.12,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Generate three away-side goals driven by the limiting robot link.
+
+    The three Cartesian rows of the limiting-link point Jacobian request the
+    lateral clearance displacement.  One additional TCP row preserves forward
+    task progress.  This avoids using the gripper Jacobian as a proxy when a
+    body link such as ``left_link`` is the actual clearance limiter.
+    """
+    q_values = np.asarray(q_now, dtype=np.float64)
+    task, side, direction_audit = task_and_side_directions(
+        tcp_position, goal_position, risk_position, predicted_obstacle_position
+    )
+    risk_configuration = q_values if risk_point_q is None else np.asarray(risk_point_q, dtype=np.float64)
+    transforms = model.urdf.link_transforms(
+        {
+            name: float(risk_configuration[index])
+            for index, name in enumerate(model.joint_names)
+        }
+    )
+    if risk_link not in transforms:
+        raise KeyError(f"risk link {risk_link!r} is absent from the robot model")
+    risk_transform = np.asarray(transforms[risk_link], dtype=np.float64)
+    risk_local = risk_transform[:3, :3].T @ (
+        np.asarray(risk_position, dtype=np.float64) - risk_transform[:3, 3]
+    )
+    risk_jacobian = np.asarray(
+        model.point_jacobian(q_values, risk_link, risk_local), dtype=np.float64
+    )
+    tcp_jacobian = np.asarray(
+        model.point_jacobian(q_values, tcp_link, np.zeros(3, dtype=np.float64)),
+        dtype=np.float64,
+    )
+    task_row = task @ tcp_jacobian
+    system = np.vstack([risk_jacobian, float(task_weight) * task_row[None, :]])
+
+    rows: list[dict[str, Any]] = []
+    for side_m in side_lengths_m:
+        requested_risk = float(side_m) * side
+        target = np.r_[requested_risk, float(task_weight) * float(forward_m)]
+        delta = system.T @ np.linalg.solve(
+            system @ system.T + float(damping) * np.eye(system.shape[0]), target
+        )
+        raw_peak = float(np.max(np.abs(delta)))
+        scale = 1.0
+        if raw_peak > max_joint_delta_rad:
+            scale = float(max_joint_delta_rad / raw_peak)
+            delta *= scale
+        achieved_risk = risk_jacobian @ delta
+        achieved_tcp = tcp_jacobian @ delta
+        rows.append(
+            {
+                "side_sign": 1,
+                "forward_m": float(forward_m),
+                "side_m": float(side_m),
+                "q_goal": q_values + delta,
+                "mapping": {
+                    "risk_link": risk_link,
+                    "risk_point_base_m": np.asarray(risk_position).tolist(),
+                    "risk_point_local_m": risk_local.tolist(),
+                    "requested_risk_delta_m": requested_risk.tolist(),
+                    "linearized_risk_delta_m": achieved_risk.tolist(),
+                    "requested_task_progress_m": float(forward_m),
+                    "linearized_tcp_delta_m": achieved_tcp.tolist(),
+                    "linearized_task_progress_m": float(np.dot(task, achieved_tcp)),
+                    "joint_delta_rad": delta.tolist(),
+                    "raw_joint_delta_max_abs_rad": raw_peak,
+                    "joint_delta_scale": scale,
+                    "joint_delta_max_abs_rad": float(np.max(np.abs(delta))),
+                },
+            }
+        )
+    direction_audit.update(
+        {
+            "risk_link": risk_link,
+            "risk_point_base_m": np.asarray(risk_position).tolist(),
+            "risk_point_local_m": risk_local.tolist(),
+            "risk_point_configuration_rad": risk_configuration.tolist(),
+            "candidate_side_policy": "away_only",
+        }
+    )
+    return rows, direction_audit
