@@ -1224,6 +1224,27 @@ def test_transported_goal_preserves_joint_offset_and_reference_increment():
     np.testing.assert_allclose(audit["offset_from_reference_at_goal_rad"], offset)
 
 
+def test_bounded_terminal_goal_advances_toward_exact_goal_without_overshoot():
+    q_now = np.zeros(6)
+    q_final = np.asarray([0.09, -0.03, 0.015, 0.0, 0.0, 0.0])
+    goal, audit = offset_rollout.bounded_terminal_goal(
+        q_now, q_final, max_step_rad=0.03
+    )
+    assert np.isclose(np.max(np.abs(goal[0] - q_now)), 0.03)
+    np.testing.assert_allclose(goal[0], q_final / 3.0)
+    assert np.isclose(audit["terminal_step_scale"], 1.0 / 3.0)
+
+
+def test_bounded_terminal_goal_uses_exact_goal_inside_step_bound():
+    q_now = np.zeros(6)
+    q_final = np.asarray([0.01, -0.02, 0.0, 0.0, 0.0, 0.0])
+    goal, audit = offset_rollout.bounded_terminal_goal(
+        q_now, q_final, max_step_rad=0.03
+    )
+    np.testing.assert_allclose(goal[0], q_final)
+    assert np.isclose(audit["terminal_step_scale"], 1.0)
+
+
 def test_point_obb_distance_reports_nearest_surface_point():
     distances, nearest = static_distance_ledger.point_obb_signed_distance_and_nearest(
         np.asarray([[2.0, 0.5, 0.0], [0.0, 0.0, 0.0]]),
