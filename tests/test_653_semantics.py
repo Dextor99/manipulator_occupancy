@@ -45,6 +45,9 @@ static_geometry_ab = importlib.import_module(
 static_distance_ledger = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_static_distance_ledger"
 )
+static20_closure = importlib.import_module(
+    "experiments.new.6_5.6_5_3.offline_static20_fast_closure_replay"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1159,6 +1162,40 @@ def test_static_distance_ledger_parser_is_offline_only():
     destinations = {action.dest for action in parser._actions}
     assert "execute" not in destinations
     assert "allow_live_candidate_execution" not in destinations
+
+
+def test_static20_closure_parser_is_offline_only():
+    parser = static20_closure.build_parser()
+    destinations = {action.dest for action in parser._actions}
+    assert "execute" not in destinations
+    assert "allow_live_candidate_execution" not in destinations
+
+
+def test_static20_forecast_is_time_invariant_and_adds_only_observation_inflation():
+    geometry = {
+        "component_centers": [[1.0, 2.0, 3.0]],
+        "component_base_radii": [0.08],
+    }
+    forecast = static20_closure._static20_forecast(geometry, 0.02, 5.0)
+    at_zero = forecast.occupancy_at(0.0).spheres[0]
+    at_later = forecast.occupancy_at(4.0).spheres[0]
+    np.testing.assert_allclose(at_zero.center, [1.0, 2.0, 3.0])
+    np.testing.assert_allclose(at_later.center, at_zero.center)
+    assert np.isclose(at_zero.radius, 0.10)
+    assert np.isclose(at_later.radius, 0.10)
+
+
+def test_static20_safe_suffix_requires_every_later_sample_to_pass():
+    rows = [
+        {"distance_m": 0.11},
+        {"distance_m": 0.08},
+        {"distance_m": 0.095},
+        {"distance_m": 0.10},
+    ]
+    result, earliest = static20_closure._safe_suffix(rows, 0.09)
+    assert [row["safe_suffix"] for row in result] == [False, False, True, True]
+    assert earliest is result[2]
+    assert np.isclose(earliest["suffix_min_distance_m"], 0.095)
 
 
 def test_point_obb_distance_reports_nearest_surface_point():
