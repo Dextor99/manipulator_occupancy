@@ -495,12 +495,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "reason": fresh_auth.get("reason", "fresh_auth_not_ready"),
                 }
                 auth_geometry = None
-                if fresh_auth.get("accepted", False) and auth_points is not None and side["accepted"]:
+                if fresh_auth.get("accepted", False) and auth_points is not None:
                     auth_geometry = trial.fit_pca_multisphere(
                         auth_points,
                         fit_margin_m=runtime_args.multisphere_fit_margin_m,
                         max_components=runtime_args.multisphere_max_components,
                     )
+                if auth_geometry is not None and side["accepted"]:
                     local_auth, _ = trial.authorize_local_repair_execution(
                         runtime_args,
                         config,
