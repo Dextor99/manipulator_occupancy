@@ -53,9 +53,10 @@ def first_external_seed(
     *,
     timeout_s: float,
 ) -> dict[str, Any]:
-    """Find one external cluster seed without assuming its old r04 location."""
+    """Find a three-frame external seed without assuming its old r04 location."""
     started = time.perf_counter()
     frames = []
+    samples: list[dict[str, Any]] = []
     while time.perf_counter() - started < timeout_s:
         frame = processor.process_frame()
         timestamp = float(getattr(frame, "timestamp", time.time()))
@@ -95,19 +96,51 @@ def first_external_seed(
         )
         if not valid or not clusters:
             continue
-        selected = max(clusters, key=lambda cluster: len(np.asarray(cluster.points)))
+        if samples:
+            previous_center = np.asarray(samples[-1]["center"], dtype=np.float64)
+            selected = min(
+                clusters,
+                key=lambda cluster: float(
+                    np.linalg.norm(np.asarray(cluster.center, dtype=np.float64) - previous_center)
+                ),
+            )
+            association_error = float(
+                np.linalg.norm(np.asarray(selected.center, dtype=np.float64) - previous_center)
+            )
+            if association_error > runtime_args.max_track_cluster_association_m:
+                samples = []
+        else:
+            selected = max(clusters, key=lambda cluster: len(np.asarray(cluster.points)))
+            association_error = 0.0
         detection = trial.make_occupancy_object(
             np.asarray(selected.points), timestamp=timestamp, margin=0.0
         )
-        return {
-            "accepted": True,
-            "timestamp": timestamp,
-            "center": np.asarray(detection.center, dtype=np.float64),
-            "radius": float(detection.radius),
-            "point_count": int(len(np.asarray(selected.points))),
-            "frames": frames,
-        }
-    return {"accepted": False, "reason": "external_seed_timeout", "frames": frames}
+        samples.append(
+            {
+                "timestamp": timestamp,
+                "center": np.asarray(detection.center, dtype=np.float64),
+                "radius": float(detection.radius),
+                "association_error_m": association_error,
+            }
+        )
+        fitted = trial.fit_fresh_obstacle_motion(
+            samples,
+            minimum_frames=runtime_args.post_stop_recheck_min_frames,
+            minimum_span_s=runtime_args.post_stop_recheck_min_span_s,
+        )
+        if fitted.get("accepted", False):
+            return {
+                **fitted,
+                "timestamp": float(fitted["last_timestamp"]),
+                "point_count": int(len(np.asarray(selected.points))),
+                "frames": frames,
+            }
+    return {
+        "accepted": False,
+        "reason": "stable_external_seed_timeout",
+        "sample_count": len(samples),
+        "frames": frames,
+    }
 
 
 def trigger_reference_time(source: Path) -> float:
@@ -202,8 +235,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         q_virtual = np.asarray(source_candidate["q_now"], dtype=np.float64)
         locked_side = None
         accepted_segments = 0
+        rolling_started = time.perf_counter()
         for item in schedule:
-            if time.perf_counter() - started >= args.max_wall_s:
+            if time.perf_counter() - rolling_started >= args.max_wall_s:
                 log["status"] = "ROLLING_LOCAL_VIRTUAL_WALL_LIMIT_HOLD"
                 break
             index = int(item["segment"])
@@ -345,6 +379,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         log["accepted_segments"] = accepted_segments
         log["side_lock_initialized"] = locked_side is not None
         log["elapsed_s"] = time.perf_counter() - started
+        log["rolling_elapsed_s"] = time.perf_counter() - rolling_started
     except Exception as exc:
         log["status"] = "ROLLING_LOCAL_VIRTUAL_FAILED"
         log["error"] = str(exc)
