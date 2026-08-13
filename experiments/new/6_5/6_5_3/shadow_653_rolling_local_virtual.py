@@ -380,6 +380,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         q_virtual = np.asarray(source_candidate["q_now"], dtype=np.float64)
         locked_side = None
         accepted_segments = 0
+        last_authorized_context = None
         rolling_started = time.perf_counter()
         armed_plan = None
         pre_risk_audit = []
@@ -620,6 +621,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     segment["authorized_attempt"] = attempt_index
                     accepted_segments += 1
                     previous = fresh_auth
+                    last_authorized_context = {
+                        "item": item,
+                        "artifacts": artifacts,
+                        "fresh": fresh_auth,
+                        "fresh_frames": auth_frames,
+                        "fresh_geometry": auth_geometry,
+                    }
                     segment_authorized = True
                     break
                 if action == "reference_safe":
@@ -652,6 +660,158 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 break
         else:
             log["status"] = "ROLLING_LOCAL_VIRTUAL_ALL_SEGMENTS_AUTHORIZED"
+        if (
+            log["status"] == "ROLLING_LOCAL_VIRTUAL_ALL_SEGMENTS_AUTHORIZED"
+            and last_authorized_context is not None
+        ):
+            closure_started = time.perf_counter()
+            context = last_authorized_context
+            fresh3, fresh3_frames, fresh3_points = trial.capture_post_stop_obstacle(
+                processor,
+                reader,
+                denoiser,
+                short_args,
+                trigger_cluster_center=np.asarray(context["fresh"]["center"], dtype=np.float64),
+                trigger_velocity=np.asarray(context["fresh"]["velocity"], dtype=np.float64),
+                trigger_timestamp=float(context["fresh"]["last_timestamp"]),
+                stop_when_ready=True,
+            )
+            fresh3 = obstacle_state_for_mode(fresh3, args.obstacle_motion_mode)
+            fresh3_geometry = None
+            if fresh3.get("accepted", False) and fresh3_points is not None:
+                fresh3_geometry = trial.fit_pca_multisphere(
+                    fresh3_points,
+                    fit_margin_m=runtime_args.multisphere_fit_margin_m,
+                    max_components=runtime_args.multisphere_max_components,
+                )
+                if not fresh3_geometry["covered"]:
+                    fresh3 = {
+                        **fresh3,
+                        "accepted": False,
+                        "reason": "closure_fresh3_multisphere_coverage_failed",
+                    }
+            trial.write_json(
+                output / "closure_fresh3.json",
+                {"result": fresh3, "frames": fresh3_frames},
+            )
+            if fresh3_geometry is not None:
+                trial.write_json(output / "closure_fresh3_multisphere.json", fresh3_geometry)
+
+            virtual_tail_guard_m = -math.inf
+            rejoin_goals = []
+            if fresh3.get("accepted", False) and fresh3_geometry is not None:
+                evaluator, _, _ = trial.make_risk_stack(config, model, None)
+                closure_forecast = trial.constant_multisphere_forecast(
+                    np.asarray(fresh3_geometry["component_centers"], dtype=np.float64),
+                    np.asarray(fresh3_geometry["component_base_radii"], dtype=np.float64),
+                    np.asarray(fresh3["velocity"], dtype=np.float64),
+                )
+                virtual_tail_guard_m = float(
+                    evaluator.configuration(
+                        q_virtual,
+                        closure_forecast,
+                        0.0,
+                        density="medium",
+                        with_gradient=False,
+                    ).min_distance
+                )
+                rejoin_offsets = np.arange(
+                    runtime_args.local_horizon_s + runtime_args.rejoin_search_step_s,
+                    runtime_args.rejoin_max_offset_s
+                    + 0.5 * runtime_args.rejoin_search_step_s,
+                    runtime_args.rejoin_search_step_s,
+                )
+                reference_plan_start = float(context["item"]["reference_plan_start_time_s"])
+                rejoin_goals = [
+                    (
+                        float(offset),
+                        reference.state_at(reference_plan_start + float(offset)),
+                    )
+                    for offset in rejoin_offsets
+                    if reference_plan_start + float(offset) <= float(reference.times[-1])
+                ]
+            delayed, bridge = trial.authorize_delayed_rejoin_after_fresh3(
+                runtime_args,
+                config,
+                model,
+                local_artifacts=context["artifacts"],
+                fresh3=fresh3,
+                fresh3_geometry=fresh3_geometry,
+                fresh3_frames=fresh3_frames,
+                rejoin_goals=rejoin_goals,
+                hard_guard_distance_m=virtual_tail_guard_m,
+                trial_dir=output / "closure",
+            )
+            remainder_audit = {
+                "authorized": False,
+                "reason": "delayed_rejoin_not_authorized",
+            }
+            if delayed["authorized"] and bridge is not None and fresh3_geometry is not None:
+                reference_plan_start = float(context["item"]["reference_plan_start_time_s"])
+                rejoin_absolute_time = reference_plan_start + float(
+                    delayed["selected_rejoin_offset_s"]
+                )
+                remainder_times, remainder_q, _ = reference.remainder_after(rejoin_absolute_time)
+                evaluator, _, _ = trial.make_risk_stack(config, model, None)
+                closure_forecast = trial.constant_multisphere_forecast(
+                    np.asarray(fresh3_geometry["component_centers"], dtype=np.float64),
+                    np.asarray(fresh3_geometry["component_base_radii"], dtype=np.float64),
+                    np.asarray(fresh3["velocity"], dtype=np.float64),
+                )
+                bridge_duration = float(bridge.total_duration)
+                risk_rows = []
+                for tau, q_tau in zip(remainder_times, remainder_q):
+                    risk = evaluator.configuration(
+                        np.asarray(q_tau, dtype=np.float64),
+                        closure_forecast,
+                        bridge_duration + float(tau),
+                        density="medium",
+                        with_gradient=False,
+                    )
+                    risk_rows.append(
+                        {
+                            "tau_s": float(tau),
+                            "distance_m": float(risk.min_distance),
+                            "nearest_link": risk.nearest_link,
+                        }
+                    )
+                minimum = min(risk_rows, key=lambda row: row["distance_m"])
+                remainder_audit = {
+                    "authorized": bool(
+                        minimum["distance_m"] >= runtime_args.online_accept_m
+                    ),
+                    "reason": (
+                        "full_remainder_clear"
+                        if minimum["distance_m"] >= runtime_args.online_accept_m
+                        else "full_remainder_below_online_accept"
+                    ),
+                    "rejoin_absolute_time_s": rejoin_absolute_time,
+                    "minimum_distance_m": minimum["distance_m"],
+                    "minimum_tau_s": minimum["tau_s"],
+                    "minimum_link": minimum["nearest_link"],
+                    "sample_count": len(risk_rows),
+                    "online_accept_m": float(runtime_args.online_accept_m),
+                    "risk_profile": risk_rows,
+                }
+            closure_authorized = bool(delayed["authorized"] and remainder_audit["authorized"])
+            log["closure_audit"] = {
+                "fresh3": fresh3,
+                "virtual_tail_guard_m": virtual_tail_guard_m,
+                "virtual_tail_guard_basis": "medium_multisphere_at_virtual_tail",
+                "delayed_rejoin": delayed,
+                "full_reference_remainder": remainder_audit,
+                "authorized": closure_authorized,
+                "elapsed_s": time.perf_counter() - closure_started,
+            }
+            log["status"] = (
+                "STATIC_ROLLING_REJOIN_AND_REMAINDER_AUTHORIZED"
+                if closure_authorized and args.obstacle_motion_mode == "static"
+                else (
+                    "ROLLING_LOCAL_VIRTUAL_REJOIN_AND_REMAINDER_AUTHORIZED"
+                    if closure_authorized
+                    else "ROLLING_LOCAL_VIRTUAL_CLOSURE_HOLD"
+                )
+            )
         log["accepted_segments"] = accepted_segments
         log["side_lock_initialized"] = locked_side is not None
         log["elapsed_s"] = time.perf_counter() - started
