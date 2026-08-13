@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeat", type=int, required=True)
     parser.add_argument("--max-segments", type=int, default=3)
     parser.add_argument("--max-wall-s", type=float, default=10.0)
+    parser.add_argument("--seed-timeout-s", type=float, default=8.0)
     return parser
 
 
@@ -122,8 +123,8 @@ def trigger_reference_time(source: Path) -> float:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    if args.max_segments < 1 or args.max_wall_s <= 0.0:
-        raise ValueError("max-segments and max-wall-s must be positive")
+    if args.max_segments < 1 or args.max_wall_s <= 0.0 or args.seed_timeout_s <= 0.0:
+        raise ValueError("max-segments, max-wall-s, and seed-timeout-s must be positive")
     source = args.source_trial.resolve()
     output = args.output.resolve() / f"r{args.repeat:02d}"
     output.mkdir(parents=True, exist_ok=True)
@@ -181,11 +182,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         trial.require_confirmation(
             True,
-            "VIRTUAL SHADOW ONLY: the robot will not move. Start the tabletop obstacle "
-            "moving continuously through the D2 corridor, then press Enter.",
+            "VIRTUAL SHADOW ONLY: the robot will not move. Press Enter, then introduce "
+            f"the moving tabletop obstacle into the D2 corridor within {args.seed_timeout_s:.1f}s "
+            "and keep it moving continuously.",
         )
         seed = first_external_seed(
-            processor, denoiser, runtime_args, timeout_s=min(3.0, args.max_wall_s)
+            processor, denoiser, runtime_args, timeout_s=args.seed_timeout_s
         )
         trial.write_json(output / "seed.json", seed)
         if not seed["accepted"]:
