@@ -57,6 +57,12 @@ rolling_common = importlib.import_module(
 static20_shadow = importlib.import_module(
     "experiments.new.6_5.6_5_3.shadow_653_static20_goal_directed_virtual"
 )
+simple_bypass = importlib.import_module(
+    "experiments.new.6_5.6_5_3.simple_bypass_planner"
+)
+simple_dynamic = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_avoidance"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1303,6 +1309,66 @@ def test_static20_shadow_wall_budget_starts_from_rolling_epoch():
     assert not static20_shadow.rolling_wall_expired(rolling_started, 240.0, now=300.1)
     assert not static20_shadow.rolling_wall_expired(rolling_started, 240.0, now=539.9)
     assert static20_shadow.rolling_wall_expired(rolling_started, 240.0, now=540.0)
+
+
+def test_simple_dynamic_nubs_parser_is_shadow_only():
+    parser = simple_dynamic.build_parser()
+    parsed = parser.parse_args(["--repeat", "1"])
+    assert parsed.mode == "shadow"
+    assert parsed.trigger_timeout_s == 15.0
+    destinations = {action.dest for action in parser._actions}
+    assert "execute" not in destinations
+    assert "allow_live_candidate_execution" not in destinations
+    mode_action = next(action for action in parser._actions if action.dest == "mode")
+    assert tuple(mode_action.choices) == ("shadow",)
+
+
+def test_simple_bypass_side_is_orthogonal_to_task_and_points_away():
+    task, side, _ = simple_bypass.task_and_side_directions(
+        np.zeros(3),
+        np.asarray([0.0, 1.0, 0.0]),
+        np.asarray([1.0, 0.0, 0.0]),
+        np.zeros(3),
+    )
+    np.testing.assert_allclose(task, [0.0, 1.0, 0.0])
+    np.testing.assert_allclose(side, [1.0, 0.0, 0.0])
+    assert abs(float(np.dot(task, side))) < 1.0e-12
+
+
+def test_simple_bypass_generates_six_bounded_joint_goals():
+    class Model:
+        @staticmethod
+        def point_jacobian(q, link, point):
+            return np.hstack([np.eye(3), np.zeros((3, 3))])
+
+    rows, _ = simple_bypass.bypass_goal_candidates(
+        Model(),
+        np.zeros(6),
+        tcp_position=np.zeros(3),
+        goal_position=np.asarray([0.0, 1.0, 0.0]),
+        risk_position=np.asarray([1.0, 0.0, 0.0]),
+        predicted_obstacle_position=np.zeros(3),
+        forward_m=0.05,
+        side_lengths_m=(0.04, 0.06, 0.08),
+        max_joint_delta_rad=0.12,
+    )
+    assert len(rows) == 6
+    assert {row["side_sign"] for row in rows} == {-1, 1}
+    assert {row["side_m"] for row in rows} == {0.04, 0.06, 0.08}
+    assert all(np.max(np.abs(row["q_goal"])) <= 0.12 + 1.0e-12 for row in rows)
+
+
+def test_simple_dynamic_summary_allows_missing_fresh_verification():
+    result = {
+        "status": "SIMPLE_DYNAMIC_NUBS_FAST_HOLD",
+        "bypass_generation": {"selected_coarse_clearance_m": 0.047},
+        "fresh_candidate_verification": None,
+    }
+    bypass_summary = result.get("bypass_generation") or {}
+    fresh_summary = result.get("fresh_candidate_verification") or {}
+    fresh_verification = fresh_summary.get("verification") or {}
+    assert bypass_summary["selected_coarse_clearance_m"] == 0.047
+    assert fresh_verification.get("min_distance") is None
 
 
 def test_point_obb_distance_reports_nearest_surface_point():
