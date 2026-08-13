@@ -1929,6 +1929,7 @@ def rolling_fast_until_authorized(
         )
         full_auth = authorize_candidate_execution(
             args, stage4_config, stage4_model,
+            local_repair_ready=bool(candidate.get("local_repair_ready")),
             local_artifacts=artifacts,
             fresh_geometry=execution_geometry,
             fresh_velocity=np.asarray(fresh["velocity"], dtype=np.float64),
@@ -1979,6 +1980,7 @@ def authorize_candidate_execution(
     stage4_config: dict[str, Any],
     stage4_model: RobotSurfaceModel,
     *,
+    local_repair_ready: bool,
     local_artifacts: dict[str, Any],
     fresh_geometry: dict[str, Any],
     fresh_velocity: np.ndarray,
@@ -1987,6 +1989,28 @@ def authorize_candidate_execution(
 ) -> dict[str, Any]:
     """Authorize a local repair only after Fresh #2 validates repair plus rejoin."""
     started = time.perf_counter()
+    output_dir = trial_dir / "post_plan_authorization"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # A safe reference continuation is not a repaired candidate.  In
+    # particular, a failed Fast solve may leave candidate_trajectory equal to
+    # the nominal reference; Fresh #2 must never turn that fallback into an
+    # execution authorization merely because the reference is currently clear.
+    if not local_repair_ready:
+        payload = {
+            "status": "NOT_ELIGIBLE_FAST_REPAIR_FAILED",
+            "authorization_mode": "SHADOW",
+            "execution_authorized": False,
+            "reason": "local_repair_not_ready",
+            "selected_rejoin_offset_s": None,
+            "full_candidate_min_distance_m": None,
+            "authorized_trajectory_csv": None,
+            "authorized_duration_s": None,
+            "rejoin_search_audit": [],
+            "authorization_compute_ms": (time.perf_counter() - started) * 1000.0,
+            "robot_executed": False,
+        }
+        write_json(output_dir / "authorization_summary.json", payload)
+        return payload
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
     forecast = constant_multisphere_forecast(
         np.asarray(fresh_geometry["component_centers"], dtype=np.float64),
@@ -2052,8 +2076,6 @@ def authorize_candidate_execution(
             selected_offset = float(offset_s)
             break
     authorized = accepted_trajectory is not None
-    output_dir = trial_dir / "post_plan_authorization"
-    output_dir.mkdir(parents=True, exist_ok=True)
     if authorized:
         save_trajectory_csv(output_dir / "authorized_repair_rejoin.csv", accepted_trajectory, dt=0.01)
         save_dynamic_risk_profile(
@@ -3636,6 +3658,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             args,
                             stage4_config,
                             stage4_model,
+                            local_repair_ready=bool(candidate_summary.get("local_repair_ready")),
                             local_artifacts=local_artifacts,
                             fresh_geometry=fresh2_geometry,
                             fresh_velocity=np.asarray(fresh2["velocity"], dtype=np.float64),

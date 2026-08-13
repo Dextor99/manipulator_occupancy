@@ -849,6 +849,25 @@ def test_candidate_tracking_metrics_use_authorized_time_axis():
     assert metrics["tracking_max_error_rad"] == 0.0
 
 
+def test_full_rejoin_authorization_rejects_failed_fast_before_verification(tmp_path):
+    result = trial.authorize_candidate_execution(
+        SimpleNamespace(),
+        {},
+        None,
+        local_repair_ready=False,
+        local_artifacts={},
+        fresh_geometry={},
+        fresh_velocity=np.zeros(3),
+        rejoin_goals=[],
+        trial_dir=tmp_path,
+    )
+    assert result["status"] == "NOT_ELIGIBLE_FAST_REPAIR_FAILED"
+    assert not result["execution_authorized"]
+    assert result["reason"] == "local_repair_not_ready"
+    saved = json.loads((tmp_path / "post_plan_authorization" / "authorization_summary.json").read_text())
+    assert not saved["execution_authorized"]
+
+
 def test_authorized_timing_check_rejects_compressed_waypoint_playback():
     feedback = [
         {"t_s": 0.0, "goal_max_abs_error_rad": 1.0},
