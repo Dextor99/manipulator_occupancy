@@ -35,6 +35,9 @@ d2_sweep = importlib.import_module("experiments.new.6_5.6_5_3.offline_d2_geometr
 rolling_replay = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_rolling_local_replay"
 )
+rolling_virtual = importlib.import_module(
+    "experiments.new.6_5.6_5_3.shadow_653_rolling_local_virtual"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1003,6 +1006,13 @@ def test_recorded_reference_absolute_state_does_not_mutate_online_index():
     state = reference.state_at(0.5)
     np.testing.assert_allclose(state[0], 0.5)
     assert reference.index == 1
+
+
+def test_rolling_virtual_shadow_parser_has_no_execution_option():
+    parser = rolling_virtual.build_parser()
+    destinations = {action.dest for action in parser._actions}
+    assert "execute" not in destinations
+    assert "allow_live_candidate_execution" not in destinations
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
