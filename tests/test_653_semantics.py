@@ -51,6 +51,12 @@ static20_closure = importlib.import_module(
 offset_rollout = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_static20_offset_preserving_rollout"
 )
+rolling_common = importlib.import_module(
+    "experiments.new.6_5.6_5_3.goal_directed_rolling_common"
+)
+static20_shadow = importlib.import_module(
+    "experiments.new.6_5.6_5_3.shadow_653_static20_goal_directed_virtual"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1243,6 +1249,60 @@ def test_bounded_terminal_goal_uses_exact_goal_inside_step_bound():
     )
     np.testing.assert_allclose(goal[0], q_final)
     assert np.isclose(audit["terminal_step_scale"], 1.0)
+
+
+def test_static20_goal_directed_shadow_parser_has_no_execution_switch():
+    destinations = {action.dest for action in static20_shadow.build_parser()._actions}
+    assert "execute" not in destinations
+    assert "allow_live_candidate_execution" not in destinations
+    assert "max_segments" not in destinations
+
+
+def test_forecast_override_gate_allows_only_offline_or_static_shadow():
+    offline = SimpleNamespace(mode="live-stop-replan-execute")
+    shadow = SimpleNamespace(mode="shadow")
+    live = SimpleNamespace(mode="live-stop-replan-execute")
+    moving = SimpleNamespace(mode="moving-shadow-stop")
+    assert trial.forecast_override_authorized(
+        offline, {"offline_forecast_override_authorized": True}
+    )
+    assert trial.forecast_override_authorized(
+        shadow, {"static20_shadow_forecast_override_authorized": True}
+    )
+    assert not trial.forecast_override_authorized(
+        live, {"static20_shadow_forecast_override_authorized": True}
+    )
+    assert not trial.forecast_override_authorized(
+        moving, {"static20_shadow_forecast_override_authorized": True}
+    )
+    assert not trial.forecast_override_authorized(shadow, {})
+
+
+def test_shared_static20_forecast_is_stationary_and_has_twenty_mm_inflation():
+    forecast = rolling_common.make_static20_forecast(
+        {"component_centers": [[0.1, 0.2, 0.3]], "component_base_radii": [0.08]},
+        observation_inflation_m=0.02,
+        valid_horizon_s=2.0,
+    )
+    first = forecast.occupancy_at(0.0).spheres[0]
+    later = forecast.occupancy_at(1.5).spheres[0]
+    np.testing.assert_allclose(first.center, later.center)
+    assert np.isclose(first.radius, 0.10)
+    assert np.isclose(later.radius, 0.10)
+
+
+def test_terminal_side_lock_releases_only_after_complete_verifier_pass():
+    assert rolling_common.terminal_side_release_allowed("terminal_goal", True)
+    assert not rolling_common.terminal_side_release_allowed("terminal_goal", False)
+    assert not rolling_common.terminal_side_release_allowed("reference_transport", True)
+
+
+def test_static20_shadow_wall_budget_starts_from_rolling_epoch():
+    # A long operator setup before this epoch is deliberately irrelevant.
+    rolling_started = 300.0
+    assert not static20_shadow.rolling_wall_expired(rolling_started, 240.0, now=300.1)
+    assert not static20_shadow.rolling_wall_expired(rolling_started, 240.0, now=539.9)
+    assert static20_shadow.rolling_wall_expired(rolling_started, 240.0, now=540.0)
 
 
 def test_point_obb_distance_reports_nearest_surface_point():

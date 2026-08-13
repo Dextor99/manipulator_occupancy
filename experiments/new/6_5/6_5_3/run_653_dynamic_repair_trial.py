@@ -1581,6 +1581,16 @@ def execute_fast_candidate_offline_track(
     return result
 
 
+def forecast_override_authorized(args: argparse.Namespace, obstacle_audit: dict[str, Any]) -> bool:
+    """Permit overrides only for offline replay or non-commanding shadow diagnostics."""
+    offline_ok = bool(obstacle_audit.get("offline_forecast_override_authorized", False))
+    static_shadow_ok = bool(
+        args.mode == "shadow"
+        and obstacle_audit.get("static20_shadow_forecast_override_authorized", False)
+    )
+    return offline_ok or static_shadow_ok
+
+
 def run_fast_repair(
     args: argparse.Namespace,
     stage4_config: dict[str, Any],
@@ -1602,8 +1612,11 @@ def run_fast_repair(
 ) -> dict[str, Any]:
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
     if forecast_override is not None:
-        if not obstacle_audit.get("offline_forecast_override_authorized", False):
-            raise ValueError("forecast_override is restricted to explicit offline diagnostics")
+        if not forecast_override_authorized(args, obstacle_audit):
+            raise ValueError(
+                "forecast_override is restricted to explicit offline diagnostics "
+                "or non-commanding Static20 shadow mode"
+            )
         forecast = forecast_override
         geometry_mode = "offline_forecast_override"
     elif multisphere_geometry is None:

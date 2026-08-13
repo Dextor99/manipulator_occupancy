@@ -29,6 +29,9 @@ trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repai
 static20 = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_static20_fast_closure_replay"
 )
+rolling_common = importlib.import_module(
+    "experiments.new.6_5.6_5_3.goal_directed_rolling_common"
+)
 
 DEFAULT_SOURCE = ROOT / "results/new/6_5/6_5_3/static_online_fast_shadow/r07"
 DEFAULT_REFERENCE = ROOT / "results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv"
@@ -227,6 +230,14 @@ def search_closure(
         if verification.accepted:
             return rows, row
     return rows, None
+
+
+# Backward-compatible public names now point to the shared policy used by both
+# this archived replay and the real-RGB-D virtual shadow.
+transported_reference_goal = rolling_common.transported_reference_goal
+bounded_terminal_goal = rolling_common.bounded_terminal_goal
+tcp_position = rolling_common.tcp_position
+risk_guided_goal = rolling_common.risk_guided_goal
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
