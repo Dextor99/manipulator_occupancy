@@ -462,6 +462,11 @@ class RecordedReference:
 
     def state_after(self, delta_s: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         target = min(self.times[-1], self.times[self.index] + max(0.0, float(delta_s)))
+        return self.state_at(target)
+
+    def state_at(self, absolute_time_s: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Interpolate one absolute reference state without mutating progress."""
+        target = float(np.clip(absolute_time_s, self.times[0], self.times[-1]))
         return tuple(
             np.asarray([np.interp(target, self.times, values[:, j]) for j in range(6)], dtype=np.float64)
             for values in (self.q, self.qd, self.qdd)

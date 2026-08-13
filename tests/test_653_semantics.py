@@ -32,6 +32,9 @@ hold_resume = importlib.import_module(
     "experiments.new.6_5.6_5_3.resume_653_from_hold"
 )
 d2_sweep = importlib.import_module("experiments.new.6_5.6_5_3.offline_d2_geometry_sweep")
+rolling_replay = importlib.import_module(
+    "experiments.new.6_5.6_5_3.offline_rolling_local_replay"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -990,6 +993,16 @@ def test_rolling_local_reference_schedule_advances_from_each_real_segment():
     )
     assert [row["reference_plan_start_time_s"] for row in schedule] == [12.0, 13.0, 14.0]
     assert [row["reference_goal_time_s"] for row in schedule] == [13.0, 14.0, 15.0]
+
+
+def test_recorded_reference_absolute_state_does_not_mutate_online_index():
+    times = np.array([0.0, 1.0, 2.0])
+    q = np.repeat(times[:, None], 6, axis=1)
+    reference = trial.RecordedReference(times, q, np.ones_like(q))
+    reference.index = 1
+    state = reference.state_at(0.5)
+    np.testing.assert_allclose(state[0], 0.5)
+    assert reference.index == 1
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
