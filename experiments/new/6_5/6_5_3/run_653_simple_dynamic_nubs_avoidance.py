@@ -56,9 +56,66 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--side-lengths-m", default="0.04,0.06,0.08")
     parser.add_argument("--max-joint-delta-rad", type=float, default=0.12)
     parser.add_argument("--planning-robust-target-m", type=float, default=0.11)
-    parser.add_argument("--max-demo-speed-m-s", type=float, default=0.12)
     parser.add_argument("--tcp-link", default="gripper_base_link")
     return parser
+
+
+def update_motion_state(
+    previous: dict[str, Any] | None,
+    speed_m_s: float,
+    *,
+    enter_m_s: float = 0.08,
+    exit_m_s: float = 0.04,
+    exit_frames: int = 3,
+) -> dict[str, Any]:
+    """Update dynamic/quasi-static state without filtering out the obstacle."""
+    prior = previous or {"dynamic": False, "low_speed_streak": 0}
+    dynamic = bool(prior.get("dynamic", False))
+    streak = int(prior.get("low_speed_streak", 0))
+    speed = float(speed_m_s)
+    transition = "none"
+    if dynamic:
+        streak = streak + 1 if speed < float(exit_m_s) else 0
+        if streak >= int(exit_frames):
+            dynamic = False
+            transition = "dynamic_to_quasi_static"
+            streak = 0
+    elif speed >= float(enter_m_s):
+        dynamic = True
+        streak = 0
+        transition = "quasi_static_to_dynamic"
+    return {
+        "dynamic": dynamic,
+        "motion_class": "dynamic" if dynamic else "quasi_static",
+        "low_speed_streak": streak,
+        "transition": transition,
+        "measured_speed_m_s": speed,
+        "enter_threshold_m_s": float(enter_m_s),
+        "exit_threshold_m_s": float(exit_m_s),
+        "exit_streak_frames": int(exit_frames),
+    }
+
+
+def obstacle_with_motion_state(
+    obstacle: dict[str, Any], motion_state: dict[str, Any]
+) -> dict[str, Any]:
+    """Attach prediction semantics while retaining the measured velocity."""
+    result = dict(obstacle)
+    measured_velocity = np.asarray(obstacle["velocity"], dtype=np.float64)
+    prediction_velocity = measured_velocity if motion_state["dynamic"] else np.zeros(3)
+    result["motion_state"] = dict(motion_state)
+    result["motion_class"] = motion_state["motion_class"]
+    result["prediction_velocity"] = prediction_velocity.tolist()
+    result["prediction_model"] = (
+        "local_constant_velocity" if motion_state["dynamic"] else "quasi_static_hold"
+    )
+    return result
+
+
+def prediction_velocity(obstacle: dict[str, Any]) -> np.ndarray:
+    return np.asarray(
+        obstacle.get("prediction_velocity", obstacle["velocity"]), dtype=np.float64
+    )
 
 
 def tcp_position(model: Any, q: np.ndarray, link: str) -> np.ndarray:
@@ -101,7 +158,7 @@ def stro_prediction(
 ) -> tuple[dict[str, Any], Any, Any]:
     forecast = trial.constant_forecast(
         np.asarray(obstacle["center"]),
-        np.asarray(obstacle["velocity"]),
+        prediction_velocity(obstacle),
         float(obstacle["radius"]),
     )
     evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
@@ -182,7 +239,7 @@ def compact_prediction(
     forecast = trial.constant_multisphere_forecast(
         np.asarray(geometry["component_centers"], dtype=np.float64),
         np.asarray(geometry["component_base_radii"], dtype=np.float64),
-        np.asarray(obstacle["velocity"], dtype=np.float64),
+        prediction_velocity(obstacle),
         object_id=int(obstacle.get("track_id") or 1),
     )
     evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
@@ -235,11 +292,6 @@ def select_robust_candidate(rows: list[dict[str, Any]], target_m: float) -> dict
     return None if not eligible else max(eligible, key=lambda row: row["coarse_min_distance_m"])
 
 
-def post_trigger_speed_in_hold_domain(speed_m_s: float, exit_m_s: float, max_m_s: float) -> bool:
-    """Apply dynamic hysteresis after a valid enter/trigger event."""
-    return bool(float(exit_m_s) <= float(speed_m_s) <= float(max_m_s))
-
-
 def verify_fresh_two_sphere(
     runtime_args: Any,
     config: dict[str, Any],
@@ -251,7 +303,7 @@ def verify_fresh_two_sphere(
     forecast = trial.constant_multisphere_forecast(
         np.asarray(geometry["component_centers"], dtype=np.float64),
         np.asarray(geometry["component_base_radii"], dtype=np.float64),
-        np.asarray(fresh["velocity"], dtype=np.float64),
+        prediction_velocity(fresh),
         object_id=int(fresh.get("track_id") or 1),
     )
     _, verifier, _ = trial.make_risk_stack(config, model, forecast)
@@ -374,7 +426,7 @@ def plan_one_bypass_round(
         q_now=q_now,
         qd_now=np.zeros(6),
         center=np.asarray(obstacle["center"]),
-        velocity=np.asarray(obstacle["velocity"]),
+        velocity=prediction_velocity(obstacle),
         radius=float(obstacle["radius"]),
         risk_links=set(model.surface_by_link(q_now, density="coarse")),
         trial_dir=round_dir / "fast",
@@ -409,8 +461,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("trigger-timeout-s must be positive")
     if args.planning_robust_target_m < 0.11:
         raise ValueError("planning-robust-target-m must remain at least 0.11 m")
-    if args.max_demo_speed_m_s <= 0.0:
-        raise ValueError("max-demo-speed-m-s must be positive")
     output = args.output.resolve() / f"r{args.repeat:02d}"
     output.mkdir(parents=True, exist_ok=True)
     summary_path = output / "summary.json"
@@ -440,15 +490,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "bypass_jacobian_policy": "ccro_nearest_risk_link_plus_tcp_task_progress",
         "planning_robust_target_m": float(args.planning_robust_target_m),
         "online_accept_m": float(runtime_args.online_accept_m),
-        "demo_speed_domain_m_s": [
-            float(runtime_args.min_dynamic_trigger_speed_m_s),
-            float(args.max_demo_speed_m_s),
-        ],
-        "post_trigger_speed_hold_domain_m_s": [
-            float(runtime_args.dynamic_exit_speed_m_s),
-            float(args.max_demo_speed_m_s),
-        ],
-        "production_fast_forecast": "fresh_fixed_pca_two_sphere_dynamic",
+        "speed_semantics": "classification_only_not_a_planning_gate",
+        "motion_state_thresholds": {
+            "dynamic_enter_m_s": float(runtime_args.min_dynamic_trigger_speed_m_s),
+            "dynamic_exit_m_s": float(runtime_args.dynamic_exit_speed_m_s),
+            "dynamic_exit_streak_frames": int(runtime_args.dynamic_exit_streak_frames),
+        },
+        "production_fast_forecast": (
+            "fresh_fixed_pca_two_sphere_with_motion_class_dependent_velocity"
+        ),
     }
     processor = None
     started = time.perf_counter()
@@ -488,10 +538,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if not obstacle.get("accepted", False):
             log["status"] = "SIMPLE_DYNAMIC_NUBS_SEED_FAILED"
             return log
-        # A three-sample seed velocity is noisy under hand motion.  Keep it as
-        # an observation, but require an in-domain estimate inside the bounded
-        # trigger loop instead of ending the whole trial on one spike.
+        motion_state = update_motion_state(
+            None,
+            float(obstacle["speed_m_s"]),
+            enter_m_s=runtime_args.min_dynamic_trigger_speed_m_s,
+            exit_m_s=runtime_args.dynamic_exit_speed_m_s,
+            exit_frames=runtime_args.dynamic_exit_streak_frames,
+        )
+        obstacle = obstacle_with_motion_state(obstacle, motion_state)
         log["seed_speed_m_s"] = float(obstacle["speed_m_s"])
+        log["seed_motion_state"] = motion_state
 
         trigger_started = time.perf_counter()
         trigger_attempts = []
@@ -502,46 +558,43 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         best = None
         evaluator = None
         forecast = None
-        in_domain_attempts = 0
-        outside_domain_attempts = 0
+        dynamic_attempts = 0
+        quasi_static_attempts = 0
         while time.perf_counter() - trigger_started < args.trigger_timeout_s:
             speed = float(obstacle["speed_m_s"])
-            speed_in_domain = bool(
-                runtime_args.min_dynamic_trigger_speed_m_s
-                <= speed
-                <= args.max_demo_speed_m_s
-            )
+            if obstacle["motion_class"] == "dynamic":
+                dynamic_attempts += 1
+            else:
+                quasi_static_attempts += 1
             attempt = {
                 "obstacle_center": obstacle["center"],
                 "obstacle_velocity": obstacle["velocity"],
+                "prediction_velocity": obstacle["prediction_velocity"],
                 "obstacle_speed_m_s": speed,
                 "obstacle_radius_m": obstacle["radius"],
-                "speed_in_demo_domain": speed_in_domain,
-                "prediction_minimum": None,
+                "motion_class": obstacle["motion_class"],
+                "motion_state": obstacle["motion_state"],
             }
             trigger_attempts.append(attempt)
-            if speed_in_domain:
-                in_domain_attempts += 1
-                prediction, best, evaluator = stro_prediction(
-                    trial,
-                    runtime_args,
-                    config,
-                    model,
-                    reference,
-                    reference_start,
-                    obstacle,
+            prediction, best, evaluator = stro_prediction(
+                trial,
+                runtime_args,
+                config,
+                model,
+                reference,
+                reference_start,
+                obstacle,
+            )
+            attempt["prediction_minimum"] = prediction["minimum"]
+            if best["distance_m"] < runtime_args.moving_shadow_replan_in_m:
+                forecast = trial.constant_forecast(
+                    np.asarray(obstacle["center"]),
+                    prediction_velocity(obstacle),
+                    float(obstacle["radius"]),
                 )
-                attempt["prediction_minimum"] = prediction["minimum"]
-                if best["distance_m"] < runtime_args.moving_shadow_replan_in_m:
-                    forecast = trial.constant_forecast(
-                        np.asarray(obstacle["center"]),
-                        np.asarray(obstacle["velocity"]),
-                        float(obstacle["radius"]),
-                    )
-                    log["stro_prediction"] = prediction
-                    break
-            else:
-                outside_domain_attempts += 1
+                log["stro_prediction"] = prediction
+                log["trigger_motion_state"] = obstacle["motion_state"]
+                break
             fresh_wait, wait_frames, _ = trial.capture_post_stop_obstacle(
                 processor,
                 reader,
@@ -558,21 +611,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "frame_count": len(wait_frames),
             }
             if fresh_wait.get("accepted", False):
-                obstacle = fresh_wait
+                motion_state = update_motion_state(
+                    motion_state,
+                    float(fresh_wait["speed_m_s"]),
+                    enter_m_s=runtime_args.min_dynamic_trigger_speed_m_s,
+                    exit_m_s=runtime_args.dynamic_exit_speed_m_s,
+                    exit_frames=runtime_args.dynamic_exit_streak_frames,
+                )
+                obstacle = obstacle_with_motion_state(fresh_wait, motion_state)
         log["trigger_wait"] = {
             "timeout_s": float(args.trigger_timeout_s),
             "elapsed_s": time.perf_counter() - trigger_started,
             "attempt_count": len(trigger_attempts),
-            "in_domain_attempt_count": int(in_domain_attempts),
-            "outside_domain_attempt_count": int(outside_domain_attempts),
+            "dynamic_attempt_count": int(dynamic_attempts),
+            "quasi_static_attempt_count": int(quasi_static_attempts),
             "attempts": trigger_attempts,
         }
         if best is None or best["distance_m"] >= runtime_args.moving_shadow_replan_in_m:
-            log["status"] = (
-                "SIMPLE_DYNAMIC_NUBS_OUTSIDE_LOW_SPEED_DEMO_DOMAIN_TIMEOUT"
-                if in_domain_attempts == 0
-                else "SIMPLE_DYNAMIC_NUBS_NO_PREDICTED_TRIGGER"
-            )
+            log["status"] = "SIMPLE_DYNAMIC_NUBS_NO_PREDICTED_TRIGGER"
             return log
 
         # The conservative STRO sphere ends here.  Acquire one independent
@@ -595,20 +651,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if not planning_obstacle.get("accepted", False) or planning_points is None:
             log["status"] = "SIMPLE_DYNAMIC_NUBS_PLANNING_FRESH_NOT_READY_HOLD"
             return log
-        planning_speed = float(planning_obstacle["speed_m_s"])
-        if planning_speed > args.max_demo_speed_m_s:
-            log["status"] = "SIMPLE_DYNAMIC_NUBS_OUTSIDE_LOW_SPEED_DEMO_DOMAIN"
-            log["measured_speed_m_s"] = planning_speed
-            return log
-        if not post_trigger_speed_in_hold_domain(
-            planning_speed,
-            runtime_args.dynamic_exit_speed_m_s,
-            args.max_demo_speed_m_s,
-        ):
-            log["status"] = "SIMPLE_DYNAMIC_NUBS_PLANNING_DYNAMIC_EXIT_HOLD"
-            log["measured_speed_m_s"] = planning_speed
-            return log
-        obstacle = planning_obstacle
+        motion_state = update_motion_state(
+            motion_state,
+            float(planning_obstacle["speed_m_s"]),
+            enter_m_s=runtime_args.min_dynamic_trigger_speed_m_s,
+            exit_m_s=runtime_args.dynamic_exit_speed_m_s,
+            exit_frames=runtime_args.dynamic_exit_streak_frames,
+        )
+        obstacle = obstacle_with_motion_state(planning_obstacle, motion_state)
+        log["planning_fresh_motion_state"] = motion_state
+        trial.write_json(output / "planning_prediction_state.json", obstacle)
         geometry = fit_fixed_pca_two_sphere(planning_points)
         trial.write_json(output / "planning_fresh_two_sphere.json", geometry)
         if not geometry["covered"]:
@@ -683,23 +735,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 planning_rounds.append(round_log)
                 log["status"] = "SIMPLE_DYNAMIC_NUBS_FRESH_NOT_READY_HOLD"
                 break
-            fresh_speed = float(fresh["speed_m_s"])
-            if fresh_speed > args.max_demo_speed_m_s:
-                round_log["fresh_candidate_verification"] = None
-                planning_rounds.append(round_log)
-                log["status"] = "SIMPLE_DYNAMIC_NUBS_OUTSIDE_LOW_SPEED_DEMO_DOMAIN"
-                log["measured_speed_m_s"] = fresh_speed
-                break
-            if not post_trigger_speed_in_hold_domain(
-                fresh_speed,
-                runtime_args.dynamic_exit_speed_m_s,
-                args.max_demo_speed_m_s,
-            ):
-                round_log["fresh_candidate_verification"] = None
-                planning_rounds.append(round_log)
-                log["status"] = "SIMPLE_DYNAMIC_NUBS_FRESH_DYNAMIC_EXIT_HOLD"
-                log["measured_speed_m_s"] = fresh_speed
-                break
+            motion_state = update_motion_state(
+                motion_state,
+                float(fresh["speed_m_s"]),
+                enter_m_s=runtime_args.min_dynamic_trigger_speed_m_s,
+                exit_m_s=runtime_args.dynamic_exit_speed_m_s,
+                exit_frames=runtime_args.dynamic_exit_streak_frames,
+            )
+            fresh = obstacle_with_motion_state(fresh, motion_state)
+            round_log["fresh_recheck"] = fresh
+            round_log["fresh_motion_state"] = motion_state
+            trial.write_json(round_dir / "fresh_prediction_state.json", fresh)
             fresh_geometry = fit_fixed_pca_two_sphere(fresh_points)
             trial.write_json(round_dir / "fresh_two_sphere.json", fresh_geometry)
             round_log["fresh_two_sphere_geometry"] = fresh_geometry

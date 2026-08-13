@@ -1316,7 +1316,6 @@ def test_simple_dynamic_nubs_parser_is_shadow_only():
     parsed = parser.parse_args(["--repeat", "1"])
     assert parsed.mode == "shadow"
     assert parsed.trigger_timeout_s == 15.0
-    assert parsed.max_demo_speed_m_s == 0.12
     destinations = {action.dest for action in parser._actions}
     assert "execute" not in destinations
     assert "allow_live_candidate_execution" not in destinations
@@ -1429,10 +1428,26 @@ def test_robust_candidate_gate_rejects_sub_target_rows():
     assert simple_dynamic.select_robust_candidate(rows, 0.11)["candidate"] == 1
 
 
-def test_post_trigger_speed_uses_exit_hysteresis_not_enter_threshold():
-    assert simple_dynamic.post_trigger_speed_in_hold_domain(0.07746, 0.04, 0.12)
-    assert not simple_dynamic.post_trigger_speed_in_hold_domain(0.039, 0.04, 0.12)
-    assert not simple_dynamic.post_trigger_speed_in_hold_domain(0.121, 0.04, 0.12)
+def test_motion_state_hysteresis_does_not_filter_out_slow_or_fast_obstacles():
+    state = simple_dynamic.update_motion_state(None, 0.06)
+    assert state["motion_class"] == "quasi_static"
+    state = simple_dynamic.update_motion_state(state, 0.13)
+    assert state["motion_class"] == "dynamic"
+    state = simple_dynamic.update_motion_state(state, 0.03)
+    assert state["motion_class"] == "dynamic"
+    state = simple_dynamic.update_motion_state(state, 0.02)
+    assert state["motion_class"] == "dynamic"
+    state = simple_dynamic.update_motion_state(state, 0.01)
+    assert state["motion_class"] == "quasi_static"
+
+
+def test_quasi_static_obstacle_uses_zero_prediction_velocity_but_remains_present():
+    obstacle = {"velocity": [0.02, -0.01, 0.0], "speed_m_s": 0.022}
+    state = simple_dynamic.update_motion_state(None, obstacle["speed_m_s"])
+    classified = simple_dynamic.obstacle_with_motion_state(obstacle, state)
+    assert classified["motion_class"] == "quasi_static"
+    np.testing.assert_allclose(classified["prediction_velocity"], np.zeros(3))
+    np.testing.assert_allclose(classified["velocity"], obstacle["velocity"])
 
 
 def test_simple_dynamic_summary_allows_missing_fresh_verification():
