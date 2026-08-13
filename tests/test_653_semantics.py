@@ -39,6 +39,9 @@ rolling_replay = importlib.import_module(
 rolling_virtual = importlib.import_module(
     "experiments.new.6_5.6_5_3.shadow_653_rolling_local_virtual"
 )
+static_geometry_ab = importlib.import_module(
+    "experiments.new.6_5.6_5_3.offline_static_geometry_ab"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1121,6 +1124,31 @@ def test_virtual_shadow_has_no_live_execution_or_raw_guard_claim():
     assert "raw_hard_guard_applicable\": False" in source
     assert "physical_robot_remains_at_start_in_virtual_shadow" in source
     assert "hard_guard_distance_m=math.inf" in source
+
+
+def test_point_obb_signed_distance_is_exact_for_axis_aligned_box():
+    points = np.asarray(
+        [
+            [2.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [2.0, 3.0, 0.0],
+        ]
+    )
+    distances = static_geometry_ab.point_obb_signed_distance(
+        points,
+        np.zeros(3),
+        np.eye(3),
+        np.ones(3),
+    )
+    np.testing.assert_allclose(distances, [1.0, 0.0, -1.0, np.sqrt(5.0)])
+
+
+def test_static_geometry_ab_parser_is_offline_only():
+    parser = static_geometry_ab.build_parser()
+    destinations = {action.dest for action in parser._actions}
+    assert "execute" not in destinations
+    assert "allow_live_candidate_execution" not in destinations
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():

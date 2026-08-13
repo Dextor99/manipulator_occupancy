@@ -483,6 +483,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     attempt_dir / "fresh_plan.json",
                     {"result": fresh_plan, "frames": plan_frames},
                 )
+                if plan_points is not None:
+                    np.save(attempt_dir / "fresh_plan_points.npy", np.asarray(plan_points))
                 if not fresh_plan.get("accepted", False) or plan_points is None:
                     attempt["status"] = "FRESH_PLAN_NOT_READY_HOLD"
                     segment["attempts"].append(attempt)
@@ -542,6 +544,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     attempt_dir / "fresh_authorization.json",
                     {"result": fresh_auth, "frames": auth_frames},
                 )
+                if auth_points is not None:
+                    np.save(
+                        attempt_dir / "fresh_authorization_points.npy",
+                        np.asarray(auth_points),
+                    )
                 local_auth = {
                     "status": "LOCAL_EXECUTION_RECHECK_FAILED",
                     "local_execution_authorized": False,
@@ -694,6 +701,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 output / "closure_fresh3.json",
                 {"result": fresh3, "frames": fresh3_frames},
             )
+            if fresh3_points is not None:
+                np.save(output / "closure_fresh3_points.npy", np.asarray(fresh3_points))
             if fresh3_geometry is not None:
                 trial.write_json(output / "closure_fresh3_multisphere.json", fresh3_geometry)
 
