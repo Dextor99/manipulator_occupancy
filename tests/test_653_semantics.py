@@ -948,6 +948,10 @@ def test_hold_resume_defaults_to_noncommanding_r04_dry_run(tmp_path):
     assert result["source_resume_status"] == "REFERENCE_RESUME_HOLD"
 
 
+def test_hold_resume_freezes_rejoin_state_tolerance_at_0p02_rad():
+    assert hold_resume.REJOIN_STATE_TOLERANCE_RAD == pytest.approx(0.020)
+
+
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
     reference = np.zeros((6, 6))
     reference[:, 0] = np.linspace(0.0, 0.05, 6)

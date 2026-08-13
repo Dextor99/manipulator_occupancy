@@ -28,6 +28,7 @@ DEFAULT_SOURCE = (
     / "trials/D2_opposing_approach_r04"
 )
 PHRASE = "CCRO_653_REJOIN_HOLD_RESUME_APPROVED"
+REJOIN_STATE_TOLERANCE_RAD = 0.020
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -149,16 +150,15 @@ def run(args: argparse.Namespace) -> dict:
 
         actual_q = np.asarray(robot.get_joint(), dtype=np.float64)
         state_error = trial.joint_error(actual_q, remainder_q[0])
+        state_matches = bool(state_error["max_abs_rad"] <= REJOIN_STATE_TOLERANCE_RAD)
         state_check = {
             "status": (
                 "REJOIN_STATE_MATCH"
-                if state_error["max_abs_rad"] <= runtime_args.candidate_start_tolerance_rad
+                if state_matches
                 else "CURRENT_STATE_NOT_AT_REJOIN"
             ),
-            "accepted": bool(
-                state_error["max_abs_rad"] <= runtime_args.candidate_start_tolerance_rad
-            ),
-            "tolerance_rad": float(runtime_args.candidate_start_tolerance_rad),
+            "accepted": state_matches,
+            "tolerance_rad": REJOIN_STATE_TOLERANCE_RAD,
             "actual_joint_rad": actual_q.tolist(),
             "expected_rejoin_joint_rad": remainder_q[0].tolist(),
             "joint_error": state_error,
