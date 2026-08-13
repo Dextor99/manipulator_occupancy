@@ -42,6 +42,9 @@ rolling_virtual = importlib.import_module(
 static_geometry_ab = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_static_geometry_ab"
 )
+static_distance_ledger = importlib.import_module(
+    "experiments.new.6_5.6_5_3.offline_static_distance_ledger"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1149,6 +1152,25 @@ def test_static_geometry_ab_parser_is_offline_only():
     destinations = {action.dest for action in parser._actions}
     assert "execute" not in destinations
     assert "allow_live_candidate_execution" not in destinations
+
+
+def test_static_distance_ledger_parser_is_offline_only():
+    parser = static_distance_ledger.build_parser()
+    destinations = {action.dest for action in parser._actions}
+    assert "execute" not in destinations
+    assert "allow_live_candidate_execution" not in destinations
+
+
+def test_point_obb_distance_reports_nearest_surface_point():
+    distances, nearest = static_distance_ledger.point_obb_signed_distance_and_nearest(
+        np.asarray([[2.0, 0.5, 0.0], [0.0, 0.0, 0.0]]),
+        np.zeros(3),
+        np.eye(3),
+        np.ones(3),
+    )
+    np.testing.assert_allclose(distances, [1.0, -1.0])
+    np.testing.assert_allclose(nearest[0], [1.0, 0.5, 0.0])
+    assert np.isclose(np.linalg.norm(nearest[1]), 1.0)
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
