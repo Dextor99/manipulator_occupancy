@@ -1008,6 +1008,37 @@ def test_recorded_reference_absolute_state_does_not_mutate_online_index():
     assert reference.index == 1
 
 
+def test_rolling_local_segment_gate_does_not_repair_a_safe_reference():
+    result = trial.rolling_local_segment_gate(
+        reference_min_distance_m=0.427,
+        local_repair_ready=True,
+        side_consistent=True,
+        fresh_authorized=True,
+        replan_threshold_m=0.14,
+    )
+    assert not result["advance"]
+    assert result["status"] == "REFERENCE_SAFE_FOR_REJOIN"
+
+
+def test_rolling_local_segment_gate_requires_all_authorizations_when_risky():
+    accepted = trial.rolling_local_segment_gate(
+        reference_min_distance_m=0.08,
+        local_repair_ready=True,
+        side_consistent=True,
+        fresh_authorized=True,
+        replan_threshold_m=0.14,
+    )
+    assert accepted["advance"]
+    rejected = trial.rolling_local_segment_gate(
+        reference_min_distance_m=0.08,
+        local_repair_ready=True,
+        side_consistent=False,
+        fresh_authorized=True,
+        replan_threshold_m=0.14,
+    )
+    assert not rejected["advance"]
+
+
 def test_rolling_virtual_shadow_parser_has_no_execution_option():
     parser = rolling_virtual.build_parser()
     destinations = {action.dest for action in parser._actions}

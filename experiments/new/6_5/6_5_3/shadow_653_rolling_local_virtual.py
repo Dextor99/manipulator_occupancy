@@ -295,11 +295,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     fresh_velocity=np.asarray(fresh_auth["velocity"], dtype=np.float64),
                     trial_dir=segment_dir,
                 )
-            ready = bool(
-                result["local_repair_ready"]
-                and side["accepted"]
-                and local_auth.get("local_execution_authorized", False)
+            segment_gate = trial.rolling_local_segment_gate(
+                reference_min_distance_m=float(result["reference_online_min_distance_m"]),
+                local_repair_ready=bool(result["local_repair_ready"]),
+                side_consistent=bool(side["accepted"]),
+                fresh_authorized=bool(local_auth.get("local_execution_authorized", False)),
+                replan_threshold_m=runtime_args.moving_shadow_replan_in_m,
             )
+            ready = bool(segment_gate["advance"])
             candidate_csv = segment_dir / "candidate/fast_ccro_nubs_candidate.csv"
             workspace = trial.trajectory_workspace_deviation(
                 model,
@@ -309,7 +312,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
             segment.update(
                 {
-                    "status": "VIRTUAL_LOCAL_SEGMENT_AUTHORIZED" if ready else "VIRTUAL_LOCAL_SEGMENT_REJECTED",
+                    "status": segment_gate["status"],
+                    "segment_gate": segment_gate,
                     "fast": result,
                     "fresh_authorization": fresh_auth,
                     "side_continuity": side,
@@ -319,7 +323,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
             log["segments"].append(segment)
             if not ready:
-                log["status"] = "ROLLING_LOCAL_VIRTUAL_STOPPED_FAIL_CLOSED"
+                log["status"] = (
+                    "ROLLING_LOCAL_VIRTUAL_REFERENCE_SAFE_FOR_REJOIN"
+                    if segment_gate["status"] == "REFERENCE_SAFE_FOR_REJOIN"
+                    else "ROLLING_LOCAL_VIRTUAL_STOPPED_FAIL_CLOSED"
+                )
                 break
             if locked_side is None:
                 locked_side = np.asarray(side["locked_tail_delta_q"], dtype=np.float64)

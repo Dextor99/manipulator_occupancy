@@ -288,6 +288,26 @@ def rolling_local_reference_schedule(
         )
     return schedule
 
+
+def rolling_local_segment_gate(
+    *,
+    reference_min_distance_m: float,
+    local_repair_ready: bool,
+    side_consistent: bool,
+    fresh_authorized: bool,
+    replan_threshold_m: float,
+) -> dict[str, Any]:
+    """Classify one segment before any real or virtual state advance."""
+    if not np.isfinite(reference_min_distance_m):
+        return {"advance": False, "status": "INVALID_REFERENCE_RISK_HOLD"}
+    if reference_min_distance_m >= replan_threshold_m:
+        return {"advance": False, "status": "REFERENCE_SAFE_FOR_REJOIN"}
+    advance = bool(local_repair_ready and side_consistent and fresh_authorized)
+    return {
+        "advance": advance,
+        "status": "ROLLING_LOCAL_SEGMENT_AUTHORIZED" if advance else "ROLLING_LOCAL_SEGMENT_REJECTED",
+    }
+
 FRAME_FIELDS = [
     "frame",
     "t_s",
