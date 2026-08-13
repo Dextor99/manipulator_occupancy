@@ -177,6 +177,10 @@ FORMAL_PROTOCOL = {
     # The lateral initializer remains an offline diagnostic only.  Formal
     # robot trials retain the production linear NUBS initialization.
     "fast_warm_start": "linear",
+    "rolling_fast_max_s": 3.0,
+    "rolling_observation_duration_s": 0.25,
+    "rolling_observation_min_frames": 2,
+    "rolling_observation_min_span_s": 0.10,
 }
 ROBOT_MOTION_MODES = {"moving-shadow-stop", "live-stop-replan-execute"}
 
@@ -1813,6 +1817,163 @@ def authorize_local_repair_execution(
     return payload, execution_trajectory if authorized else None
 
 
+def translated_multisphere_geometry(
+    geometry: dict[str, Any], old_center: np.ndarray, new_center: np.ndarray
+) -> dict[str, Any]:
+    """Translate a Fresh-initialized rigid multisphere without refitting shape."""
+    shift = np.asarray(new_center, dtype=np.float64) - np.asarray(old_center, dtype=np.float64)
+    return {
+        **geometry,
+        "component_centers": np.asarray(geometry["component_centers"], dtype=np.float64) + shift[None, :],
+        "component_base_radii": np.asarray(geometry["component_base_radii"], dtype=np.float64).copy(),
+        "rolling_rigid_translation_m": shift,
+    }
+
+
+def rolling_fast_until_authorized(
+    args: argparse.Namespace,
+    stage4_config: dict[str, Any],
+    stage4_model: RobotSurfaceModel,
+    *,
+    processor: Any,
+    state_reader: Any,
+    denoiser: Any,
+    q_now: np.ndarray,
+    qd_now: np.ndarray,
+    reference_goal: tuple[np.ndarray, np.ndarray, np.ndarray],
+    rejoin_goals: list[tuple[float, tuple[np.ndarray, np.ndarray, np.ndarray]]],
+    initial_fresh: dict[str, Any],
+    initial_geometry: dict[str, Any],
+    risk_links: set[str],
+    trial_dir: Path,
+) -> dict[str, Any]:
+    """Replan while stopped from short fresh updates until one candidate is authorized."""
+    started = time.perf_counter()
+    attempts: list[dict[str, Any]] = []
+    previous = dict(initial_fresh)
+    geometry_center = np.asarray(initial_fresh["center"], dtype=np.float64)
+    attempt_root = trial_dir / "rolling_fast"
+    attempt_root.mkdir(parents=True, exist_ok=True)
+    evaluator, _, _ = make_risk_stack(stage4_config, stage4_model, None)
+
+    while time.perf_counter() - started < args.rolling_fast_max_s:
+        short_args = copy.copy(args)
+        short_args.post_stop_recheck_duration_s = args.rolling_observation_duration_s
+        short_args.post_stop_recheck_min_frames = args.rolling_observation_min_frames
+        short_args.post_stop_recheck_min_span_s = args.rolling_observation_min_span_s
+        fresh, frames, _ = capture_post_stop_obstacle(
+            processor,
+            state_reader,
+            denoiser,
+            short_args,
+            trigger_cluster_center=np.asarray(previous["center"], dtype=np.float64),
+            trigger_velocity=np.asarray(previous["velocity"], dtype=np.float64),
+            trigger_timestamp=float(previous["last_timestamp"]),
+            stop_when_ready=True,
+        )
+        index = len(attempts) + 1
+        attempt_dir = attempt_root / f"attempt_{index:02d}"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        write_json(attempt_dir / "fresh_update.json", {"result": fresh, "frames": frames})
+        if not fresh.get("accepted", False):
+            attempts.append({"attempt": index, "status": "FRESH_UPDATE_NOT_READY", "fresh": fresh})
+            continue
+        raw_guards = [float(frame.get("raw_guard_distance_m", math.inf)) for frame in frames]
+        raw_guard = min(raw_guards) if raw_guards else math.inf
+        geometry = translated_multisphere_geometry(
+            initial_geometry, geometry_center, np.asarray(fresh["center"], dtype=np.float64)
+        )
+        current_forecast = constant_multisphere_forecast(
+            np.asarray(geometry["component_centers"]),
+            np.asarray(geometry["component_base_radii"]),
+            np.asarray(fresh["velocity"]),
+        )
+        current_risk = evaluator.configuration(q_now, current_forecast, 0.0, density="medium", with_gradient=False)
+        if raw_guard <= args.guided_hard_stop_m or current_risk.min_distance <= args.moving_shadow_current_stop_m:
+            attempts.append({
+                "attempt": index,
+                "status": "ROLLING_SAFE_HOLD_DISTANCE",
+                "raw_guard_distance_m": raw_guard,
+                "current_distance_m": float(current_risk.min_distance),
+            })
+            break
+
+        artifacts: dict[str, Any] = {}
+        plan_started = time.perf_counter()
+        candidate = run_fast_repair(
+            args, stage4_config, stage4_model,
+            q_now=q_now, qd_now=qd_now,
+            center=np.asarray(fresh["center"], dtype=np.float64),
+            velocity=np.asarray(fresh["velocity"], dtype=np.float64),
+            radius=float(fresh["radius"]),
+            risk_links=risk_links,
+            trial_dir=attempt_dir,
+            reference_goal=reference_goal,
+            rejoin_goals=rejoin_goals,
+            obstacle_audit={"rolling_attempt": index, "fresh_update": fresh},
+            multisphere_geometry=geometry,
+            artifacts_out=artifacts,
+        )
+        plan_elapsed = time.perf_counter() - plan_started
+        propagated_center = np.asarray(fresh["center"], dtype=np.float64) + np.asarray(fresh["velocity"], dtype=np.float64) * plan_elapsed
+        execution_geometry = translated_multisphere_geometry(
+            initial_geometry, geometry_center, propagated_center
+        )
+        local_auth, authorized_local = authorize_local_repair_execution(
+            args, stage4_config, stage4_model,
+            local_repair_ready=bool(candidate.get("local_repair_ready")),
+            local_artifacts=artifacts,
+            fresh_geometry=execution_geometry,
+            fresh_velocity=np.asarray(fresh["velocity"], dtype=np.float64),
+            trial_dir=attempt_dir,
+        )
+        full_auth = authorize_candidate_execution(
+            args, stage4_config, stage4_model,
+            local_artifacts=artifacts,
+            fresh_geometry=execution_geometry,
+            fresh_velocity=np.asarray(fresh["velocity"], dtype=np.float64),
+            rejoin_goals=rejoin_goals,
+            trial_dir=attempt_dir,
+        )
+        attempt = {
+            "attempt": index,
+            "status": "ROLLING_AUTHORIZED" if (
+                local_auth.get("local_execution_authorized") or full_auth.get("execution_authorized")
+            ) else "ROLLING_REPLAN_REQUIRED",
+            "fresh": fresh,
+            "raw_guard_distance_m": raw_guard,
+            "current_distance_m": float(current_risk.min_distance),
+            "planning_elapsed_s": plan_elapsed,
+            "propagated_center": propagated_center,
+            "candidate": candidate,
+            "local_authorization": local_auth,
+            "execution_authorization": full_auth,
+        }
+        attempts.append(attempt)
+        write_json(attempt_dir / "rolling_attempt_summary.json", attempt)
+        if attempt["status"] == "ROLLING_AUTHORIZED":
+            return {
+                "status": "ROLLING_FAST_AUTHORIZED",
+                "authorized": True,
+                "attempts": attempts,
+                "candidate_summary": candidate,
+                "local_artifacts": artifacts,
+                "fresh": fresh,
+                "fresh_geometry": execution_geometry,
+                "local_authorization": local_auth,
+                "execution_authorization": full_auth,
+                "authorized_local_trajectory": authorized_local,
+                "elapsed_s": time.perf_counter() - started,
+            }
+        previous = fresh
+    return {
+        "status": "ROLLING_FAST_SAFE_HOLD",
+        "authorized": False,
+        "attempts": attempts,
+        "elapsed_s": time.perf_counter() - started,
+    }
+
+
 def authorize_candidate_execution(
     args: argparse.Namespace,
     stage4_config: dict[str, Any],
@@ -3405,6 +3566,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     artifacts_out=local_artifacts,
                 )
                 log["events"].append({"type": candidate_summary["status"], "frame": frame_index, "t_s": now_rel, "candidate": candidate_summary})
+                # Defaults let both failure modes enter the same rolling loop:
+                # (a) Fast itself found no local step, or (b) Fresh #2 later
+                # invalidated an initially safe candidate.
+                fresh2 = fresh_recheck
+                fresh2_geometry = multisphere_geometry
+                local_authorization = {
+                    "status": "LOCAL_EXECUTION_RECHECK_FAILED",
+                    "local_execution_authorized": False,
+                    "reason": "initial_fast_not_ready",
+                    "robot_executed": False,
+                }
+                authorization = {
+                    "status": "POST_PLAN_RECHECK_FAILED",
+                    "execution_authorized": False,
+                    "reason": "initial_fast_not_ready",
+                    "robot_executed": False,
+                }
                 if candidate_summary.get("local_repair_ready") and args.mode in robot_motion_modes:
                     fresh2, fresh2_frames, fresh2_points = capture_post_stop_obstacle(
                         processor,
@@ -3508,15 +3686,54 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     full_path_authorized = bool(candidate_summary.get("execution_authorized", False))
                     local_path_authorized = bool(candidate_summary.get("local_execution_authorized", False))
                     if not full_path_authorized and not local_path_authorized:
-                        log["events"].append(
-                            {
-                                "type": "LIVE_CANDIDATE_NOT_EXECUTED",
-                                "reason": "neither_full_nor_local_repair_authorized_under_fresh2",
-                                "candidate_status": candidate_summary["status"],
-                                "rejection_reasons": candidate_summary.get("rejection_reasons", []),
-                            }
+                        rolling = rolling_fast_until_authorized(
+                            args,
+                            stage4_config,
+                            stage4_model,
+                            processor=processor,
+                            state_reader=state_reader,
+                            denoiser=denoiser,
+                            q_now=q_repair_start,
+                            qd_now=qd_repair_start,
+                            reference_goal=reference_goal,
+                            rejoin_goals=rejoin_goals,
+                            initial_fresh=(fresh2 if fresh2.get("accepted", False) else fresh_recheck),
+                            initial_geometry=(
+                                fresh2_geometry
+                                if fresh2.get("accepted", False) and fresh2_geometry is not None
+                                else multisphere_geometry
+                            ),
+                            risk_links=set(stage4_model.surface_by_link(q_repair_start, density="coarse")),
+                            trial_dir=trial_dir,
                         )
-                        break
+                        write_json(trial_dir / "rolling_fast" / "rolling_summary.json", rolling)
+                        log["events"].append(
+                            {"type": rolling["status"], "rolling": rolling}
+                        )
+                        if not rolling["authorized"]:
+                            log["events"].append(
+                                {
+                                    "type": "LIVE_CANDIDATE_NOT_EXECUTED",
+                                    "reason": "rolling_fast_timeout_or_safe_hold",
+                                    "candidate_status": candidate_summary["status"],
+                                    "rejection_reasons": candidate_summary.get("rejection_reasons", []),
+                                }
+                            )
+                            break
+                        candidate_summary = rolling["candidate_summary"]
+                        local_artifacts = rolling["local_artifacts"]
+                        fresh2 = rolling["fresh"]
+                        fresh2_geometry = rolling["fresh_geometry"]
+                        local_authorization = rolling["local_authorization"]
+                        authorization = rolling["execution_authorization"]
+                        candidate_summary["execution_authorization"] = authorization
+                        candidate_summary["local_execution_authorization"] = local_authorization
+                        candidate_summary["execution_authorized"] = bool(authorization.get("execution_authorized", False))
+                        candidate_summary["local_execution_authorized"] = bool(
+                            local_authorization.get("local_execution_authorized", False)
+                        )
+                        full_path_authorized = candidate_summary["execution_authorized"]
+                        local_path_authorized = candidate_summary["local_execution_authorized"]
                     if not args.allow_live_candidate_execution:
                         log["events"].append(
                             {
@@ -4008,6 +4225,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--local-segments", type=int, default=5)
     parser.add_argument("--fast-warm-start", choices=["linear", "lateral"], default="linear")
     parser.add_argument("--lateral-warm-start-m", type=float, default=0.04)
+    parser.add_argument("--rolling-fast-max-s", type=float, default=3.0)
+    parser.add_argument("--rolling-observation-duration-s", type=float, default=0.25)
+    parser.add_argument("--rolling-observation-min-frames", type=int, default=2)
+    parser.add_argument("--rolling-observation-min-span-s", type=float, default=0.10)
     parser.add_argument("--default-obstacle-radius-m", type=float, default=0.055)
     parser.add_argument("--max-track-cluster-association-m", type=float, default=0.08)
     parser.add_argument("--min-dynamic-trigger-speed-m-s", type=float, default=0.08)

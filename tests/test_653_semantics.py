@@ -324,6 +324,30 @@ def test_formal_robot_protocol_keeps_lateral_warm_start_offline_only():
     assert any(item.startswith("fast_warm_start=") for item in violations)
 
 
+def test_formal_protocol_freezes_rolling_fast_safety_envelope():
+    args = trial.build_parser().parse_args(
+        ["--scene", "D2", "--mode", "live-stop-replan-execute", "--candidate-playback-duration-s", "1.0"]
+    )
+    assert trial.formal_protocol_violations(args) == []
+    args.rolling_fast_max_s = 10.0
+    assert any(item.startswith("rolling_fast_max_s=") for item in trial.formal_protocol_violations(args))
+
+
+def test_rolling_multisphere_translation_preserves_rigid_shape():
+    geometry = {
+        "component_centers": np.array([[1.0, 2.0, 3.0], [1.2, 2.1, 3.0]]),
+        "component_base_radii": np.array([0.1, 0.2]),
+    }
+    moved = trial.translated_multisphere_geometry(
+        geometry, np.array([1.0, 2.0, 3.0]), np.array([1.3, 1.8, 3.1])
+    )
+    np.testing.assert_allclose(
+        moved["component_centers"],
+        geometry["component_centers"] + np.array([0.3, -0.2, 0.1]),
+    )
+    np.testing.assert_allclose(moved["component_base_radii"], geometry["component_base_radii"])
+
+
 def test_nonformal_moving_trial_is_blocked_before_robot_setup(tmp_path):
     args = trial.build_parser().parse_args(
         [

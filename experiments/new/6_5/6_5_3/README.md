@@ -213,6 +213,18 @@ label `D2_TABLETOP_XP10_FINAL`, the recorded `reference_xp10_line`, and
 `--x-offset 0.10`.  The label is written to `summary.json` together with
 `reference_x_offset_m`; it does not change planning or control behavior.
 
+`live-stop-replan-execute` uses a bounded stopped-state rolling phase after
+the strict initial Fresh observation.  If Fast fails, or a later Fresh update
+invalidates the old candidate, the robot remains stopped and replans from
+short updated observations for at most 3 s.  The Fresh-initialized
+multisphere shape is held rigid and translated with the latest tracked center.
+Each new candidate is checked against a forecast propagated over its measured
+planning latency and is executed only after the unchanged 0.09 m verifier
+accepts it.  The 0.12 m current-distance stop and 0.10 m raw hard guard remain
+active; timeout or either distance gate produces a fail-closed safe hold.
+This is stopped-state receding-horizon repair, not trajectory switching while
+the robot is moving.
+
 This mode does not move the robot:
 
 ```bash
