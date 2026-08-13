@@ -1598,9 +1598,15 @@ def run_fast_repair(
     obstacle_audit: dict[str, Any],
     multisphere_geometry: dict[str, Any] | None = None,
     artifacts_out: dict[str, Any] | None = None,
+    forecast_override: Any | None = None,
 ) -> dict[str, Any]:
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
-    if multisphere_geometry is None:
+    if forecast_override is not None:
+        if not obstacle_audit.get("offline_forecast_override_authorized", False):
+            raise ValueError("forecast_override is restricted to explicit offline diagnostics")
+        forecast = forecast_override
+        geometry_mode = "offline_forecast_override"
+    elif multisphere_geometry is None:
         forecast = constant_forecast(center, velocity, radius)
         geometry_mode = "single_sphere"
     else:

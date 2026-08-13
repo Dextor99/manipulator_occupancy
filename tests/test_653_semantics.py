@@ -48,6 +48,9 @@ static_distance_ledger = importlib.import_module(
 static20_closure = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_static20_fast_closure_replay"
 )
+offset_rollout = importlib.import_module(
+    "experiments.new.6_5.6_5_3.offline_static20_offset_preserving_rollout"
+)
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():
@@ -1196,6 +1199,29 @@ def test_static20_safe_suffix_requires_every_later_sample_to_pass():
     assert [row["safe_suffix"] for row in result] == [False, False, True, True]
     assert earliest is result[2]
     assert np.isclose(earliest["suffix_min_distance_m"], 0.095)
+
+
+def test_offset_preserving_rollout_parser_is_offline_only():
+    parser = offset_rollout.build_parser()
+    destinations = {action.dest for action in parser._actions}
+    assert "execute" not in destinations
+    assert "allow_live_candidate_execution" not in destinations
+
+
+def test_transported_goal_preserves_joint_offset_and_reference_increment():
+    times = np.asarray([0.0, 1.0, 2.0])
+    q = np.zeros((3, 6))
+    q[:, 0] = [0.0, 0.2, 0.5]
+    q[:, 1] = [0.0, -0.1, -0.3]
+    qd = np.zeros_like(q)
+    reference = trial.RecordedReference(times, q, qd)
+    offset = np.asarray([0.04, 0.02, 0.0, 0.0, 0.0, 0.0])
+    q_now = q[1] + offset
+    goal, audit = offset_rollout.transported_reference_goal(reference, q_now, 1.0, 1.0)
+    expected_increment = q[2] - q[1]
+    np.testing.assert_allclose(goal[0], q_now + expected_increment)
+    np.testing.assert_allclose(goal[0] - q[2], offset)
+    np.testing.assert_allclose(audit["offset_from_reference_at_goal_rad"], offset)
 
 
 def test_point_obb_distance_reports_nearest_surface_point():

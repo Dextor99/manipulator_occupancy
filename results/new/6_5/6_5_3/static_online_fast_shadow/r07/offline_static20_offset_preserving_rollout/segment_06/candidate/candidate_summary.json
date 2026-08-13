@@ -1,0 +1,162 @@
+{
+  "created_at": "2026-08-13T09:01:26.458397+00:00",
+  "status": "LOCAL_REPAIR_READY",
+  "local_repair_status": "LOCAL_REPAIR_READY",
+  "local_repair_ready": true,
+  "execution_authorization_status": "PENDING_POST_PLAN_FRESH_RECHECK",
+  "accepted_for_switch": false,
+  "repair_step_ok": true,
+  "rejection_reasons": [],
+  "candidate_is_reference_continuation": false,
+  "warm_start": {
+    "mode": "linear"
+  },
+  "fast_elapsed_ms": 58.372689003590494,
+  "online_pipeline_elapsed_ms": 58.372689003590494,
+  "repair_elapsed_ms": 33.99095102213323,
+  "candidate_verification_ms": 12.525044003268704,
+  "reference_verification_ms": 11.667965998640284,
+  "diagnostic_reference_verification_ms": 0.0,
+  "paired_verification_wall_ms": 24.19388701673597,
+  "diagnostic_total_wall_ms": 109.57208101172,
+  "post_check_ms": 0.1745109912008047,
+  "budget_exhausted": false,
+  "tail_delta_q_rad": [
+    0.020572917915300803,
+    0.010929887743103911,
+    -0.008015325611014923,
+    0.0011938652653415193,
+    0.008606778613350574,
+    0.000820973138094816
+  ],
+  "tail_delta_q_max_rad": 0.020572917915300803,
+  "selected_rejoin_offset_s": null,
+  "rejoin_search_audit": [],
+  "candidate_total_duration_s": 1.0,
+  "fast_budget_ms": 150.0,
+  "online_accept_m": 0.09,
+  "verification_min_distance_m": 0.1036247688906522,
+  "reference_online_min_distance_m": 0.08820587776170974,
+  "candidate_online_min_distance_m": 0.1036247688906522,
+  "clearance_improvement_m": 0.015418891128942458,
+  "min_clearance_improvement_m": 0.003,
+  "max_delta_q_from_reference_rad": 0.020572917915300915,
+  "verification_reasons": [],
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": true,
+    "position_ok": true,
+    "velocity_ok": true,
+    "acceleration_ok": true,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "repair_iterations": 1,
+  "accepted_steps": 1,
+  "active_constraints": 8,
+  "qp_successes": 1,
+  "risk_scan_ms": 13.627303997054696,
+  "linearization_ms": 6.833997002104297,
+  "qp_ms": 8.038973988732323,
+  "trajectory_generation_ms": 0.49349002074450254,
+  "motion_check_ms": 0.7701060094404966,
+  "candidate_distance_check_ms": 0.0,
+  "scale_attempts": 7,
+  "unaccounted_fast_ms": 4.227080004056916,
+  "messages": [
+    "projected_qp max_violation=0.000e+00 clearance_reward=0",
+    "accepted scale 1.00 by linear screen predicted_min=0.095000"
+  ],
+  "q_now": [
+    0.5670169393598986,
+    -0.12004891272241693,
+    1.3747320288105518,
+    -0.009333496509917162,
+    1.6078028508385602,
+    0.4788498323894131
+  ],
+  "qd_now": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "q_goal": [
+    0.5559220322675595,
+    -0.10274901815947966,
+    1.3744306320975543,
+    -0.006855838640139733,
+    1.6164096294519108,
+    0.44802253832293853
+  ],
+  "obstacle_center": [
+    0.6989125642385099,
+    -0.11884745811334142,
+    0.39302398155683327
+  ],
+  "obstacle_velocity": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "obstacle_radius": 0.1459661060288476,
+  "obstacle_geometry_mode": "offline_forecast_override",
+  "multisphere_geometry": {
+    "source_point_count": 185,
+    "component_count": 2,
+    "component_centers": [
+      [
+        0.7198088382136356,
+        -0.11016541262182095,
+        0.3349885175666997
+      ],
+      [
+        0.6780162902633841,
+        -0.1275295036048619,
+        0.45105944554696686
+      ]
+    ],
+    "component_base_radii": [
+      0.1459661060288476,
+      0.09855167697611954
+    ],
+    "pca_axis": [
+      -0.3286971258158493,
+      -0.1821208223293984,
+      0.9267093425419122
+    ],
+    "axial_length_m": 0.2274634462151795,
+    "transverse_radius_m": 0.08375461915967808,
+    "fit_margin_m": 0.005,
+    "max_point_to_union_distance": -0.0050000000000000044,
+    "coverage_ratio": 1.0,
+    "single_sphere_radius": 0.16789701848965627,
+    "multi_sphere_max_radius": 0.1459661060288476,
+    "covered": true
+  },
+  "obstacle_association": {
+    "offline_static20_offset_preserving_rollout": true,
+    "offline_forecast_override_authorized": true,
+    "segment": 6,
+    "static_observation_inflation_m": 0.02
+  },
+  "risk_links": [
+    "base_link",
+    "foreArm_Link",
+    "gripper_base_link",
+    "left_link",
+    "right_link",
+    "shoulder_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link",
+    "wrist3_Link"
+  ],
+  "candidate_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/static_online_fast_shadow/r07/offline_static20_offset_preserving_rollout/segment_06/candidate/fast_ccro_nubs_candidate.csv"
+}
