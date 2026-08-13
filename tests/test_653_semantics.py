@@ -952,6 +952,46 @@ def test_hold_resume_freezes_rejoin_state_tolerance_at_0p02_rad():
     assert hold_resume.REJOIN_STATE_TOLERANCE_RAD == pytest.approx(0.020)
 
 
+def test_rolling_local_policy_preempts_full_first_only_when_enabled():
+    assert trial.select_dynamic_execution_path(
+        local_authorized=True, full_authorized=True, rolling_local_enabled=False
+    ) == "FULL_FIRST"
+    assert trial.select_dynamic_execution_path(
+        local_authorized=True, full_authorized=True, rolling_local_enabled=True
+    ) == "ROLLING_LOCAL_FIRST"
+    assert trial.select_dynamic_execution_path(
+        local_authorized=False, full_authorized=True, rolling_local_enabled=True
+    ) is None
+
+
+def test_avoidance_side_lock_rejects_material_reversal_but_allows_refinement():
+    first = np.array([0.01, 0, 0, 0, 0, 0])
+    initialized = trial.avoidance_side_consistent(
+        None, first, opposite_projection_tolerance_rad=0.002
+    )
+    assert initialized["accepted"]
+    assert trial.avoidance_side_consistent(
+        initialized["locked_tail_delta_q"],
+        np.array([0.004, 0.005, 0, 0, 0, 0]),
+        opposite_projection_tolerance_rad=0.002,
+    )["accepted"]
+    reversed_result = trial.avoidance_side_consistent(
+        initialized["locked_tail_delta_q"],
+        np.array([-0.008, 0, 0, 0, 0, 0]),
+        opposite_projection_tolerance_rad=0.002,
+    )
+    assert not reversed_result["accepted"]
+    assert reversed_result["reason"] == "opposite_avoidance_side"
+
+
+def test_rolling_local_reference_schedule_advances_from_each_real_segment():
+    schedule = trial.rolling_local_reference_schedule(
+        12.0, local_horizon_s=1.0, max_segments=3, reference_end_time_s=40.0
+    )
+    assert [row["reference_plan_start_time_s"] for row in schedule] == [12.0, 13.0, 14.0]
+    assert [row["reference_goal_time_s"] for row in schedule] == [13.0, 14.0, 15.0]
+
+
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
     reference = np.zeros((6, 6))
     reference[:, 0] = np.linspace(0.0, 0.05, 6)

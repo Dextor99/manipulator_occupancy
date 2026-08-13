@@ -203,6 +203,91 @@ def formal_protocol_violations(args: argparse.Namespace) -> list[str]:
 def formal_protocol_signature(args: argparse.Namespace) -> dict[str, Any]:
     return {name: getattr(args, name) for name in FORMAL_PROTOCOL}
 
+
+def select_dynamic_execution_path(
+    *,
+    local_authorized: bool,
+    full_authorized: bool,
+    rolling_local_enabled: bool,
+) -> str | None:
+    """Choose execution semantics without letting a full rejoin preempt rolling-local.
+
+    The full candidate remains useful as a diagnostic, but during one bounded
+    rolling-local event only the Fresh-authorized local segment may execute.
+    """
+    if rolling_local_enabled:
+        return "ROLLING_LOCAL_FIRST" if local_authorized else None
+    if full_authorized:
+        return "FULL_FIRST"
+    return "LOCAL_FIRST_DELAYED_REJOIN" if local_authorized else None
+
+
+def avoidance_side_consistent(
+    locked_tail_delta_q: np.ndarray | None,
+    candidate_tail_delta_q: np.ndarray,
+    *,
+    opposite_projection_tolerance_rad: float,
+) -> dict[str, Any]:
+    """Reject a later repair that substantially reverses the first tail offset.
+
+    This is deliberately a weak continuity lock: orthogonal refinement and a
+    smaller same-side offset remain legal.  It does not force clearance growth.
+    """
+    candidate = np.asarray(candidate_tail_delta_q, dtype=np.float64)
+    if candidate.shape != (6,) or not np.all(np.isfinite(candidate)):
+        return {"accepted": False, "reason": "invalid_candidate_tail_delta_q"}
+    if locked_tail_delta_q is None:
+        norm = float(np.linalg.norm(candidate))
+        return {
+            "accepted": bool(norm > 1.0e-9),
+            "reason": "side_lock_initialized" if norm > 1.0e-9 else "zero_initial_avoidance_offset",
+            "locked_tail_delta_q": candidate.copy(),
+            "projection_rad": norm,
+        }
+    locked = np.asarray(locked_tail_delta_q, dtype=np.float64)
+    norm = float(np.linalg.norm(locked))
+    if locked.shape != (6,) or not np.all(np.isfinite(locked)) or norm <= 1.0e-9:
+        return {"accepted": False, "reason": "invalid_locked_avoidance_side"}
+    direction = locked / norm
+    projection = float(candidate @ direction)
+    accepted = projection >= -float(opposite_projection_tolerance_rad)
+    return {
+        "accepted": accepted,
+        "reason": "same_side_or_orthogonal" if accepted else "opposite_avoidance_side",
+        "locked_tail_delta_q": locked.copy(),
+        "projection_rad": projection,
+        "opposite_projection_tolerance_rad": float(opposite_projection_tolerance_rad),
+    }
+
+
+def rolling_local_reference_schedule(
+    reference_start_time_s: float,
+    *,
+    local_horizon_s: float,
+    max_segments: int,
+    reference_end_time_s: float,
+) -> list[dict[str, float | int]]:
+    """Return monotonically advancing absolute reference anchors per segment."""
+    if local_horizon_s <= 0.0 or max_segments < 1:
+        raise ValueError("rolling-local horizon and segment count must be positive")
+    schedule = []
+    for index in range(max_segments):
+        plan_start = min(
+            float(reference_end_time_s),
+            float(reference_start_time_s) + index * float(local_horizon_s),
+        )
+        goal = min(float(reference_end_time_s), plan_start + float(local_horizon_s))
+        if goal <= plan_start + 1.0e-9:
+            break
+        schedule.append(
+            {
+                "segment": index + 1,
+                "reference_plan_start_time_s": plan_start,
+                "reference_goal_time_s": goal,
+            }
+        )
+    return schedule
+
 FRAME_FIELDS = [
     "frame",
     "t_s",
@@ -3782,8 +3867,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     try:
                         full_authorization = candidate_summary["execution_authorization"]
                         local_authorization = candidate_summary["local_execution_authorization"]
-                        execution_path = "FULL_FIRST" if full_path_authorized else "LOCAL_FIRST_DELAYED_REJOIN"
-                        active_authorization = full_authorization if full_path_authorized else local_authorization
+                        execution_path = select_dynamic_execution_path(
+                            local_authorized=local_path_authorized,
+                            full_authorized=full_path_authorized,
+                            rolling_local_enabled=args.rolling_local_execution,
+                        )
+                        if execution_path is None:
+                            raise RuntimeError("no Fresh-authorized execution path is available")
+                        if execution_path == "ROLLING_LOCAL_FIRST":
+                            raise RuntimeError(
+                                "rolling-local live execution is shadow-gated until the multi-segment state audit passes"
+                            )
+                        active_authorization = (
+                            full_authorization if execution_path == "FULL_FIRST" else local_authorization
+                        )
                         authorized_csv = Path(active_authorization["authorized_trajectory_csv"])
                         workspace_deviation = trajectory_workspace_deviation(
                             stage4_model,
@@ -3800,7 +3897,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             denoiser=denoiser,
                             playback_duration_s=None,
                             execution_label=(
-                                "authorized repair + rejoin" if full_path_authorized else "Fresh #2-authorized local repair"
+                                "authorized repair + rejoin"
+                                if execution_path == "FULL_FIRST"
+                                else "Fresh #2-authorized local repair"
                             ),
                         )
                         if first_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
@@ -3813,13 +3912,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         full_execution_summary = first_execution_summary
                         first_log_name = (
                             "live_full_candidate_execution_log.json"
-                            if full_path_authorized
+                            if execution_path == "FULL_FIRST"
                             else "live_local_candidate_execution_log.json"
                         )
                         write_json(candidate_dir / first_log_name, first_execution_summary)
                         log["events"].append(
                             {
-                                "type": "LIVE_REPAIR_REJOIN_EXECUTED" if full_path_authorized else "LIVE_LOCAL_REPAIR_EXECUTED_HOLD",
+                                "type": (
+                                    "LIVE_REPAIR_REJOIN_EXECUTED"
+                                    if execution_path == "FULL_FIRST"
+                                    else "LIVE_LOCAL_REPAIR_EXECUTED_HOLD"
+                                ),
                                 "execution_path": execution_path,
                                 "execution": first_execution_summary,
                             }
@@ -3850,7 +3953,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         write_json(trial_dir / "fresh3_recheck.json", {"result": fresh3, "frames": fresh3_frames})
 
                         fresh3_guard_distance = execution_hard_guard_distance(processor, denoiser, args)
-                        if full_path_authorized:
+                        if execution_path == "FULL_FIRST":
                             rejoin_match = locate_authorized_rejoin_on_reference(reference, authorized_csv)
                             rejoin_absolute_time = float(rejoin_match["time_s"])
                             selected_rejoin_offset_s = float(full_authorization["selected_rejoin_offset_s"])
@@ -3909,7 +4012,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         remainder_times, remainder_q, _ = reference.remainder_after(rejoin_absolute_time)
                         remainder_csv = trial_dir / "authorized_reference_remainder.csv"
                         save_joint_waypoint_csv(remainder_csv, remainder_times, remainder_q)
-                        if full_path_authorized:
+                        if execution_path == "FULL_FIRST":
                             reference_resume_summary = authorize_reference_resume_after_fresh3(
                                 args,
                                 stage4_config,
@@ -4252,6 +4355,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rolling-observation-duration-s", type=float, default=0.25)
     parser.add_argument("--rolling-observation-min-frames", type=int, default=2)
     parser.add_argument("--rolling-observation-min-span-s", type=float, default=0.10)
+    parser.add_argument(
+        "--rolling-local-execution",
+        action="store_true",
+        help="request multi-segment LOCAL_ONLY execution; currently fail-closed behind a shadow audit gate",
+    )
+    parser.add_argument("--rolling-local-max-segments", type=int, default=3)
+    parser.add_argument("--rolling-local-max-total-s", type=float, default=6.0)
+    parser.add_argument("--rolling-side-opposite-tolerance-rad", type=float, default=0.002)
     parser.add_argument("--default-obstacle-radius-m", type=float, default=0.055)
     parser.add_argument("--max-track-cluster-association-m", type=float, default=0.08)
     parser.add_argument("--min-dynamic-trigger-speed-m-s", type=float, default=0.08)
