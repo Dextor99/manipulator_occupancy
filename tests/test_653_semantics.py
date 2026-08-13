@@ -66,6 +66,55 @@ simple_dynamic = importlib.import_module(
 simple_live = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_live"
 )
+event_replan_live = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_event_replan_live"
+)
+
+
+def test_event_replan_extension_is_default_off_and_bounded():
+    assert trial.POST_LOCAL_FRESH3_HANDLER is None
+    args = event_replan_live.build_parser().parse_args(["--repeat", "1"])
+    assert not args.execute
+    assert args.task_geometry_id == "D2_SIMPLE_DYNAMIC_NUBS_EVENT_REPLAN_LIVE_XP10"
+    assert args.terminal_durations_s == "3.0,4.0,5.0,6.0"
+
+
+def test_event_replan_strict_empty_scene_requires_three_valid_clear_frames():
+    args = SimpleNamespace(post_stop_recheck_min_frames=3, guided_hard_stop_m=0.10)
+    frames = [
+        {
+            "frame_valid": True,
+            "all_external_clusters": [],
+            "raw_guard_distance_m": 0.20,
+        }
+        for _ in range(3)
+    ]
+    assert event_replan_live.strict_empty_scene(args, frames)
+    frames[-1]["all_external_clusters"] = [{"center": [0, 0, 0]}]
+    assert not event_replan_live.strict_empty_scene(args, frames)
+
+
+def test_event_terminal_nubs_has_zero_boundary_rates_and_exact_goal():
+    q0 = np.zeros(6)
+    q1 = np.linspace(0.05, 0.30, 6)
+    trajectory = event_replan_live.make_terminal_trajectory(q0, q1, 3.0)
+    assert np.allclose(trajectory.evaluate(0.0), q0)
+    assert np.allclose(trajectory.evaluate(trajectory.total_duration), q1)
+    assert np.allclose(trajectory.evaluate(0.0, 1), 0.0, atol=1e-9)
+    assert np.allclose(trajectory.evaluate(trajectory.total_duration, 1), 0.0, atol=1e-9)
+
+
+def test_event_local2_goal_is_one_horizon_forward_of_nearest_reference():
+    times = np.arange(6, dtype=float) * 0.5
+    q = np.zeros((6, 6))
+    q[:, 0] = np.arange(6, dtype=float) * 0.1
+    reference = trial.RecordedReference(times, q, np.zeros_like(q))
+    state, audit = event_replan_live.next_recorded_reference_goal(
+        reference, q[2] + 1.0e-4, 1.0
+    )
+    assert audit == {"nearest_reference_index": 2, "forward_reference_index": 4}
+    assert np.allclose(state[0], q[4])
+    assert reference.index == 0
 
 
 def test_track_geometry_uses_one_track_for_center_velocity_and_radius():

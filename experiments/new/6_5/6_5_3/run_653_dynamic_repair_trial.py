@@ -103,6 +103,12 @@ REQUIRED_OPERATOR_PHRASE = "CCRO_653_DYNAMIC_SHADOW_APPROVED"
 LIVE_CANDIDATE_EXECUTE_PHRASE = "CCRO_653_LIVE_CANDIDATE_EXECUTE_APPROVED"
 FORMAL_PROTOCOL_ID = "653_unified_d1_d2_v2"
 
+# Optional, experiment-specific continuation hook.  The formal/default path
+# never installs this hook.  It exists so a protected wrapper can consume
+# Fresh #3 at the *measured* local tail and perform a bounded event replan
+# without changing the already validated first-segment planner or rejoin path.
+POST_LOCAL_FRESH3_HANDLER = None
+
 SCENARIOS = {
     "D1": {
         "name": "crossing_body",
@@ -3997,6 +4003,34 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         write_json(trial_dir / "fresh3_recheck.json", {"result": fresh3, "frames": fresh3_frames})
 
                         fresh3_guard_distance = execution_hard_guard_distance(processor, denoiser, args)
+                        if execution_path != "FULL_FIRST" and callable(POST_LOCAL_FRESH3_HANDLER):
+                            continuation = POST_LOCAL_FRESH3_HANDLER(
+                                args=args,
+                                stage4_config=stage4_config,
+                                stage4_model=stage4_model,
+                                robot=robot,
+                                processor=processor,
+                                state_reader=state_reader,
+                                denoiser=denoiser,
+                                local_artifacts=local_artifacts,
+                                fresh3=fresh3,
+                                fresh3_geometry=fresh3_geometry,
+                                fresh3_frames=fresh3_frames,
+                                fresh3_guard_distance=fresh3_guard_distance,
+                                risk_links=risk_links,
+                                reference=reference,
+                                trial_dir=trial_dir,
+                            )
+                            log["events"].append(
+                                {
+                                    "type": continuation.get(
+                                        "status", "POST_LOCAL_EVENT_REPLAN_HANDLER_RETURNED"
+                                    ),
+                                    "continuation": continuation,
+                                }
+                            )
+                            if continuation.get("handled", False):
+                                break
                         if execution_path == "FULL_FIRST":
                             rejoin_match = locate_authorized_rejoin_on_reference(reference, authorized_csv)
                             rejoin_absolute_time = float(rejoin_match["time_s"])
