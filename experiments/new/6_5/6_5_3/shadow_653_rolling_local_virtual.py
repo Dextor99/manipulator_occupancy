@@ -155,6 +155,42 @@ def trigger_reference_time(source: Path) -> float:
     raise RuntimeError(f"trigger frame {trigger_frame} is missing")
 
 
+def virtual_reference_risk(
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    reference: Any,
+    *,
+    reference_start_time_s: float,
+    fresh: dict[str, Any],
+    geometry: dict[str, Any],
+) -> dict[str, Any]:
+    evaluator, _, _ = trial.make_risk_stack(config, model, None)
+    forecast = trial.constant_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.asarray(fresh["velocity"], dtype=np.float64),
+    )
+    rows = []
+    for tau in np.arange(
+        0.0,
+        runtime_args.prediction_horizon_s + 0.5 * runtime_args.prediction_step_s,
+        runtime_args.prediction_step_s,
+    ):
+        risk = evaluator.configuration(
+            reference.state_at(reference_start_time_s + float(tau))[0],
+            forecast,
+            float(tau),
+            density="medium",
+            with_gradient=False,
+        )
+        rows.append(
+            {"tau_s": float(tau), "distance_m": float(risk.min_distance), "nearest_link": risk.nearest_link}
+        )
+    best = min(rows, key=lambda row: row["distance_m"])
+    return {"min_distance_m": best["distance_m"], "best": best, "preview": rows}
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.max_segments < 1 or args.max_wall_s <= 0.0 or args.seed_timeout_s <= 0.0:
         raise ValueError("max-segments, max-wall-s, and seed-timeout-s must be positive")
@@ -236,13 +272,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         locked_side = None
         accepted_segments = 0
         rolling_started = time.perf_counter()
-        for item in schedule:
-            if time.perf_counter() - rolling_started >= args.max_wall_s:
-                log["status"] = "ROLLING_LOCAL_VIRTUAL_WALL_LIMIT_HOLD"
-                break
-            index = int(item["segment"])
-            segment_dir = output / f"segment_{index:02d}"
-            fresh_plan, plan_frames, plan_points = trial.capture_post_stop_obstacle(
+        armed_plan = None
+        pre_risk_audit = []
+        while time.perf_counter() - rolling_started < args.max_wall_s:
+            fresh_wait, wait_frames, wait_points = trial.capture_post_stop_obstacle(
                 processor,
                 reader,
                 denoiser,
@@ -252,6 +285,60 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 trigger_timestamp=float(previous["last_timestamp"]),
                 stop_when_ready=True,
             )
+            wait_row = {
+                "fresh": fresh_wait,
+                "frame_count": len(wait_frames),
+                "reference_risk": None,
+            }
+            if fresh_wait.get("accepted", False) and wait_points is not None:
+                wait_geometry = trial.fit_pca_multisphere(
+                    wait_points,
+                    fit_margin_m=runtime_args.multisphere_fit_margin_m,
+                    max_components=runtime_args.multisphere_max_components,
+                )
+                wait_risk = virtual_reference_risk(
+                    runtime_args,
+                    config,
+                    model,
+                    reference,
+                    reference_start_time_s=float(schedule[0]["reference_plan_start_time_s"]),
+                    fresh=fresh_wait,
+                    geometry=wait_geometry,
+                )
+                wait_row["reference_risk"] = wait_risk
+                previous = fresh_wait
+                if wait_risk["min_distance_m"] < runtime_args.moving_shadow_replan_in_m:
+                    armed_plan = (fresh_wait, wait_frames, wait_points, wait_geometry)
+                    wait_row["risk_armed"] = True
+                    pre_risk_audit.append(wait_row)
+                    break
+            pre_risk_audit.append(wait_row)
+        trial.write_json(output / "pre_risk_wait.json", {"attempts": pre_risk_audit})
+        if armed_plan is None:
+            log["status"] = "ROLLING_LOCAL_VIRTUAL_NO_RISK_BEFORE_TIMEOUT"
+            log["accepted_segments"] = 0
+            log["pre_risk_attempts"] = len(pre_risk_audit)
+            return log
+        for item in schedule:
+            if time.perf_counter() - rolling_started >= args.max_wall_s:
+                log["status"] = "ROLLING_LOCAL_VIRTUAL_WALL_LIMIT_HOLD"
+                break
+            index = int(item["segment"])
+            segment_dir = output / f"segment_{index:02d}"
+            if index == 1:
+                fresh_plan, plan_frames, plan_points, plan_geometry = armed_plan
+            else:
+                fresh_plan, plan_frames, plan_points = trial.capture_post_stop_obstacle(
+                    processor,
+                    reader,
+                    denoiser,
+                    runtime_args,
+                    trigger_cluster_center=np.asarray(previous["center"], dtype=np.float64),
+                    trigger_velocity=np.asarray(previous["velocity"], dtype=np.float64),
+                    trigger_timestamp=float(previous["last_timestamp"]),
+                    stop_when_ready=True,
+                )
+                plan_geometry = None
             segment: dict[str, Any] = {
                 **item,
                 "q_virtual_start": q_virtual.tolist(),
@@ -266,11 +353,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 log["segments"].append(segment)
                 log["status"] = "ROLLING_LOCAL_VIRTUAL_STOPPED_FAIL_CLOSED"
                 break
-            plan_geometry = trial.fit_pca_multisphere(
-                plan_points,
-                fit_margin_m=runtime_args.multisphere_fit_margin_m,
-                max_components=runtime_args.multisphere_max_components,
-            )
+            if plan_geometry is None:
+                plan_geometry = trial.fit_pca_multisphere(
+                    plan_points,
+                    fit_margin_m=runtime_args.multisphere_fit_margin_m,
+                    max_components=runtime_args.multisphere_max_components,
+                )
             artifacts: dict[str, Any] = {}
             result = trial.run_fast_repair(
                 runtime_args,
