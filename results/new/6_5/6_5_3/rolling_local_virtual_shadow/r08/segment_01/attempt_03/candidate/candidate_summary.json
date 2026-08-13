@@ -1,0 +1,161 @@
+{
+  "created_at": "2026-08-13T07:33:06.962165+00:00",
+  "status": "LOCAL_REPAIR_READY",
+  "local_repair_status": "LOCAL_REPAIR_READY",
+  "local_repair_ready": true,
+  "execution_authorization_status": "PENDING_POST_PLAN_FRESH_RECHECK",
+  "accepted_for_switch": false,
+  "repair_step_ok": true,
+  "rejection_reasons": [],
+  "candidate_is_reference_continuation": false,
+  "warm_start": {
+    "mode": "linear"
+  },
+  "fast_elapsed_ms": 45.38756000692956,
+  "online_pipeline_elapsed_ms": 45.38756000692956,
+  "repair_elapsed_ms": 20.79709302051924,
+  "candidate_verification_ms": 12.02035101596266,
+  "reference_verification_ms": 12.387787020998076,
+  "diagnostic_reference_verification_ms": 0.0,
+  "paired_verification_wall_ms": 24.408725992543623,
+  "diagnostic_total_wall_ms": 95.64753601443954,
+  "post_check_ms": 0.17143200966529548,
+  "budget_exhausted": false,
+  "tail_delta_q_rad": [
+    0.008878628554034207,
+    -0.0008323124226525813,
+    -0.002432258394620801,
+    0.0017794565039318463,
+    0.002728435923361472,
+    2.737877892067253e-05
+  ],
+  "tail_delta_q_max_rad": 0.008878628554034207,
+  "selected_rejoin_offset_s": null,
+  "rejoin_search_audit": [],
+  "candidate_total_duration_s": 1.0,
+  "fast_budget_ms": 150.0,
+  "online_accept_m": 0.09,
+  "verification_min_distance_m": 0.10689117528489678,
+  "reference_online_min_distance_m": 0.10057098514176555,
+  "candidate_online_min_distance_m": 0.10689117528489678,
+  "clearance_improvement_m": 0.006320190143131232,
+  "min_clearance_improvement_m": 0.003,
+  "max_delta_q_from_reference_rad": 0.011121664842177803,
+  "verification_reasons": [],
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": true,
+    "position_ok": true,
+    "velocity_ok": true,
+    "acceleration_ok": true,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "repair_iterations": 1,
+  "accepted_steps": 1,
+  "active_constraints": 8,
+  "qp_successes": 1,
+  "risk_scan_ms": 11.059798998758197,
+  "linearization_ms": 3.770763985812664,
+  "qp_ms": 2.1833659848198295,
+  "trajectory_generation_ms": 0.3245759871788323,
+  "motion_check_ms": 0.5316820170264691,
+  "candidate_distance_check_ms": 0.0,
+  "scale_attempts": 7,
+  "unaccounted_fast_ms": 2.92690604692325,
+  "messages": [
+    "projected_qp max_violation=0.000e+00 clearance_reward=0",
+    "accepted scale 1.00 by linear screen predicted_min=0.106887"
+  ],
+  "q_now": [
+    0.6223360300064087,
+    -0.20708219707012177,
+    1.336002230644226,
+    -0.02769361063838005,
+    1.570844054222107,
+    0.6223286390304565
+  ],
+  "qd_now": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "q_goal": [
+    0.6152100557394371,
+    -0.2002861510178032,
+    1.3431532320344755,
+    -0.023948297931532275,
+    1.5735209959233614,
+    0.6063490395670666
+  ],
+  "obstacle_center": [
+    0.60373365595549,
+    -0.2013512617579816,
+    0.333566189298099
+  ],
+  "obstacle_velocity": [
+    -0.0049099804623595755,
+    0.00977842930118554,
+    0.04995988989894187
+  ],
+  "obstacle_radius": 0.12880466195436588,
+  "obstacle_geometry_mode": "fresh_pca_multisphere",
+  "multisphere_geometry": {
+    "source_point_count": 172,
+    "component_count": 2,
+    "component_centers": [
+      [
+        0.6192519605129705,
+        -0.1556091658528505,
+        0.3402302622846893
+      ],
+      [
+        0.6110384316044749,
+        -0.2451233713235928,
+        0.34741875387622445
+      ]
+    ],
+    "component_base_radii": [
+      0.10498138659144246,
+      0.12002713387585086
+    ],
+    "pca_axis": [
+      -0.10540513507614332,
+      -0.9893051311020283,
+      0.10082219534793746
+    ],
+    "axial_length_m": 0.1829666993661771,
+    "transverse_radius_m": 0.0782165018796051,
+    "fit_margin_m": 0.005,
+    "max_point_to_union_distance": -0.0050000000000000044,
+    "coverage_ratio": 1.0,
+    "single_sphere_radius": 0.14018699665254702,
+    "multi_sphere_max_radius": 0.12002713387585086,
+    "covered": true
+  },
+  "obstacle_association": {
+    "rolling_local_virtual_shadow": true,
+    "segment": 1,
+    "attempt": 3
+  },
+  "risk_links": [
+    "base_link",
+    "foreArm_Link",
+    "gripper_base_link",
+    "left_link",
+    "right_link",
+    "shoulder_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link",
+    "wrist3_Link"
+  ],
+  "candidate_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/rolling_local_virtual_shadow/r08/segment_01/attempt_03/candidate/fast_ccro_nubs_candidate.csv"
+}
