@@ -28,6 +28,9 @@ delayed_calibration = importlib.import_module(
 delayed_resume = importlib.import_module(
     "experiments.new.6_5.6_5_3.resume_653_from_delayed_rejoin"
 )
+hold_resume = importlib.import_module(
+    "experiments.new.6_5.6_5_3.resume_653_from_hold"
+)
 d2_sweep = importlib.import_module("experiments.new.6_5.6_5_3.offline_d2_geometry_sweep")
 
 
@@ -934,6 +937,15 @@ def test_empty_scene_calibration_defaults_to_noncommanding_dry_run(tmp_path):
     result = calibration.run(args)
     assert result["status"] == "DRY_RUN_ONLY"
     assert not result["robot_commanded"]
+
+
+def test_hold_resume_defaults_to_noncommanding_r04_dry_run(tmp_path):
+    args = hold_resume.build_parser().parse_args(["--output", str(tmp_path)])
+    result = hold_resume.run(args)
+    assert result["status"] == "DRY_RUN_READY"
+    assert not result["robot_commanded"]
+    assert result["source_status"] == "TRIGGERED_AND_REPAIR_REJOIN_EXECUTED_HOLD"
+    assert result["source_resume_status"] == "REFERENCE_RESUME_HOLD"
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
