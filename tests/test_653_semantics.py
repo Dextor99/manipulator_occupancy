@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import csv
 import json
 import time
@@ -1113,6 +1114,13 @@ def test_static_obstacle_uses_zero_velocity_without_losing_measurement():
     assert static["measured_speed_m_s"] == fresh["speed_m_s"]
     assert static["center"] == fresh["center"]
     assert fresh["velocity"] != static["velocity"]
+
+
+def test_virtual_shadow_has_no_live_execution_or_raw_guard_claim():
+    source = inspect.getsource(rolling_virtual.run)
+    assert "raw_hard_guard_applicable\": False" in source
+    assert "physical_robot_remains_at_start_in_virtual_shadow" in source
+    assert "hard_guard_distance_m=math.inf" in source
 
 
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():

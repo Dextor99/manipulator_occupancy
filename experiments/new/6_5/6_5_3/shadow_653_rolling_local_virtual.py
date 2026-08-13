@@ -730,18 +730,44 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     for offset in rejoin_offsets
                     if reference_plan_start + float(offset) <= float(reference.times[-1])
                 ]
-            delayed, bridge = trial.authorize_delayed_rejoin_after_fresh3(
-                runtime_args,
-                config,
-                model,
-                local_artifacts=context["artifacts"],
-                fresh3=fresh3,
-                fresh3_geometry=fresh3_geometry,
-                fresh3_frames=fresh3_frames,
-                rejoin_goals=rejoin_goals,
-                hard_guard_distance_m=virtual_tail_guard_m,
-                trial_dir=output / "closure",
+            virtual_tail_online_safe = bool(
+                np.isfinite(virtual_tail_guard_m)
+                and virtual_tail_guard_m >= runtime_args.online_accept_m
             )
+            if virtual_tail_online_safe:
+                # A real raw-cloud hard guard cannot be measured at q_virtual while
+                # the physical robot remains at the start.  Do not relabel the
+                # medium multisphere distance as a 0.10 m raw guard.  The virtual
+                # tail uses the unchanged 0.09 m online gate; the bridge verifier
+                # then checks the complete trajectory with the same geometry.
+                delayed, bridge = trial.authorize_delayed_rejoin_after_fresh3(
+                    runtime_args,
+                    config,
+                    model,
+                    local_artifacts=context["artifacts"],
+                    fresh3=fresh3,
+                    fresh3_geometry=fresh3_geometry,
+                    fresh3_frames=fresh3_frames,
+                    rejoin_goals=rejoin_goals,
+                    hard_guard_distance_m=math.inf,
+                    trial_dir=output / "closure",
+                )
+            else:
+                delayed, bridge = (
+                    {
+                        "status": "DELAYED_REJOIN_HOLD",
+                        "authorized": False,
+                        "reason": "virtual_tail_below_online_accept",
+                        "virtual_tail_distance_m": virtual_tail_guard_m,
+                        "online_accept_m": float(runtime_args.online_accept_m),
+                        "hard_guard_distance_m": None,
+                        "hard_guard_safe": None,
+                        "raw_hard_guard_applicable": False,
+                        "rejoin_search_audit": [],
+                        "authorized_trajectory_csv": None,
+                    },
+                    None,
+                )
             remainder_audit = {
                 "authorized": False,
                 "reason": "delayed_rejoin_not_authorized",
@@ -798,6 +824,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "fresh3": fresh3,
                 "virtual_tail_guard_m": virtual_tail_guard_m,
                 "virtual_tail_guard_basis": "medium_multisphere_at_virtual_tail",
+                "virtual_tail_online_safe": virtual_tail_online_safe,
+                "raw_hard_guard_applicable": False,
+                "raw_hard_guard_reason": "physical_robot_remains_at_start_in_virtual_shadow",
                 "delayed_rejoin": delayed,
                 "full_reference_remainder": remainder_audit,
                 "authorized": closure_authorized,
