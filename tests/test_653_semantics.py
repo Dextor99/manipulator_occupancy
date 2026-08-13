@@ -868,6 +868,22 @@ def test_full_rejoin_authorization_rejects_failed_fast_before_verification(tmp_p
     assert not saved["execution_authorized"]
 
 
+def test_raw_cluster_distance_does_not_require_a_tracked_object():
+    robot_points = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    cluster = SimpleNamespace(
+        center=np.array([0.2, 0.0, 0.0]),
+        points=np.array([[0.2, 0.0, 0.0], [0.3, 0.0, 0.0]]),
+    )
+    distance, obj, obj_id, robot_point, obstacle_point = (
+        trial._find_nearest_cluster_distance_detail(robot_points, [cluster], [])
+    )
+    assert distance == pytest.approx(0.2)
+    assert obj is None
+    assert obj_id is None
+    np.testing.assert_allclose(robot_point, [0.0, 0.0, 0.0])
+    np.testing.assert_allclose(obstacle_point, [0.2, 0.0, 0.0])
+
+
 def test_authorized_timing_check_rejects_compressed_waypoint_playback():
     feedback = [
         {"t_s": 0.0, "goal_max_abs_error_rad": 1.0},

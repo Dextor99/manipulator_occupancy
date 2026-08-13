@@ -467,7 +467,11 @@ def _find_nearest_cluster_distance_detail(
     在基础距离结果之外，同时返回机器人最近点和障碍物最近点，
     用于判断障碍物是否位于当前运动方向前方。
     """
-    if len(robot_pts) == 0 or not valid_clusters or not tracked_objects:
+    # Raw point-to-cluster clearance does not depend on tracking.  Several
+    # execution guards intentionally pass an empty tracked-object list because
+    # they only need the geometric distance.  Returning +inf in that case
+    # silently disables the hard guard while valid external clusters exist.
+    if len(robot_pts) == 0 or not valid_clusters:
         return float("inf"), None, None, None, None
 
     from scipy.spatial import cKDTree
