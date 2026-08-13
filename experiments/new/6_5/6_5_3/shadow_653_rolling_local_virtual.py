@@ -197,6 +197,43 @@ def virtual_reference_risk(
     return {"min_distance_m": best["distance_m"], "best": best, "preview": rows}
 
 
+def compact_geometry_audit(geometry: dict[str, Any]) -> dict[str, Any]:
+    """Report scene quality without changing planning geometry or authorization."""
+    axial_length = float(geometry.get("axial_length_m", math.inf))
+    radii = np.asarray(geometry.get("component_base_radii", []), dtype=np.float64)
+    max_radius = float(np.max(radii)) if radii.size else math.inf
+    warnings = []
+    if axial_length > 0.16:
+        warnings.append("axial_length_gt_0.16m")
+    if max_radius > 0.12:
+        warnings.append("component_radius_gt_0.12m")
+    return {
+        "audit_only": True,
+        "planning_geometry_unchanged": True,
+        "axial_length_m": axial_length,
+        "max_component_radius_m": max_radius,
+        "compact_scene_quality_ok": not warnings,
+        "quality_warnings": warnings,
+    }
+
+
+def retry_action(
+    segment_gate: dict[str, Any],
+    *,
+    fresh_accepted: bool,
+    has_points: bool,
+    has_geometry: bool,
+) -> str:
+    """Choose the fail-closed virtual transition after one Fast/Fresh attempt."""
+    if bool(segment_gate.get("advance", False)):
+        return "advance"
+    if segment_gate.get("status") == "REFERENCE_SAFE_FOR_REJOIN":
+        return "reference_safe"
+    if fresh_accepted and has_points and has_geometry:
+        return "retry_same_segment"
+    return "safe_hold"
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.max_segments < 1 or args.max_wall_s <= 0.0 or args.seed_timeout_s <= 0.0:
         raise ValueError("max-segments, max-wall-s, and seed-timeout-s must be positive")
@@ -346,12 +383,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             log["accepted_segments"] = 0
             log["pre_risk_attempts"] = len(pre_risk_audit)
             return log
+        stop_segments = False
+        short_args = copy.copy(runtime_args)
+        short_args.post_stop_recheck_duration_s = runtime_args.rolling_observation_duration_s
+        short_args.post_stop_recheck_min_frames = runtime_args.rolling_observation_min_frames
+        short_args.post_stop_recheck_min_span_s = runtime_args.rolling_observation_min_span_s
         for item in schedule:
             if time.perf_counter() - rolling_started >= args.max_wall_s:
                 log["status"] = "ROLLING_LOCAL_VIRTUAL_WALL_LIMIT_HOLD"
                 break
             index = int(item["segment"])
             segment_dir = output / f"segment_{index:02d}"
+            segment_started = time.perf_counter()
+            segment_deadline = min(
+                rolling_started + args.max_wall_s,
+                segment_started + runtime_args.rolling_fast_max_s,
+            )
             if index == 1:
                 fresh_plan, plan_frames, plan_points, plan_geometry = armed_plan
             else:
@@ -359,7 +406,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     processor,
                     reader,
                     denoiser,
-                    runtime_args,
+                    short_args,
                     trigger_cluster_center=np.asarray(previous["center"], dtype=np.float64),
                     trigger_velocity=np.asarray(previous["velocity"], dtype=np.float64),
                     trigger_timestamp=float(previous["last_timestamp"]),
@@ -369,126 +416,181 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             segment: dict[str, Any] = {
                 **item,
                 "q_virtual_start": q_virtual.tolist(),
-                "fresh_plan": fresh_plan,
-                "plan_frame_count": len(plan_frames),
+                "attempts": [],
+                "retry_budget_s": float(runtime_args.rolling_fast_max_s),
             }
-            trial.write_json(
-                segment_dir / "fresh_plan.json", {"result": fresh_plan, "frames": plan_frames}
-            )
-            if not fresh_plan.get("accepted", False) or plan_points is None:
-                segment["status"] = "FRESH_PLAN_NOT_READY_HOLD"
-                log["segments"].append(segment)
-                log["status"] = "ROLLING_LOCAL_VIRTUAL_STOPPED_FAIL_CLOSED"
-                break
-            if plan_geometry is None:
-                plan_geometry = trial.fit_pca_multisphere(
-                    plan_points,
-                    fit_margin_m=runtime_args.multisphere_fit_margin_m,
-                    max_components=runtime_args.multisphere_max_components,
+            attempt_index = 0
+            segment_authorized = False
+            while time.perf_counter() < segment_deadline:
+                attempt_index += 1
+                attempt_dir = segment_dir / f"attempt_{attempt_index:02d}"
+                attempt: dict[str, Any] = {
+                    "attempt": attempt_index,
+                    "q_virtual_start": q_virtual.tolist(),
+                    "fresh_plan": fresh_plan,
+                    "plan_frame_count": len(plan_frames),
+                    "reused_previous_fresh_authorization": attempt_index > 1,
+                }
+                trial.write_json(
+                    attempt_dir / "fresh_plan.json",
+                    {"result": fresh_plan, "frames": plan_frames},
                 )
-            artifacts: dict[str, Any] = {}
-            result = trial.run_fast_repair(
-                runtime_args,
-                config,
-                model,
-                q_now=q_virtual,
-                qd_now=np.zeros(6),
-                center=np.asarray(fresh_plan["center"], dtype=np.float64),
-                velocity=np.asarray(fresh_plan["velocity"], dtype=np.float64),
-                radius=float(fresh_plan["radius"]),
-                risk_links=set(model.surface_by_link(q_virtual, density="coarse")),
-                trial_dir=segment_dir,
-                reference_goal=reference.state_at(float(item["reference_goal_time_s"])),
-                rejoin_goals=None,
-                obstacle_audit={"rolling_local_virtual_shadow": True, "segment": index},
-                multisphere_geometry=plan_geometry,
-                artifacts_out=artifacts,
-            )
-            side = trial.avoidance_side_consistent(
-                locked_side,
-                np.asarray(result["tail_delta_q_rad"], dtype=np.float64),
-                opposite_projection_tolerance_rad=runtime_args.rolling_side_opposite_tolerance_rad,
-            )
-            fresh_auth, auth_frames, auth_points = trial.capture_post_stop_obstacle(
-                processor,
-                reader,
-                denoiser,
-                runtime_args,
-                trigger_cluster_center=np.asarray(fresh_plan["center"], dtype=np.float64),
-                trigger_velocity=np.asarray(fresh_plan["velocity"], dtype=np.float64),
-                trigger_timestamp=float(fresh_plan["last_timestamp"]),
-                stop_when_ready=True,
-            )
-            trial.write_json(
-                segment_dir / "fresh_authorization.json",
-                {"result": fresh_auth, "frames": auth_frames},
-            )
-            local_auth = {
-                "status": "LOCAL_EXECUTION_RECHECK_FAILED",
-                "local_execution_authorized": False,
-                "reason": fresh_auth.get("reason", "fresh_auth_not_ready"),
-            }
-            if fresh_auth.get("accepted", False) and auth_points is not None and side["accepted"]:
-                auth_geometry = trial.fit_pca_multisphere(
-                    auth_points,
-                    fit_margin_m=runtime_args.multisphere_fit_margin_m,
-                    max_components=runtime_args.multisphere_max_components,
-                )
-                local_auth, _ = trial.authorize_local_repair_execution(
+                if not fresh_plan.get("accepted", False) or plan_points is None:
+                    attempt["status"] = "FRESH_PLAN_NOT_READY_HOLD"
+                    segment["attempts"].append(attempt)
+                    log["status"] = "ROLLING_LOCAL_VIRTUAL_STOPPED_FAIL_CLOSED"
+                    stop_segments = True
+                    break
+                if plan_geometry is None:
+                    plan_geometry = trial.fit_pca_multisphere(
+                        plan_points,
+                        fit_margin_m=runtime_args.multisphere_fit_margin_m,
+                        max_components=runtime_args.multisphere_max_components,
+                    )
+                attempt["geometry_quality"] = compact_geometry_audit(plan_geometry)
+                artifacts: dict[str, Any] = {}
+                result = trial.run_fast_repair(
                     runtime_args,
                     config,
                     model,
-                    local_repair_ready=bool(result["local_repair_ready"]),
-                    local_artifacts=artifacts,
-                    fresh_geometry=auth_geometry,
-                    fresh_velocity=np.asarray(fresh_auth["velocity"], dtype=np.float64),
-                    trial_dir=segment_dir,
+                    q_now=q_virtual,
+                    qd_now=np.zeros(6),
+                    center=np.asarray(fresh_plan["center"], dtype=np.float64),
+                    velocity=np.asarray(fresh_plan["velocity"], dtype=np.float64),
+                    radius=float(fresh_plan["radius"]),
+                    risk_links=set(model.surface_by_link(q_virtual, density="coarse")),
+                    trial_dir=attempt_dir,
+                    reference_goal=reference.state_at(float(item["reference_goal_time_s"])),
+                    rejoin_goals=None,
+                    obstacle_audit={
+                        "rolling_local_virtual_shadow": True,
+                        "segment": index,
+                        "attempt": attempt_index,
+                    },
+                    multisphere_geometry=plan_geometry,
+                    artifacts_out=artifacts,
                 )
-            segment_gate = trial.rolling_local_segment_gate(
-                reference_min_distance_m=float(result["reference_online_min_distance_m"]),
-                local_repair_ready=bool(result["local_repair_ready"]),
-                side_consistent=bool(side["accepted"]),
-                fresh_authorized=bool(local_auth.get("local_execution_authorized", False)),
-                replan_threshold_m=runtime_args.moving_shadow_replan_in_m,
-            )
-            ready = bool(segment_gate["advance"])
-            candidate_csv = segment_dir / "candidate/fast_ccro_nubs_candidate.csv"
-            workspace = trial.trajectory_workspace_deviation(
-                model,
-                candidate_csv,
-                reference,
-                float(item["reference_plan_start_time_s"]),
-            )
-            segment.update(
-                {
-                    "status": segment_gate["status"],
-                    "segment_gate": segment_gate,
-                    "fast": result,
-                    "fresh_authorization": fresh_auth,
-                    "side_continuity": side,
-                    "local_authorization": local_auth,
-                    "workspace_deviation": workspace,
+                side = trial.avoidance_side_consistent(
+                    locked_side,
+                    np.asarray(result["tail_delta_q_rad"], dtype=np.float64),
+                    opposite_projection_tolerance_rad=runtime_args.rolling_side_opposite_tolerance_rad,
+                )
+                fresh_auth, auth_frames, auth_points = trial.capture_post_stop_obstacle(
+                    processor,
+                    reader,
+                    denoiser,
+                    short_args,
+                    trigger_cluster_center=np.asarray(fresh_plan["center"], dtype=np.float64),
+                    trigger_velocity=np.asarray(fresh_plan["velocity"], dtype=np.float64),
+                    trigger_timestamp=float(fresh_plan["last_timestamp"]),
+                    stop_when_ready=True,
+                )
+                trial.write_json(
+                    attempt_dir / "fresh_authorization.json",
+                    {"result": fresh_auth, "frames": auth_frames},
+                )
+                local_auth = {
+                    "status": "LOCAL_EXECUTION_RECHECK_FAILED",
+                    "local_execution_authorized": False,
+                    "reason": fresh_auth.get("reason", "fresh_auth_not_ready"),
                 }
-            )
-            log["segments"].append(segment)
-            if not ready:
-                log["status"] = (
-                    "ROLLING_LOCAL_VIRTUAL_REFERENCE_SAFE_FOR_REJOIN"
-                    if segment_gate["status"] == "REFERENCE_SAFE_FOR_REJOIN"
-                    else "ROLLING_LOCAL_VIRTUAL_STOPPED_FAIL_CLOSED"
+                auth_geometry = None
+                if fresh_auth.get("accepted", False) and auth_points is not None and side["accepted"]:
+                    auth_geometry = trial.fit_pca_multisphere(
+                        auth_points,
+                        fit_margin_m=runtime_args.multisphere_fit_margin_m,
+                        max_components=runtime_args.multisphere_max_components,
+                    )
+                    local_auth, _ = trial.authorize_local_repair_execution(
+                        runtime_args,
+                        config,
+                        model,
+                        local_repair_ready=bool(result["local_repair_ready"]),
+                        local_artifacts=artifacts,
+                        fresh_geometry=auth_geometry,
+                        fresh_velocity=np.asarray(fresh_auth["velocity"], dtype=np.float64),
+                        trial_dir=attempt_dir,
+                    )
+                segment_gate = trial.rolling_local_segment_gate(
+                    reference_min_distance_m=float(result["reference_online_min_distance_m"]),
+                    local_repair_ready=bool(result["local_repair_ready"]),
+                    side_consistent=bool(side["accepted"]),
+                    fresh_authorized=bool(local_auth.get("local_execution_authorized", False)),
+                    replan_threshold_m=runtime_args.moving_shadow_replan_in_m,
                 )
+                workspace = trial.trajectory_workspace_deviation(
+                    model,
+                    attempt_dir / "candidate/fast_ccro_nubs_candidate.csv",
+                    reference,
+                    float(item["reference_plan_start_time_s"]),
+                )
+                attempt.update(
+                    {
+                        "status": segment_gate["status"],
+                        "segment_gate": segment_gate,
+                        "fast": result,
+                        "fresh_authorization": fresh_auth,
+                        "fresh_geometry_quality": (
+                            compact_geometry_audit(auth_geometry) if auth_geometry is not None else None
+                        ),
+                        "side_continuity": side,
+                        "local_authorization": local_auth,
+                        "workspace_deviation": workspace,
+                        "attempt_elapsed_s": time.perf_counter() - segment_started,
+                    }
+                )
+                segment["attempts"].append(attempt)
+                action = retry_action(
+                    segment_gate,
+                    fresh_accepted=bool(fresh_auth.get("accepted", False)),
+                    has_points=auth_points is not None,
+                    has_geometry=auth_geometry is not None,
+                )
+                attempt["next_action"] = action
+                if action == "advance":
+                    if locked_side is None:
+                        locked_side = np.asarray(side["locked_tail_delta_q"], dtype=np.float64)
+                    q_virtual = np.asarray(
+                        artifacts["candidate_trajectory"].evaluate(
+                            artifacts["candidate_trajectory"].total_duration
+                        ),
+                        dtype=np.float64,
+                    )
+                    segment["q_virtual_end"] = q_virtual.tolist()
+                    segment["status"] = segment_gate["status"]
+                    segment["authorized_attempt"] = attempt_index
+                    accepted_segments += 1
+                    previous = fresh_auth
+                    segment_authorized = True
+                    break
+                if action == "reference_safe":
+                    segment["status"] = segment_gate["status"]
+                    log["status"] = "ROLLING_LOCAL_VIRTUAL_REFERENCE_SAFE_FOR_REJOIN"
+                    stop_segments = True
+                    break
+                if action == "safe_hold":
+                    segment["status"] = "FRESH_AUTH_NOT_READY_HOLD"
+                    log["status"] = "ROLLING_LOCAL_VIRTUAL_STOPPED_FAIL_CLOSED"
+                    stop_segments = True
+                    break
+                # The virtual state deliberately stays fixed.  Reuse this already captured
+                # Fresh observation immediately as the next planning input.
+                fresh_plan, plan_frames, plan_points, plan_geometry = (
+                    fresh_auth,
+                    auth_frames,
+                    auth_points,
+                    auth_geometry,
+                )
+                previous = fresh_auth
+            if not segment_authorized and not stop_segments:
+                segment["status"] = "ROLLING_LOCAL_SEGMENT_RETRY_TIMEOUT_HOLD"
+                log["status"] = "ROLLING_LOCAL_VIRTUAL_RETRY_TIMEOUT_HOLD"
+                stop_segments = True
+            segment["attempt_count"] = len(segment["attempts"])
+            segment["segment_elapsed_s"] = time.perf_counter() - segment_started
+            log["segments"].append(segment)
+            if stop_segments:
                 break
-            if locked_side is None:
-                locked_side = np.asarray(side["locked_tail_delta_q"], dtype=np.float64)
-            q_virtual = np.asarray(
-                artifacts["candidate_trajectory"].evaluate(
-                    artifacts["candidate_trajectory"].total_duration
-                ),
-                dtype=np.float64,
-            )
-            segment["q_virtual_end"] = q_virtual.tolist()
-            accepted_segments += 1
-            previous = fresh_auth
         else:
             log["status"] = "ROLLING_LOCAL_VIRTUAL_ALL_SEGMENTS_AUTHORIZED"
         log["accepted_segments"] = accepted_segments

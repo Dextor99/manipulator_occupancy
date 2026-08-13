@@ -1050,6 +1050,50 @@ def test_rolling_virtual_shadow_parser_has_no_execution_option():
     assert args.obstacle_nominal_size_m == "0.10,0.10,0.10"
 
 
+def test_rolling_virtual_retries_same_segment_after_valid_fresh_rejection():
+    action = rolling_virtual.retry_action(
+        {"advance": False, "status": "ROLLING_LOCAL_SEGMENT_REJECTED"},
+        fresh_accepted=True,
+        has_points=True,
+        has_geometry=True,
+    )
+    assert action == "retry_same_segment"
+
+
+def test_rolling_virtual_retry_transitions_remain_fail_closed():
+    assert rolling_virtual.retry_action(
+        {"advance": True, "status": "ROLLING_LOCAL_SEGMENT_AUTHORIZED"},
+        fresh_accepted=True,
+        has_points=True,
+        has_geometry=True,
+    ) == "advance"
+    assert rolling_virtual.retry_action(
+        {"advance": False, "status": "REFERENCE_SAFE_FOR_REJOIN"},
+        fresh_accepted=True,
+        has_points=True,
+        has_geometry=True,
+    ) == "reference_safe"
+    assert rolling_virtual.retry_action(
+        {"advance": False, "status": "ROLLING_LOCAL_SEGMENT_REJECTED"},
+        fresh_accepted=False,
+        has_points=False,
+        has_geometry=False,
+    ) == "safe_hold"
+
+
+def test_compact_geometry_audit_never_changes_planning_geometry():
+    compact = rolling_virtual.compact_geometry_audit(
+        {"axial_length_m": 0.10, "component_base_radii": [0.06, 0.07]}
+    )
+    elongated = rolling_virtual.compact_geometry_audit(
+        {"axial_length_m": 0.22, "component_base_radii": [0.13]}
+    )
+    assert compact["compact_scene_quality_ok"]
+    assert compact["planning_geometry_unchanged"]
+    assert not elongated["compact_scene_quality_ok"]
+    assert elongated["planning_geometry_unchanged"]
+
+
 def test_authorized_start_alignment_uses_recorded_reference_in_reverse():
     reference = np.zeros((6, 6))
     reference[:, 0] = np.linspace(0.0, 0.05, 6)
