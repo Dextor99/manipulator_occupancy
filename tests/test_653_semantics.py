@@ -1584,6 +1584,35 @@ def test_simple_live_copies_v3_callback_parameters_to_core_namespace():
         assert getattr(core, name) == value
 
 
+def test_v3_goal_continuation_uses_robust_target_only_for_ranking():
+    rows = [
+        {
+            "candidate": 1,
+            "coarse_min_distance_m": 0.1001,
+            "task_progress_m": 0.0155,
+            "goal_distance_m": 0.577,
+            "task_progress_ok": True,
+        },
+        {
+            "candidate": 2,
+            "coarse_min_distance_m": 0.0974,
+            "task_progress_m": 0.0159,
+            "goal_distance_m": 0.576,
+            "task_progress_ok": True,
+        },
+    ]
+    assert (
+        event_replan_live.select_goal_directed_continuation(
+            rows, robust_target_m=0.11, diagnostic_only=False
+        )
+        is None
+    )
+    selected = event_replan_live.select_goal_directed_continuation(
+        rows, robust_target_m=0.11, diagnostic_only=True
+    )
+    assert selected["candidate"] == 1
+
+
 def test_simple_bypass_side_is_orthogonal_to_task_and_points_away():
     task, side, _ = simple_bypass.task_and_side_directions(
         np.zeros(3),

@@ -1464,6 +1464,7 @@ def run_virtual_candidate_playback_shadow(
             robust_target_m=float(args.planning_robust_target_m),
             max_joint_delta_rad=float(args.max_joint_delta_rad),
             tcp_link=args.tcp_link,
+            robust_target_is_diagnostic=True,
         )
         decision["local_candidate_status"] = candidate.get("status")
         decision["nominal_goal_step"] = nominal_audit

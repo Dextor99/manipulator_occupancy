@@ -339,6 +339,48 @@ def established_bypass_side(
     }
 
 
+def select_goal_directed_continuation(
+    rows: list[dict[str, Any]],
+    *,
+    robust_target_m: float,
+    diagnostic_only: bool = False,
+) -> dict[str, Any] | None:
+    """Rank continuation seeds without weakening the final verifier.
+
+    Legacy event recovery retains its 0.11 m coarse hard gate.  V3 uses that
+    number only as a preference: every finite seed may enter Fast, while the
+    unchanged 0.09 m complete verifier remains the execution authority.
+    """
+    if diagnostic_only:
+        eligible = [
+            row for row in rows if math.isfinite(row["coarse_min_distance_m"])
+        ]
+        return (
+            max(
+                eligible,
+                key=lambda row: (
+                    row["coarse_min_distance_m"] >= robust_target_m,
+                    row["coarse_min_distance_m"],
+                    row["task_progress_m"],
+                    -row["goal_distance_m"],
+                ),
+            )
+            if eligible
+            else None
+        )
+    safe = [
+        row
+        for row in rows
+        if row["coarse_min_distance_m"] >= robust_target_m
+        and row["task_progress_ok"]
+    ]
+    return (
+        max(safe, key=lambda row: (row["task_progress_m"], -row["goal_distance_m"]))
+        if safe
+        else None
+    )
+
+
 def plan_goal_directed_continuation(
     base_fast: Any,
     runtime_args: argparse.Namespace,
@@ -359,6 +401,7 @@ def plan_goal_directed_continuation(
     robust_target_m: float,
     max_joint_delta_rad: float,
     tcp_link: str,
+    robust_target_is_diagnostic: bool = False,
 ) -> dict[str, Any]:
     """Select strong/weak/release goal progress, then invoke unchanged Fast."""
     forecast = trial.constant_multisphere_forecast(
@@ -430,11 +473,11 @@ def plan_goal_directed_continuation(
                 "profile": profile,
             }
         )
-    safe = [
-        row for row in rows
-        if row["coarse_min_distance_m"] >= robust_target_m and row["task_progress_ok"]
-    ]
-    selected = max(safe, key=lambda row: (row["task_progress_m"], -row["goal_distance_m"])) if safe else None
+    selected = select_goal_directed_continuation(
+        rows,
+        robust_target_m=float(robust_target_m),
+        diagnostic_only=bool(robust_target_is_diagnostic),
+    )
     audit = {
         "policy": "goal_directed_bypass_continuation",
         "q_escape_start_rad": np.asarray(q_escape_start).tolist(),
@@ -443,6 +486,9 @@ def plan_goal_directed_continuation(
         "direction": direction,
         "candidates": rows,
         "planning_robust_target_m": float(robust_target_m),
+        "planning_robust_target_is_hard_gate": bool(
+            not robust_target_is_diagnostic
+        ),
         "selected_candidate": None if selected is None else int(selected["candidate"]),
         "selected_phase": None if selected is None else selected["phase"],
         "fast_invoked": selected is not None,
