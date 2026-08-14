@@ -554,6 +554,7 @@ def _persistent_state_reasons(
     args: Any,
     *,
     require_newer_than_seq: int | None = None,
+    raw_guard_reason: str = "raw_hard_guard_not_safe",
 ) -> list[str]:
     """Evaluate physical validity without the former 0.25 s polling race."""
     reasons: list[str] = []
@@ -575,7 +576,7 @@ def _persistent_state_reasons(
     if float(snapshot.get("raw_guard_distance_m", float("-inf"))) <= float(
         args.guided_hard_stop_m
     ):
-        reasons.append("raw_hard_guard_not_safe")
+        reasons.append(raw_guard_reason)
     return reasons
 
 
@@ -595,6 +596,7 @@ def latest_state_authorize_with_one_replan(
     local_artifacts: dict[str, Any],
     planning_state: dict[str, Any],
     stop_worker_when_done: bool = False,
+    raw_guard_reason: str = "raw_hard_guard_not_safe",
 ) -> dict[str, Any]:
     """Synchronize to a post-plan valid update; replan only on geometry."""
     attempts: list[dict[str, Any]] = []
@@ -623,6 +625,7 @@ def latest_state_authorize_with_one_replan(
                 latest_aligned,
                 args,
                 require_newer_than_seq=plan_seq,
+                raw_guard_reason=raw_guard_reason,
             )
             if state_reasons:
                 local_authorization = {
@@ -784,7 +787,12 @@ def _playback_snapshot(
             time.time() if evaluation_timestamp is None else evaluation_timestamp
         ),
     )
-    reasons = _persistent_state_reasons(snapshot, aligned, args)
+    reasons = _persistent_state_reasons(
+        snapshot,
+        aligned,
+        args,
+        raw_guard_reason="parked_robot_raw_hard_guard_not_safe",
+    )
     return snapshot, aligned, not reasons, reasons
 
 
@@ -928,7 +936,9 @@ def _run_virtual_segment_shadow(
                     float(snapshot["state_age_s"]) <= 0.25
                 ),
                 "frame_age_s": float(snapshot.get("latest_frame_age_s", float("inf"))),
-                "raw_guard_distance_m": float(snapshot["raw_guard_distance_m"]),
+                "parked_robot_raw_guard_distance_m": float(
+                    snapshot["raw_guard_distance_m"]
+                ),
                 "worker_update_count": int(snapshot["update_count"]),
             }
         )
@@ -942,6 +952,7 @@ def _run_virtual_segment_shadow(
         command_aligned,
         args,
         require_newer_than_seq=precommand_baseline_seq,
+        raw_guard_reason="parked_robot_raw_hard_guard_not_safe",
     )
     command_state_ok = not command_reasons
     command_authorization = {
@@ -975,8 +986,16 @@ def _run_virtual_segment_shadow(
             evaluator, trajectory, final_forecast, playback_time_s=0.0
         )
     diagnostics = worker.diagnostics(since=baseline)
-    precommand_min_raw_guard = min(
-        [float(row["raw_guard_distance_m"]) for row in precommand_samples]
+    # In shadow mode the physical robot remains parked at the trigger pose.
+    # The worker's raw guard is therefore a guard for that parked robot, not a
+    # distance measurement for the virtual trajectory evaluated below.  It
+    # must still stop the lab trial, but it must not be reported as evidence
+    # that the virtual candidate itself violated the raw-cloud guard.
+    precommand_min_parked_robot_raw_guard = min(
+        [
+            float(row["parked_robot_raw_guard_distance_m"])
+            for row in precommand_samples
+        ]
         + [float(final_snapshot["raw_guard_distance_m"])]
     )
     precommand_authorized = bool(
@@ -984,7 +1003,7 @@ def _run_virtual_segment_shadow(
         and final_state_ok
         and final_clearance is not None
         and final_clearance["min_distance_m"] >= monitoring_gate
-        and precommand_min_raw_guard > float(args.guided_hard_stop_m)
+        and precommand_min_parked_robot_raw_guard > float(args.guided_hard_stop_m)
         and diagnostics["association_failures"] == 0
         and diagnostics["geometry_coverage_failures"] == 0
     )
@@ -997,8 +1016,10 @@ def _run_virtual_segment_shadow(
             if monitoring_gate > float(args.online_accept_m)
             else "command_time_clearance_below_online_gate"
         )
-    if precommand_min_raw_guard <= float(args.guided_hard_stop_m):
-        precommand_failure_reasons.append("precommand_raw_hard_guard_not_safe")
+    if precommand_min_parked_robot_raw_guard <= float(args.guided_hard_stop_m):
+        precommand_failure_reasons.append(
+            "precommand_parked_robot_raw_hard_guard_not_safe"
+        )
     if diagnostics["association_failures"]:
         precommand_failure_reasons.append("precommand_tracker_association_failed")
     if diagnostics["geometry_coverage_failures"]:
@@ -1014,7 +1035,7 @@ def _run_virtual_segment_shadow(
     playback_start_update_count = int(final_snapshot["update_count"])
     playback_start_state_seq = _state_seq(final_snapshot)
     minimum_remaining = float("inf")
-    minimum_raw_guard = float(final_snapshot["raw_guard_distance_m"])
+    minimum_parked_robot_raw_guard = float(final_snapshot["raw_guard_distance_m"])
     if precommand_authorized:
         events.append("VIRTUAL_LOCAL_PLAYBACK_STARTED")
         playback_started = time.monotonic()
@@ -1030,13 +1051,19 @@ def _run_virtual_segment_shadow(
             )
             aligned = time_aligned_snapshot(snapshot, execution_timestamp=time.time())
             new_update = _state_seq(snapshot) > last_playback_seq
-            state_reasons = _persistent_state_reasons(snapshot, aligned, args)
+            state_reasons = _persistent_state_reasons(
+                snapshot,
+                aligned,
+                args,
+                raw_guard_reason="parked_robot_raw_hard_guard_not_safe",
+            )
             state_ok = not state_reasons
             playback_t = min(
                 float(trajectory.total_duration), time.monotonic() - playback_started
             )
-            minimum_raw_guard = min(
-                minimum_raw_guard, float(snapshot["raw_guard_distance_m"])
+            minimum_parked_robot_raw_guard = min(
+                minimum_parked_robot_raw_guard,
+                float(snapshot["raw_guard_distance_m"]),
             )
             clearance = None
             if state_ok and new_update:
@@ -1074,11 +1101,20 @@ def _run_virtual_segment_shadow(
                             float(aligned["propagation_dt_s"]) <= 0.25
                         ),
                         "frame_age_s": float(snapshot.get("latest_frame_age_s", float("inf"))),
-                        "raw_guard_distance_m": float(snapshot["raw_guard_distance_m"]),
+                        "parked_robot_raw_guard_distance_m": float(
+                            snapshot["raw_guard_distance_m"]
+                        ),
                         "remaining_clearance": clearance,
                         "worker_update_count": int(snapshot["update_count"]),
                         "state_reasons": state_reasons,
                     }
+                )
+            if (
+                float(snapshot["raw_guard_distance_m"])
+                <= float(args.guided_hard_stop_m)
+            ):
+                playback_failure_reasons.append(
+                    "parked_robot_raw_hard_guard_not_safe"
                 )
             if playback_failure_reasons or playback_t >= float(trajectory.total_duration):
                 break
@@ -1153,10 +1189,20 @@ def _run_virtual_segment_shadow(
         if not playback_samples
         else float(playback_samples[-1]["playback_time_s"])
     )
+    parked_robot_guard_hold = any(
+        reason
+        in {
+            "precommand_parked_robot_raw_hard_guard_not_safe",
+            "parked_robot_raw_hard_guard_not_safe",
+        }
+        for reason in playback_failure_reasons
+    )
     result = {
         "status": (
             "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
             if playback_passed
+            else "V3_VIRTUAL_PLAYBACK_PARKED_ROBOT_GUARD_HOLD"
+            if parked_robot_guard_hold
             else "V3_VIRTUAL_GOAL_SEGMENT_RISK_STOP"
             if goal_risk_stop
             else "V3_VIRTUAL_PLAYBACK_SHADOW_HOLD"
@@ -1174,7 +1220,13 @@ def _run_virtual_segment_shadow(
         "precommand_clearance_m": (
             None if final_clearance is None else final_clearance["min_distance_m"]
         ),
-        "precommand_min_raw_guard_m": precommand_min_raw_guard,
+        "shadow_guard_semantics": (
+            "raw_cloud_guard_is_for_physical_robot_parked_at_trigger_pose"
+        ),
+        "virtual_candidate_raw_cloud_guard_evaluated": False,
+        "precommand_min_parked_robot_raw_guard_m": (
+            precommand_min_parked_robot_raw_guard
+        ),
         "precommand_authorization": command_authorization,
         "precommand_failure_reasons": precommand_failure_reasons,
         "precommand_final_state_reasons": final_reasons,
@@ -1185,7 +1237,9 @@ def _run_virtual_segment_shadow(
         "playback_min_predicted_remaining_clearance_m": (
             None if not np.isfinite(minimum_remaining) else minimum_remaining
         ),
-        "playback_min_raw_guard_m": minimum_raw_guard,
+        "playback_min_parked_robot_raw_guard_m": (
+            minimum_parked_robot_raw_guard
+        ),
         "tracker_association_failures": playback_diagnostics[
             "association_failures"
         ],
@@ -1327,7 +1381,12 @@ def run_virtual_candidate_playback_shadow(
             segment["status"] != "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
             and not risk_stop
         ):
-            status = "V3_VIRTUAL_CLOSED_LOOP_SEGMENT_HOLD"
+            status = (
+                "V3_VIRTUAL_CLOSED_LOOP_PARKED_ROBOT_GUARD_HOLD"
+                if segment["status"]
+                == "V3_VIRTUAL_PLAYBACK_PARKED_ROBOT_GUARD_HOLD"
+                else "V3_VIRTUAL_CLOSED_LOOP_SEGMENT_HOLD"
+            )
             break
 
         trajectory = artifacts["candidate_trajectory"]
@@ -1345,7 +1404,12 @@ def run_virtual_candidate_playback_shadow(
 
         snapshot = worker.snapshot()
         aligned = time_aligned_snapshot(snapshot, execution_timestamp=time.time())
-        reasons = _persistent_state_reasons(snapshot, aligned, args)
+        reasons = _persistent_state_reasons(
+            snapshot,
+            aligned,
+            args,
+            raw_guard_reason="parked_robot_raw_hard_guard_not_safe",
+        )
         if reasons:
             decisions.append(
                 {
@@ -1487,6 +1551,7 @@ def run_virtual_candidate_playback_shadow(
             candidate_summary=candidate,
             local_artifacts=next_artifacts,
             planning_state=planning_snapshot,
+            raw_guard_reason="parked_robot_raw_hard_guard_not_safe",
         )
         if not authorization["authorized"]:
             decision["decision"] = "LOCAL_REPLAN_LATEST_STATE_REJECTED"

@@ -2367,7 +2367,11 @@ def test_v3_virtual_playback_shadow_keeps_single_stream_and_checks_tail(
     assert result["playback_min_predicted_remaining_clearance_m"] == pytest.approx(
         0.12
     )
-    assert result["playback_min_raw_guard_m"] == pytest.approx(0.20)
+    assert result["playback_min_parked_robot_raw_guard_m"] == pytest.approx(0.20)
+    assert result["virtual_candidate_raw_cloud_guard_evaluated"] is False
+    assert result["shadow_guard_semantics"] == (
+        "raw_cloud_guard_is_for_physical_robot_parked_at_trigger_pose"
+    )
     assert result["playback_tracker_update_count"] > 0
     assert result["tail_hold_status"] == "NEXT_LOCAL_REPLAN_REQUIRED"
     assert "PRECOMMAND_RECHECK_AUTHORIZED" in result["events"]
