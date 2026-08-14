@@ -13,6 +13,7 @@ permitted in this pilot.
 from __future__ import annotations
 
 import argparse
+import copy
 from datetime import datetime, timezone
 import importlib
 import json
@@ -119,6 +120,9 @@ def make_r06_fast_wrapper(
     max_joint_delta_rad: float,
     robust_target_m: float,
     tcp_link: str,
+    required_component_count: int | None = 2,
+    coarse_gate_is_hard: bool = True,
+    clearance_improvement_is_hard: bool = True,
 ):
     def run_r06_fast(
         runtime_args: Any,
@@ -140,13 +144,19 @@ def make_r06_fast_wrapper(
         forecast_override: Any | None = None,
     ) -> dict[str, Any]:
         del rejoin_goals, forecast_override
-        if multisphere_geometry is None or int(multisphere_geometry.get("component_count", 0)) != 2:
+        component_count = int((multisphere_geometry or {}).get("component_count", 0))
+        component_count_ok = (
+            multisphere_geometry is not None
+            and component_count >= 1
+            and (required_component_count is None or component_count == required_component_count)
+        )
+        if not component_count_ok:
             return {
-                "status": "REJECTED_SIMPLE_LIVE_TWO_SPHERE_REQUIRED",
-                "local_repair_status": "REJECTED_SIMPLE_LIVE_TWO_SPHERE_REQUIRED",
+                "status": "REJECTED_SIMPLE_LIVE_MULTISPHERE_REQUIRED",
+                "local_repair_status": "REJECTED_SIMPLE_LIVE_MULTISPHERE_REQUIRED",
                 "local_repair_ready": False,
                 "accepted_for_switch": False,
-                "rejection_reasons": ["current_live_fresh_fixed_two_sphere_required"],
+                "rejection_reasons": ["current_live_fresh_multisphere_requirement_failed"],
                 "simple_live_audit": {"fast_invoked": False},
             }
         forecast = trial.constant_multisphere_forecast(
@@ -214,14 +224,26 @@ def make_r06_fast_wrapper(
                     "profile": profile,
                 }
             )
-        selected = simple.select_robust_candidate(rows, robust_target_m)
+        if coarse_gate_is_hard:
+            selected = simple.select_robust_candidate(rows, robust_target_m)
+        else:
+            ranked = [row for row in rows if row["task_progress_ok"]]
+            selected = max(
+                ranked,
+                key=lambda row: (row["coarse_min_distance_m"], row["task_progress_m"]),
+            ) if ranked else None
         audit = {
             "candidate_source": "generated_in_current_live_run_from_post_stop_actual_q",
             "q_actual_post_stop_rad": q_values.tolist(),
-            "geometry_policy": "fresh_fixed_pca_two_sphere",
+            "geometry_policy": (
+                "fresh_adaptive_pca_multisphere"
+                if required_component_count is None
+                else f"fresh_fixed_pca_{required_component_count}_sphere"
+            ),
             "direction": direction,
             "candidates": rows,
             "planning_robust_target_m": float(robust_target_m),
+            "planning_robust_target_is_hard_gate": bool(coarse_gate_is_hard),
             "fast_invoked": selected is not None,
         }
         trial.write_json(Path(trial_dir) / "simple_live_bypass_audit.json", audit)
@@ -231,12 +253,20 @@ def make_r06_fast_wrapper(
                 "local_repair_status": "REJECTED_NO_SIMPLE_LIVE_ROBUST_BYPASS",
                 "local_repair_ready": False,
                 "accepted_for_switch": False,
-                "rejection_reasons": ["no_coarse_candidate_at_or_above_0.11m"],
+                "rejection_reasons": [
+                    "no_task_progress_candidate"
+                    if not coarse_gate_is_hard
+                    else "no_coarse_candidate_at_or_above_robust_target"
+                ],
                 "simple_live_audit": audit,
             }
         selected_goal = goals[int(selected["candidate"]) - 1]
+        fast_args = runtime_args
+        if not clearance_improvement_is_hard:
+            fast_args = copy.copy(runtime_args)
+            fast_args.min_clearance_improvement_m = 0.0
         result = original_fast(
-            runtime_args,
+            fast_args,
             config,
             model,
             q_now=q_values,
@@ -260,6 +290,10 @@ def make_r06_fast_wrapper(
             {
                 "selected_candidate": int(selected["candidate"]),
                 "selected_coarse_clearance_m": float(selected["coarse_min_distance_m"]),
+                "selected_coarse_meets_preferred_target": bool(
+                    selected["coarse_min_distance_m"] >= robust_target_m
+                ),
+                "clearance_improvement_is_hard_gate": bool(clearance_improvement_is_hard),
                 "fast_status": result.get("status"),
             }
         )

@@ -108,6 +108,10 @@ FORMAL_PROTOCOL_ID = "653_unified_d1_d2_v2"
 # Fresh #3 at the *measured* local tail and perform a bounded event replan
 # without changing the already validated first-segment planner or rejoin path.
 POST_LOCAL_FRESH3_HANDLER = None
+# Optional protocol-level predictor.  The legacy/default path remains the
+# original single-sphere STRO model.  V3 installs an adaptive multi-sphere
+# predictor without changing archived V2 semantics.
+RISK_SPHERE_PREDICTOR = None
 
 SCENARIOS = {
     "D1": {
@@ -3300,17 +3304,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ):
                 log["events"].append({"type": "AUDIT_VISUALIZER_CLOSED", "frame": frame_index, "t_s": now_rel})
                 break
-            risk_spheres = predict_risk_spheres(
-                prediction_tracks,
-                horizon=args.prediction_horizon_s,
-                step=args.prediction_step_s,
-                margin=args.prediction_margin_m,
-                uncertainty=args.prediction_uncertainty_m,
-                static_speed_threshold=float(safety.get("prediction_static_speed_threshold", 0.08)),
-                static_margin=float(safety.get("prediction_static_margin", 0.0)),
-                velocity_radius_scale=float(safety.get("prediction_velocity_radius_scale", 0.1)),
-                already_classified=True,
-            )
+            if callable(RISK_SPHERE_PREDICTOR):
+                risk_spheres = RISK_SPHERE_PREDICTOR(
+                    stable_objects=stable,
+                    prediction_tracks=prediction_tracks,
+                    dynamic_audits=dynamic_audits,
+                    clusters=eval_clusters,
+                    args=args,
+                    safety=safety,
+                )
+            else:
+                risk_spheres = predict_risk_spheres(
+                    prediction_tracks,
+                    horizon=args.prediction_horizon_s,
+                    step=args.prediction_step_s,
+                    margin=args.prediction_margin_m,
+                    uncertainty=args.prediction_uncertainty_m,
+                    static_speed_threshold=float(safety.get("prediction_static_speed_threshold", 0.08)),
+                    static_margin=float(safety.get("prediction_static_margin", 0.0)),
+                    velocity_radius_scale=float(safety.get("prediction_velocity_radius_scale", 0.1)),
+                    already_classified=True,
+                )
             current_best = nearest_cluster_to_links(live_model, q, eval_clusters, density=args.surface_density)
             predicted_best = (
                 future_reference_sphere_distance(live_model, reference, risk_spheres, density=args.surface_density)

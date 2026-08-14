@@ -148,6 +148,63 @@ def test_d2_complete_scene_is_opposing_and_freezes_planner_defaults():
     assert args.planning_robust_target_m == 0.11
 
 
+def test_v3_adaptive_geometry_and_uncertainty_do_not_restore_legacy_fat_sphere():
+    v3 = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
+    # A 22 cm tall, 8 cm wide object representative of r09.
+    z = np.linspace(-0.11, 0.11, 80)
+    points = np.column_stack((0.04 * np.sin(np.arange(80)),
+                              0.04 * np.cos(np.arange(80)), z))
+    geometry = v3.adaptive_geometry_adapter(points, fit_margin_m=0.005, max_components=4)
+    assert 1 <= geometry["component_count"] <= 4
+    assert geometry["covered"]
+    assert geometry["multi_sphere_max_radius"] < geometry["single_sphere_radius"]
+
+    class Obj:
+        id = 7
+
+    audit = {
+        7: {
+            "associated_cluster_index": 0,
+            "center": np.mean(points, axis=0),
+            "window_velocity": np.array([0.0, 0.1, 0.0]),
+            "dynamic_state": True,
+            "checks": {"age_ok": True, "association_ok": True},
+        }
+    }
+    args = trial.build_parser().parse_args(["--scene", "D2", "--mode", "shadow"])
+    spheres = v3.adaptive_multisphere_predictor(
+        stable_objects=[Obj()], prediction_tracks=[], dynamic_audits=audit,
+        clusters=[points], args=args, safety={}
+    )
+    assert spheres
+    max_base = float(max(geometry["component_base_radii"]))
+    assert max(s.radius for s in spheres) <= max_base + 0.020 + 0.1 * 0.1 * 0.5 + 1e-9
+    assert max(s.radius for s in spheres) < 0.15
+
+
+def test_v3_keeps_quasi_static_track_in_prediction():
+    v3 = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
+    points = np.array([[0.0, 0.0, 0.0], [0.04, 0.0, 0.0], [0.0, 0.04, 0.0]])
+    class Obj:
+        id = 3
+    audit = {3: {"associated_cluster_index": 0, "center": points.mean(0),
+                 "window_velocity": np.array([0.0, 0.02, 0.0]), "dynamic_state": False,
+                 "checks": {"age_ok": True, "association_ok": True}}}
+    args = trial.build_parser().parse_args(["--scene", "D2", "--mode", "shadow"])
+    spheres = v3.adaptive_multisphere_predictor(
+        stable_objects=[Obj()], prediction_tracks=[], dynamic_audits=audit,
+        clusters=[points], args=args, safety={}
+    )
+    assert spheres
+    component_count = len([s for s in spheres if np.isclose(s.tau, args.prediction_step_s)])
+    first_centers = np.asarray([s.center for s in spheres[:component_count]])
+    for start in range(component_count, len(spheres), component_count):
+        assert np.allclose(
+            np.asarray([s.center for s in spheres[start:start + component_count]]),
+            first_centers,
+        )
+
+
 def test_event_terminal_nubs_has_zero_boundary_rates_and_exact_goal():
     q0 = np.zeros(6)
     q1 = np.linspace(0.05, 0.30, 6)
