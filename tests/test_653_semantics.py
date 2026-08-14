@@ -72,6 +72,9 @@ event_replan_live = importlib.import_module(
 event_replan_r04 = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_replay_653_event_replan_from_r04"
 )
+d2_complete = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_d2_complete_live"
+)
 
 
 def test_event_replan_extension_is_default_off_and_bounded():
@@ -128,6 +131,17 @@ def test_r04_offline_replay_validates_archived_hashes():
     result = event_replan_r04.validate_archive(event_replan_r04.DEFAULT_SOURCE)
     assert result["accepted"]
     assert all(item["match"] for item in result["checks"].values())
+
+
+def test_d2_complete_scene_is_opposing_and_freezes_planner_defaults():
+    args = d2_complete.build_parser().parse_args(["--repeat", "1"])
+    assert args.task_geometry_id == "D2_COMPLETE_V1_OPPOSING_OBLIQUE_XP10"
+    assert args.post_local_monitor_max_s == 6.0
+    direction = np.asarray(d2_complete.SCENE_PROTOCOL["obstacle_direction_unit_base"])
+    robot_task = np.array([0.0, -1.0, 0.0])
+    assert float(np.dot(direction, robot_task)) < 0.0
+    assert args.forward_m == 0.05
+    assert args.planning_robust_target_m == 0.11
 
 
 def test_event_terminal_nubs_has_zero_boundary_rates_and_exact_goal():

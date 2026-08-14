@@ -3175,7 +3175,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "max_joint_error_rad": start_joint_error,
                         }
                     )
-                    print("[REFERENCE ARMED] introduce D1 foam obstacle now", flush=True)
+                    print(
+                        f"[REFERENCE ARMED] introduce {args.scene} foam obstacle now: "
+                        f"{SCENARIOS[args.scene]['prompt']}",
+                        flush=True,
+                    )
             elif reference is not None and reference_armed:
                 loop_dt = max(frame_started - previous_frame_perf, 1.0e-3)
                 time_based_step = int(math.ceil(args.reference_step_slack * loop_dt / reference.dt_median))
