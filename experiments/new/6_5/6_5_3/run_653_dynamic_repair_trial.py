@@ -3708,6 +3708,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     (float(offset), reference.state_after(float(offset)))
                     for offset in rejoin_offsets
                 ]
+                # Keep one explicit all-link set for the complete stopped
+                # repair event.  The post-local Fresh #3 continuation handler
+                # runs later in this same event and must receive the identical
+                # safety scope; previously the two planner calls constructed
+                # this set inline, leaving the handler with an undefined local
+                # name after a successful real local execution.
+                risk_links = set(
+                    stage4_model.surface_by_link(q_repair_start, density="coarse")
+                )
                 local_artifacts: dict[str, Any] = {}
                 candidate_summary = run_fast_repair(
                     args,
@@ -3718,7 +3727,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     center=obstacle["center"],
                     velocity=obstacle["window_velocity"],
                     radius=obstacle["inflated_radius"],
-                    risk_links=set(stage4_model.surface_by_link(q_repair_start, density="coarse")),
+                    risk_links=risk_links,
                     trial_dir=trial_dir,
                     reference_goal=reference_goal,
                     rejoin_goals=rejoin_goals,
@@ -3865,7 +3874,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 if fresh2.get("accepted", False) and fresh2_geometry is not None
                                 else multisphere_geometry
                             ),
-                            risk_links=set(stage4_model.surface_by_link(q_repair_start, density="coarse")),
+                            risk_links=risk_links,
                             trial_dir=trial_dir,
                         )
                         write_json(trial_dir / "rolling_fast" / "rolling_summary.json", rolling)
