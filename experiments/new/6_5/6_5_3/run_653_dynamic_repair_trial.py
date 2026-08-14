@@ -112,6 +112,10 @@ POST_LOCAL_FRESH3_HANDLER = None
 # original single-sphere STRO model.  V3 installs an adaptive multi-sphere
 # predictor without changing archived V2 semantics.
 RISK_SPHERE_PREDICTOR = None
+# V2 requires the established dynamic-track hysteresis before STRO can
+# trigger. V3 sets this false so age+association make a track risk-eligible;
+# speed then selects dynamic or quasi-static prediction rather than existence.
+RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK = True
 
 SCENARIOS = {
     "D1": {
@@ -718,6 +722,56 @@ def make_prediction_ready_objects(objects: list[Any], audits: dict[int, dict[str
         snapshot.velocity = np.asarray(audit["window_velocity"], dtype=np.float64).copy()
         ready.append(snapshot)
     return ready
+
+
+def risk_track_is_eligible(
+    audit: dict[str, Any] | None, *, require_dynamic_track: bool
+) -> bool:
+    """Separate obstacle risk eligibility from V2 dynamic classification."""
+    if audit is None:
+        return False
+    if require_dynamic_track:
+        return bool(audit.get("prediction_ready", False))
+    checks = audit.get("checks", {})
+    return bool(checks.get("age_ok", False) and checks.get("association_ok", False))
+
+
+def build_runtime_risk_spheres(
+    *,
+    stable_objects: list[Any],
+    prediction_tracks: list[Any],
+    dynamic_audits: dict[int, dict[str, Any]],
+    clusters: list[Any],
+    args: argparse.Namespace,
+    safety: dict[str, Any],
+) -> list[RiskSphere]:
+    """Dispatch STRO prediction while preserving the exact V2 default path."""
+    if callable(RISK_SPHERE_PREDICTOR):
+        return RISK_SPHERE_PREDICTOR(
+            stable_objects=stable_objects,
+            prediction_tracks=prediction_tracks,
+            dynamic_audits=dynamic_audits,
+            clusters=[
+                np.asarray(cluster.points, dtype=np.float64) for cluster in clusters
+            ],
+            args=args,
+            safety=safety,
+        )
+    return predict_risk_spheres(
+        prediction_tracks,
+        horizon=args.prediction_horizon_s,
+        step=args.prediction_step_s,
+        margin=args.prediction_margin_m,
+        uncertainty=args.prediction_uncertainty_m,
+        static_speed_threshold=float(
+            safety.get("prediction_static_speed_threshold", 0.08)
+        ),
+        static_margin=float(safety.get("prediction_static_margin", 0.0)),
+        velocity_radius_scale=float(
+            safety.get("prediction_velocity_radius_scale", 0.1)
+        ),
+        already_classified=True,
+    )
 
 
 def object_track_id(obj: Any) -> int | None:
@@ -2951,6 +3005,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "formal_protocol": formal_protocol_signature(args),
         "formal_protocol_id": FORMAL_PROTOCOL_ID,
         "protocol_scene_independent": True,
+        "risk_sphere_predictor": (
+            "legacy_single_sphere_v2"
+            if RISK_SPHERE_PREDICTOR is None
+            else getattr(RISK_SPHERE_PREDICTOR, "__name__", type(RISK_SPHERE_PREDICTOR).__name__)
+        ),
+        "risk_trigger_requires_dynamic_track": bool(
+            RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK
+        ),
         "events": [],
         "git_commit": git_commit_hash(),
         "git_dirty": git_is_dirty(),
@@ -3304,27 +3366,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ):
                 log["events"].append({"type": "AUDIT_VISUALIZER_CLOSED", "frame": frame_index, "t_s": now_rel})
                 break
-            if callable(RISK_SPHERE_PREDICTOR):
-                risk_spheres = RISK_SPHERE_PREDICTOR(
-                    stable_objects=stable,
-                    prediction_tracks=prediction_tracks,
-                    dynamic_audits=dynamic_audits,
-                    clusters=eval_clusters,
-                    args=args,
-                    safety=safety,
-                )
-            else:
-                risk_spheres = predict_risk_spheres(
-                    prediction_tracks,
-                    horizon=args.prediction_horizon_s,
-                    step=args.prediction_step_s,
-                    margin=args.prediction_margin_m,
-                    uncertainty=args.prediction_uncertainty_m,
-                    static_speed_threshold=float(safety.get("prediction_static_speed_threshold", 0.08)),
-                    static_margin=float(safety.get("prediction_static_margin", 0.0)),
-                    velocity_radius_scale=float(safety.get("prediction_velocity_radius_scale", 0.1)),
-                    already_classified=True,
-                )
+            risk_spheres = build_runtime_risk_spheres(
+                stable_objects=stable,
+                prediction_tracks=prediction_tracks,
+                dynamic_audits=dynamic_audits,
+                clusters=eval_clusters,
+                args=args,
+                safety=safety,
+            )
             current_best = nearest_cluster_to_links(live_model, q, eval_clusters, density=args.surface_density)
             predicted_best = (
                 future_reference_sphere_distance(live_model, reference, risk_spheres, density=args.surface_density)
@@ -3518,8 +3567,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 trigger_block_reason = "local_reference_sanity_failed"
             elif len(stable) == 0:
                 trigger_block_reason = "no_stable_track"
-            elif len(prediction_tracks) == 0:
+            elif RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK and len(prediction_tracks) == 0:
                 trigger_block_reason = "predicted_track_not_dynamic"
+            elif not RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK and len(risk_spheres) == 0:
+                trigger_block_reason = "no_risk_eligible_track"
             elif not np.isfinite(trigger_distance):
                 trigger_block_reason = "no_finite_future_reference_risk"
             elif guard_stop_this_frame:
@@ -3622,13 +3673,32 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "return": stop_ret,
                         }
                     )
-                selected_obj = select_stable_object(prediction_tracks, predicted_best, risk_spheres)
+                risk_selection_objects = (
+                    prediction_tracks
+                    if RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK
+                    else stable
+                )
+                selected_obj = select_stable_object(
+                    risk_selection_objects, predicted_best, risk_spheres
+                )
                 obstacle = track_geometry(selected_obj, eval_clusters, args.default_obstacle_radius_m)
                 trigger_audit = dynamic_audits.get(obstacle["track_id"])
-                if trigger_audit is None or not trigger_audit["prediction_ready"]:
-                    raise RuntimeError("selected Fast obstacle is not the frozen prediction-ready track")
-                obstacle["window_velocity"] = np.asarray(trigger_audit["window_velocity"], dtype=np.float64).copy()
-                obstacle["prediction_ready"] = True
+                if not risk_track_is_eligible(
+                    trigger_audit,
+                    require_dynamic_track=RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK,
+                ):
+                    raise RuntimeError("selected Fast obstacle is not risk-eligible")
+                prediction_velocity = np.asarray(
+                    trigger_audit["window_velocity"], dtype=np.float64
+                ).copy()
+                if not trigger_audit.get("dynamic_state", False):
+                    prediction_velocity = np.zeros(3, dtype=np.float64)
+                obstacle["window_velocity"] = prediction_velocity
+                obstacle["prediction_ready"] = bool(trigger_audit["prediction_ready"])
+                obstacle["risk_eligible"] = True
+                obstacle["motion_class"] = (
+                    "dynamic" if trigger_audit.get("dynamic_state", False) else "quasi_static"
+                )
                 if obstacle["association_error_m"] > args.max_track_cluster_association_m:
                     raise RuntimeError(
                         f"selected track/cluster association error {obstacle['association_error_m']:.4f} m "

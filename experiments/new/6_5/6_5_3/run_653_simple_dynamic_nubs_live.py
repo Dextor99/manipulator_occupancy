@@ -145,11 +145,9 @@ def make_r06_fast_wrapper(
     ) -> dict[str, Any]:
         del rejoin_goals, forecast_override
         component_count = int((multisphere_geometry or {}).get("component_count", 0))
-        component_count_ok = (
-            multisphere_geometry is not None
-            and component_count >= 1
-            and (required_component_count is None or component_count == required_component_count)
-        )
+        component_count_ok = multisphere_component_count_allowed(
+            component_count, required_component_count
+        ) and multisphere_geometry is not None
         if not component_count_ok:
             return {
                 "status": "REJECTED_SIMPLE_LIVE_MULTISPHERE_REQUIRED",
@@ -224,14 +222,11 @@ def make_r06_fast_wrapper(
                     "profile": profile,
                 }
             )
-        if coarse_gate_is_hard:
-            selected = simple.select_robust_candidate(rows, robust_target_m)
-        else:
-            ranked = [row for row in rows if row["task_progress_ok"]]
-            selected = max(
-                ranked,
-                key=lambda row: (row["coarse_min_distance_m"], row["task_progress_m"]),
-            ) if ranked else None
+        selected = select_planning_seed(
+            rows,
+            robust_target_m=robust_target_m,
+            coarse_gate_is_hard=coarse_gate_is_hard,
+        )
         audit = {
             "candidate_source": "generated_in_current_live_run_from_post_stop_actual_q",
             "q_actual_post_stop_rad": q_values.tolist(),
@@ -302,6 +297,40 @@ def make_r06_fast_wrapper(
         return result
 
     return run_r06_fast
+
+
+def multisphere_component_count_allowed(
+    component_count: int, required_component_count: int | None
+) -> bool:
+    """Validate geometry cardinality without changing the V2 two-sphere default."""
+    return component_count >= 1 and (
+        required_component_count is None or component_count == required_component_count
+    )
+
+
+def select_planning_seed(
+    rows: list[dict[str, Any]],
+    *,
+    robust_target_m: float,
+    coarse_gate_is_hard: bool,
+) -> dict[str, Any] | None:
+    """Select the seed that is allowed to reach Fast.
+
+    V2 retains the established 0.11 m hard gate.  V3 ranks all candidates
+    having positive task progress, so a sub-0.11 m coarse seed still reaches
+    the unchanged Fast optimizer and final 0.09 m verifier.
+    """
+    if coarse_gate_is_hard:
+        return simple.select_robust_candidate(rows, robust_target_m)
+    ranked = [row for row in rows if row["task_progress_ok"]]
+    return (
+        max(
+            ranked,
+            key=lambda row: (row["coarse_min_distance_m"], row["task_progress_m"]),
+        )
+        if ranked
+        else None
+    )
 
 
 def make_guarded_executor(original_executor: Any, live_trial_dir: Path):

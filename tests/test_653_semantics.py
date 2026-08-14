@@ -75,6 +75,12 @@ event_replan_r04 = importlib.import_module(
 d2_complete = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_d2_complete_live"
 )
+dynamic_nubs_v3 = importlib.import_module(
+    "experiments.new.6_5.6_5_3.dynamic_nubs_v3"
+)
+dynamic_nubs_v3_runner = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_dynamic_nubs_closed_loop_live"
+)
 
 
 def test_event_replan_extension_is_default_off_and_bounded():
@@ -1680,6 +1686,187 @@ def test_simple_live_fixed_geometry_adapter_always_returns_two_spheres():
     geometry = simple_live.fixed_two_sphere_adapter(points, max_components=4)
     assert geometry["component_count"] == 2
     assert geometry["covered"]
+
+
+def test_v2_predictor_and_fast_factory_defaults_remain_unchanged():
+    assert trial.RISK_SPHERE_PREDICTOR is None
+    assert trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK is True
+    signature = inspect.signature(simple_live.make_r06_fast_wrapper)
+    assert signature.parameters["required_component_count"].default == 2
+    assert signature.parameters["coarse_gate_is_hard"].default is True
+    assert signature.parameters["clearance_improvement_is_hard"].default is True
+
+
+def test_v2_runtime_predictor_dispatch_keeps_legacy_arguments(monkeypatch):
+    captured = {}
+    marker = [object()]
+
+    def legacy(tracks, **kwargs):
+        captured["tracks"] = tracks
+        captured.update(kwargs)
+        return marker
+
+    monkeypatch.setattr(trial, "RISK_SPHERE_PREDICTOR", None)
+    monkeypatch.setattr(trial, "predict_risk_spheres", legacy)
+    tracks = [object()]
+    result = trial.build_runtime_risk_spheres(
+        stable_objects=[],
+        prediction_tracks=tracks,
+        dynamic_audits={},
+        clusters=[],
+        args=SimpleNamespace(
+            prediction_horizon_s=0.5,
+            prediction_step_s=0.1,
+            prediction_margin_m=0.035,
+            prediction_uncertainty_m=0.020,
+        ),
+        safety={
+            "prediction_static_speed_threshold": 0.08,
+            "prediction_static_margin": 0.0,
+            "prediction_velocity_radius_scale": 0.1,
+        },
+    )
+    assert result is marker
+    assert captured == {
+        "tracks": tracks,
+        "horizon": 0.5,
+        "step": 0.1,
+        "margin": 0.035,
+        "uncertainty": 0.020,
+        "static_speed_threshold": 0.08,
+        "static_margin": 0.0,
+        "velocity_radius_scale": 0.1,
+        "already_classified": True,
+    }
+
+
+def test_v3_quasi_static_risk_eligibility_is_independent_of_dynamic_ready():
+    audit = {
+        "prediction_ready": False,
+        "dynamic_state": False,
+        "checks": {"age_ok": True, "association_ok": True, "speed_ok": False},
+    }
+    assert not trial.risk_track_is_eligible(audit, require_dynamic_track=True)
+    assert trial.risk_track_is_eligible(audit, require_dynamic_track=False)
+    audit["checks"]["association_ok"] = False
+    assert not trial.risk_track_is_eligible(audit, require_dynamic_track=False)
+
+
+@pytest.mark.parametrize("component_count", (1, 2, 3, 4))
+def test_v3_adaptive_policy_allows_one_to_four_components(component_count):
+    assert simple_live.multisphere_component_count_allowed(component_count, None)
+    assert simple_live.multisphere_component_count_allowed(component_count, 2) == (
+        component_count == 2
+    )
+
+
+def test_v3_soft_coarse_seed_reaches_fast_selection_below_preferred_target():
+    rows = [
+        {
+            "candidate": 1,
+            "task_progress_ok": True,
+            "coarse_min_distance_m": 0.097,
+            "task_progress_m": 0.04,
+        },
+        {
+            "candidate": 2,
+            "task_progress_ok": True,
+            "coarse_min_distance_m": 0.082,
+            "task_progress_m": 0.05,
+        },
+    ]
+    assert simple_live.select_planning_seed(
+        rows, robust_target_m=0.11, coarse_gate_is_hard=True
+    ) is None
+    selected = simple_live.select_planning_seed(
+        rows, robust_target_m=0.11, coarse_gate_is_hard=False
+    )
+    assert selected is rows[0]
+
+
+def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
+    monkeypatch, tmp_path
+):
+    calls = {}
+
+    def legacy_factory(original_fast, **kwargs):
+        calls["factory_original"] = original_fast
+        calls["factory_kwargs"] = kwargs
+        return "wrapped-fast"
+
+    original_predictor = trial.RISK_SPHERE_PREDICTOR
+    original_gate = trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK
+    original_adapter = simple_live.fixed_two_sphere_adapter
+    monkeypatch.setattr(simple_live, "make_r06_fast_wrapper", legacy_factory)
+
+    class Track:
+        id = 17
+        age = 6
+        center = np.asarray([0.0, 0.0, 0.30])
+
+    def fake_event_run(args):
+        assert trial.RISK_SPHERE_PREDICTOR is dynamic_nubs_v3.adaptive_multisphere_predictor
+        assert trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK is False
+        assert simple_live.fixed_two_sphere_adapter is dynamic_nubs_v3.adaptive_geometry_adapter
+        calls["factory_result"] = simple_live.make_r06_fast_wrapper(
+            "original-fast", marker="v3"
+        )
+        points = np.asarray(
+            [[x, y, 0.30] for x in (-0.04, 0.0, 0.04) for y in (-0.02, 0.02)]
+        )
+        spheres = trial.build_runtime_risk_spheres(
+            stable_objects=[Track()],
+            prediction_tracks=[],
+            dynamic_audits={
+                17: {
+                    "associated_cluster_index": 0,
+                    "center": Track.center,
+                    "window_velocity": np.asarray([0.1, 0.0, 0.0]),
+                    "dynamic_state": False,
+                    "checks": {"age_ok": True, "association_ok": True},
+                }
+            },
+            clusters=[SimpleNamespace(points=points)],
+            args=SimpleNamespace(
+                prediction_uncertainty_m=0.020,
+                prediction_step_s=0.1,
+                prediction_horizon_s=0.5,
+                multisphere_fit_margin_m=0.005,
+                multisphere_max_components=4,
+            ),
+            safety={},
+        )
+        calls["spheres"] = spheres
+        return {"status": "TEST", "output": str(tmp_path / "v3")}
+
+    monkeypatch.setattr(dynamic_nubs_v3_runner.event, "run", fake_event_run)
+    args = dynamic_nubs_v3_runner.build_parser().parse_args(
+        [
+            "--repeat",
+            "1",
+            "--scene-operator-phrase",
+            dynamic_nubs_v3_runner.SCENE_PHRASE,
+        ]
+    )
+    result = dynamic_nubs_v3_runner.run(args)
+    assert result["status"] == "TEST"
+    assert calls["factory_result"] == "wrapped-fast"
+    assert calls["factory_kwargs"] == {
+        "marker": "v3",
+        "required_component_count": None,
+        "coarse_gate_is_hard": False,
+        "clearance_improvement_is_hard": False,
+    }
+    assert calls["spheres"]
+    component_count = len(calls["spheres"]) // 5
+    assert component_count >= 1
+    np.testing.assert_allclose(
+        calls["spheres"][0].center,
+        calls["spheres"][component_count].center,
+    )
+    assert trial.RISK_SPHERE_PREDICTOR is original_predictor
+    assert trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK is original_gate
+    assert simple_live.fixed_two_sphere_adapter is original_adapter
 
 
 def test_simple_dynamic_summary_allows_missing_fresh_verification():
