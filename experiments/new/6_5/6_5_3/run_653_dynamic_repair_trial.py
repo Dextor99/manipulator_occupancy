@@ -121,6 +121,7 @@ RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK = True
 # and an immediate latest-state authorization policy afterwards.
 PERSISTENT_OBSTACLE_WORKER_FACTORY = None
 LATEST_STATE_AUTHORIZATION_POLICY = None
+POST_AUTHORIZATION_PLAYBACK_SHADOW = None
 
 SCENARIOS = {
     "D1": {
@@ -1192,6 +1193,8 @@ def wait_for_candidate_goal_guarded(
     motion_timeout_s: float,
     poll_s: float,
     min_motion_rad: float,
+    guard_provider: Any | None = None,
+    obstacle_state_provider: Any | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], np.ndarray | None]:
     started = time.perf_counter()
     samples: list[dict[str, Any]] = []
@@ -1204,7 +1207,22 @@ def wait_for_candidate_goal_guarded(
         last = np.asarray(robot.get_joint(), dtype=np.float64)
         err = joint_error(last, q_goal)
         max_motion = max(max_motion, float(np.max(np.abs(last - initial))))
-        guard_distance = execution_hard_guard_distance(processor, denoiser, args)
+        guard_snapshot = (
+            guard_provider()
+            if callable(guard_provider)
+            else {
+                "distance_m": execution_hard_guard_distance(
+                    processor, denoiser, args
+                ),
+                "timestamp": time.time(),
+            }
+        )
+        guard_distance = float(guard_snapshot["distance_m"])
+        obstacle_snapshot = (
+            obstacle_state_provider()
+            if callable(obstacle_state_provider)
+            else None
+        )
         minimum_guard_distance = min(minimum_guard_distance, guard_distance)
         samples.append(
             {
@@ -1214,6 +1232,17 @@ def wait_for_candidate_goal_guarded(
                 "goal_max_abs_error_rad": err["max_abs_rad"],
                 "max_motion_from_start_rad": max_motion,
                 "hard_guard_distance_m": guard_distance,
+                "hard_guard_timestamp": guard_snapshot.get("timestamp"),
+                "obstacle_state_timestamp": (
+                    None
+                    if obstacle_snapshot is None
+                    else obstacle_snapshot.get("timestamp")
+                ),
+                "obstacle_state_age_s": (
+                    None
+                    if obstacle_snapshot is None
+                    else obstacle_snapshot.get("state_age_s")
+                ),
             }
         )
         if guard_distance <= args.guided_hard_stop_m:
@@ -1520,6 +1549,8 @@ def execute_authorized_trajectory_offline_track(
     playback_duration_s: float | None = None,
     controller_period_s: float | None = None,
     execution_label: str = "authorized trajectory",
+    guard_provider: Any | None = None,
+    obstacle_state_provider: Any | None = None,
 ) -> dict[str, Any]:
     times, qs = load_fast_candidate_csv(trajectory_csv)
     source_duration = float(times[-1] - times[0])
@@ -1601,6 +1632,8 @@ def execute_authorized_trajectory_offline_track(
         motion_timeout_s=args.candidate_motion_timeout_s,
         poll_s=args.poll_s,
         min_motion_rad=args.candidate_min_observed_motion_rad,
+        guard_provider=guard_provider,
+        obstacle_state_provider=obstacle_state_provider,
     )
     log["goal_check"] = goal_check
     log["feedback_samples"] = feedback_samples
@@ -4307,6 +4340,65 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "authorization": local_authorization,
                         }
                     )
+                playback_shadow = None
+                if (
+                    callable(POST_AUTHORIZATION_PLAYBACK_SHADOW)
+                    and persistent_worker is not None
+                    and args.mode == "live-stop-replan-execute"
+                    and local_authorization.get("local_execution_authorized", False)
+                ):
+                    try:
+                        playback_shadow = POST_AUTHORIZATION_PLAYBACK_SHADOW(
+                            worker=persistent_worker,
+                            args=args,
+                            stage4_config=stage4_config,
+                            stage4_model=stage4_model,
+                            local_artifacts=local_artifacts,
+                            trial_dir=trial_dir,
+                            task_goal_q=np.asarray(reference.q[-1], dtype=np.float64),
+                        )
+                    finally:
+                        persistent_worker.stop()
+                    persistent_worker = None
+                    candidate_summary["v3_playback_shadow"] = playback_shadow
+                    candidate_summary["command_time_authorized"] = bool(
+                        playback_shadow["status"]
+                        == "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+                    )
+                    for event_type in playback_shadow.get("events", []):
+                        log["events"].append(
+                            {
+                                "type": event_type,
+                                "frame": frame_index,
+                                "t_s": time.perf_counter() - started,
+                            }
+                        )
+                    log["events"].append(
+                        {
+                            "type": playback_shadow["status"],
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "playback_shadow": playback_shadow,
+                        }
+                    )
+                    if not candidate_summary["command_time_authorized"]:
+                        local_authorization = {
+                            **local_authorization,
+                            "status": "V3_PRECOMMAND_OR_PLAYBACK_SHADOW_HOLD",
+                            "local_execution_authorized": False,
+                            "reason": playback_shadow.get(
+                                "playback_failure_reasons", []
+                            ),
+                        }
+                        candidate_summary["local_execution_authorized"] = False
+                        candidate_summary["accepted_for_switch"] = False
+                    write_json(
+                        trial_dir / "candidate" / "candidate_summary.json",
+                        candidate_summary,
+                    )
+                if persistent_worker is not None:
+                    persistent_worker.stop()
+                    persistent_worker = None
                 if args.mode == "moving-shadow-stop":
                     break
                 if args.mode == "live-stop-replan-execute":

@@ -47,6 +47,11 @@ V3_PROTOCOL = {
     "post_plan_authorization": "persistent_latest_state_time_aligned",
     "independent_post_plan_fresh_window": False,
     "maximum_latest_state_replans": 1,
+    "precommand_perception": "active_during_0.35s_settle",
+    "command_time_authorization": True,
+    "candidate_playback_mode": "protected_virtual_remaining_trajectory",
+    "single_rgbd_owner": "persistent_perception_worker",
+    "real_candidate_execution_enabled": False,
     "fixed_x_required": False,
     "execution_forecast": "fresh_geometry_constant_velocity_no_legacy_inflation",
     "execution_forecast_margin_m": 0.0,
@@ -267,6 +272,8 @@ class PersistentPerceptionWorker:
         self._thread: threading.Thread | None = None
         self._error: str | None = None
         self._audits: list[dict[str, Any]] = []
+        self._latest_frame_timestamp = float(initial_fresh["last_timestamp"])
+        self._latest_raw_guard_distance_m = float("inf")
         self._samples = [
             {
                 "timestamp": float(row["timestamp"]),
@@ -316,9 +323,40 @@ class PersistentPerceptionWorker:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             result = self._state.snapshot()
+            result["latest_frame_timestamp"] = self._latest_frame_timestamp
+            result["latest_frame_age_s"] = max(
+                0.0, time.time() - self._latest_frame_timestamp
+            )
+            result["raw_guard_distance_m"] = self._latest_raw_guard_distance_m
             result["worker_error"] = self._error
             result["update_count"] = len(self._audits)
             return result
+
+    def diagnostics(self, *, since: int = 0) -> dict[str, Any]:
+        with self._lock:
+            rows = [dict(row) for row in self._audits[max(0, int(since)) :]]
+            return {
+                "start_index": max(0, int(since)),
+                "end_index": len(self._audits),
+                "updates": rows,
+                "association_failures": sum(
+                    1 for row in rows if not row.get("associated", False)
+                ),
+                "geometry_coverage_failures": sum(
+                    1
+                    for row in rows
+                    if row.get("associated", False)
+                    and not row.get("geometry_covered", False)
+                ),
+            }
+
+    def guard_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "distance_m": float(self._latest_raw_guard_distance_m),
+                "timestamp": float(self._latest_frame_timestamp),
+                "age_s": max(0.0, time.time() - self._latest_frame_timestamp),
+            }
 
     def initial_snapshot(self) -> dict[str, Any]:
         return {
@@ -343,6 +381,11 @@ class PersistentPerceptionWorker:
                     break
                 self._updated.wait(timeout=remaining)
             result = self._state.snapshot()
+            result["latest_frame_timestamp"] = self._latest_frame_timestamp
+            result["latest_frame_age_s"] = max(
+                0.0, time.time() - self._latest_frame_timestamp
+            )
+            result["raw_guard_distance_m"] = self._latest_raw_guard_distance_m
             result["worker_error"] = self._error
             result["update_count"] = len(self._audits)
             return result
@@ -390,6 +433,10 @@ class PersistentPerceptionWorker:
             "raw_guard_distance_m": float(guard),
             "associated": False,
         }
+        with self._updated:
+            self._latest_frame_timestamp = timestamp
+            self._latest_raw_guard_distance_m = float(guard)
+            self._updated.notify_all()
         if not clusters:
             with self._lock:
                 self._audits.append(audit)
@@ -483,6 +530,7 @@ def latest_state_authorize_with_one_replan(
     candidate_summary: dict[str, Any],
     local_artifacts: dict[str, Any],
     planning_state: dict[str, Any],
+    stop_worker_when_done: bool = False,
 ) -> dict[str, Any]:
     """Authorize against the latest stream state; replan at most once."""
     attempts: list[dict[str, Any]] = []
@@ -624,7 +672,8 @@ def latest_state_authorize_with_one_replan(
             if local_authorization.get("local_execution_authorized", False):
                 break
     finally:
-        worker.stop()
+        if stop_worker_when_done:
+            worker.stop()
 
     authorized = bool(local_authorization.get("local_execution_authorized", False))
     result = {
@@ -663,6 +712,376 @@ def latest_state_authorize_with_one_replan(
             if key not in {"candidate_summary", "local_artifacts"}
         },
     )
+    return result
+
+
+def _playback_snapshot(
+    worker: PersistentPerceptionWorker,
+    args: Any,
+    *,
+    evaluation_timestamp: float | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], bool, list[str]]:
+    snapshot = worker.snapshot()
+    aligned = time_aligned_snapshot(
+        snapshot,
+        execution_timestamp=(
+            time.time() if evaluation_timestamp is None else evaluation_timestamp
+        ),
+    )
+    reasons: list[str] = []
+    if snapshot.get("worker_error"):
+        reasons.append("persistent_worker_error")
+    if float(aligned["propagation_dt_s"]) > 0.25:
+        reasons.append("obstacle_state_stale")
+    if float(snapshot.get("latest_frame_age_s", float("inf"))) > 0.25:
+        reasons.append("camera_frame_stale")
+    if not aligned["geometry"].get("covered", False):
+        reasons.append("geometry_not_covered")
+    if float(snapshot.get("raw_guard_distance_m", float("-inf"))) <= float(
+        args.guided_hard_stop_m
+    ):
+        reasons.append("raw_hard_guard_not_safe")
+    return snapshot, aligned, not reasons, reasons
+
+
+def _remaining_clearance(
+    evaluator: Any,
+    trajectory: Any,
+    forecast: Any,
+    *,
+    playback_time_s: float,
+    sample_step_s: float = 0.05,
+) -> dict[str, Any]:
+    start = float(np.clip(playback_time_s, 0.0, trajectory.total_duration))
+    remaining = float(trajectory.total_duration) - start
+    taus = np.arange(0.0, remaining + 0.5 * sample_step_s, sample_step_s)
+    if len(taus) == 0 or taus[-1] < remaining - 1.0e-9:
+        taus = np.r_[taus, remaining]
+    best = {"min_distance_m": float("inf"), "tau_s": None, "nearest_link": None}
+    for tau in taus:
+        risk = evaluator.configuration(
+            np.asarray(trajectory.evaluate(start + float(tau)), dtype=np.float64),
+            forecast,
+            float(tau),
+            density="medium",
+            with_gradient=False,
+        )
+        if float(risk.min_distance) < best["min_distance_m"]:
+            best = {
+                "min_distance_m": float(risk.min_distance),
+                "tau_s": float(tau),
+                "nearest_link": risk.nearest_link,
+            }
+    return best
+
+
+def _fixed_configuration_clearance(
+    evaluator: Any,
+    q: np.ndarray,
+    forecast: Any,
+    *,
+    horizon_s: float,
+    sample_step_s: float = 0.05,
+) -> dict[str, Any]:
+    taus = np.arange(0.0, float(horizon_s) + 0.5 * sample_step_s, sample_step_s)
+    best = {"min_distance_m": float("inf"), "tau_s": None, "nearest_link": None}
+    for tau in taus:
+        risk = evaluator.configuration(
+            np.asarray(q, dtype=np.float64),
+            forecast,
+            float(tau),
+            density="medium",
+            with_gradient=False,
+        )
+        if float(risk.min_distance) < best["min_distance_m"]:
+            best = {
+                "min_distance_m": float(risk.min_distance),
+                "tau_s": float(tau),
+                "nearest_link": risk.nearest_link,
+            }
+    return best
+
+
+def _direct_goal_diagnostic(
+    evaluator: Any,
+    q_tail: np.ndarray,
+    q_goal: np.ndarray,
+    forecast: Any,
+    *,
+    duration_s: float = 1.0,
+    sample_step_s: float = 0.05,
+) -> dict[str, Any]:
+    best = {"min_distance_m": float("inf"), "tau_s": None, "nearest_link": None}
+    for tau in np.arange(0.0, duration_s + 0.5 * sample_step_s, sample_step_s):
+        alpha = float(np.clip(tau / duration_s, 0.0, 1.0))
+        q = (1.0 - alpha) * q_tail + alpha * q_goal
+        risk = evaluator.configuration(
+            q,
+            forecast,
+            float(tau),
+            density="medium",
+            with_gradient=False,
+        )
+        if float(risk.min_distance) < best["min_distance_m"]:
+            best = {
+                "min_distance_m": float(risk.min_distance),
+                "tau_s": float(tau),
+                "nearest_link": risk.nearest_link,
+            }
+    return {
+        **best,
+        "metric_only": True,
+        "trajectory_model": "joint_linear_tail_to_preset_goal_diagnostic",
+    }
+
+
+def run_virtual_candidate_playback_shadow(
+    *,
+    worker: PersistentPerceptionWorker,
+    args: Any,
+    stage4_config: dict[str, Any],
+    stage4_model: Any,
+    local_artifacts: dict[str, Any],
+    trial_dir: Path,
+    task_goal_q: np.ndarray,
+) -> dict[str, Any]:
+    """Keep the robot stopped while shadowing pre-command and 1 s playback."""
+    output_dir = Path(trial_dir) / "v3_playback_shadow"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    trajectory = local_artifacts["candidate_trajectory"]
+    evaluator, _, _ = trial.make_risk_stack(stage4_config, stage4_model, None)
+    baseline = worker.diagnostics()["end_index"]
+    events = ["PERSISTENT_TRACKER_RUNNING"]
+    precommand_samples: list[dict[str, Any]] = []
+    settle_started = time.monotonic()
+    settle_duration = max(0.0, float(args.candidate_pre_execute_settle_s))
+    while time.monotonic() - settle_started < settle_duration:
+        snapshot = worker.snapshot()
+        precommand_samples.append(
+            {
+                "elapsed_s": time.monotonic() - settle_started,
+                "state_timestamp": float(snapshot["timestamp"]),
+                "state_age_s": float(snapshot["state_age_s"]),
+                "frame_age_s": float(snapshot.get("latest_frame_age_s", float("inf"))),
+                "raw_guard_distance_m": float(snapshot["raw_guard_distance_m"]),
+                "worker_update_count": int(snapshot["update_count"]),
+            }
+        )
+        time.sleep(0.02)
+
+    command_snapshot, command_aligned, command_state_ok, command_reasons = (
+        _playback_snapshot(worker, args)
+    )
+    command_authorization = {
+        "status": "PRECOMMAND_RECHECK_FAILED",
+        "local_execution_authorized": False,
+        "reason": command_reasons,
+    }
+    if command_state_ok:
+        command_authorization, _ = trial.authorize_local_repair_execution(
+            args,
+            stage4_config,
+            stage4_model,
+            local_repair_ready=True,
+            local_artifacts=local_artifacts,
+            fresh_geometry=command_aligned["geometry"],
+            fresh_velocity=np.asarray(command_snapshot["velocity"], dtype=np.float64),
+            trial_dir=output_dir / "precommand_authorization",
+        )
+
+    final_snapshot, final_aligned, final_state_ok, final_reasons = _playback_snapshot(
+        worker, args
+    )
+    final_forecast = None
+    final_clearance = None
+    if final_state_ok:
+        final_forecast = v3_execution_multisphere_forecast(
+            np.asarray(final_aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(final_aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(final_snapshot["velocity"], dtype=np.float64),
+        )
+        final_clearance = _remaining_clearance(
+            evaluator, trajectory, final_forecast, playback_time_s=0.0
+        )
+    diagnostics = worker.diagnostics(since=baseline)
+    precommand_min_raw_guard = min(
+        [float(row["raw_guard_distance_m"]) for row in precommand_samples]
+        + [float(final_snapshot["raw_guard_distance_m"])]
+    )
+    precommand_authorized = bool(
+        command_authorization.get("local_execution_authorized", False)
+        and final_state_ok
+        and final_clearance is not None
+        and final_clearance["min_distance_m"] >= float(args.online_accept_m)
+        and precommand_min_raw_guard > float(args.guided_hard_stop_m)
+        and diagnostics["association_failures"] == 0
+        and diagnostics["geometry_coverage_failures"] == 0
+    )
+    precommand_failure_reasons = list(final_reasons)
+    if not command_authorization.get("local_execution_authorized", False):
+        precommand_failure_reasons.append("command_time_full_verifier_rejected")
+    if final_clearance is None or final_clearance["min_distance_m"] < float(
+        args.online_accept_m
+    ):
+        precommand_failure_reasons.append("command_time_clearance_below_online_gate")
+    if precommand_min_raw_guard <= float(args.guided_hard_stop_m):
+        precommand_failure_reasons.append("precommand_raw_hard_guard_not_safe")
+    if diagnostics["association_failures"]:
+        precommand_failure_reasons.append("precommand_tracker_association_failed")
+    if diagnostics["geometry_coverage_failures"]:
+        precommand_failure_reasons.append("precommand_geometry_coverage_failed")
+    precommand_failure_reasons = list(dict.fromkeys(precommand_failure_reasons))
+    if precommand_authorized:
+        events.append("PRECOMMAND_RECHECK_AUTHORIZED")
+    else:
+        events.append("PRECOMMAND_RECHECK_HOLD")
+
+    playback_samples: list[dict[str, Any]] = []
+    playback_failure_reasons: list[str] = list(precommand_failure_reasons)
+    playback_start_update_count = int(final_snapshot["update_count"])
+    minimum_remaining = float("inf")
+    minimum_raw_guard = float(final_snapshot["raw_guard_distance_m"])
+    if precommand_authorized:
+        events.append("VIRTUAL_LOCAL_PLAYBACK_STARTED")
+        playback_started = time.monotonic()
+        while True:
+            playback_t = min(
+                float(trajectory.total_duration), time.monotonic() - playback_started
+            )
+            snapshot, aligned, state_ok, state_reasons = _playback_snapshot(worker, args)
+            minimum_raw_guard = min(
+                minimum_raw_guard, float(snapshot["raw_guard_distance_m"])
+            )
+            clearance = None
+            if state_ok:
+                forecast = v3_execution_multisphere_forecast(
+                    np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+                    np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+                    np.asarray(snapshot["velocity"], dtype=np.float64),
+                )
+                clearance = _remaining_clearance(
+                    evaluator,
+                    trajectory,
+                    forecast,
+                    playback_time_s=playback_t,
+                )
+                minimum_remaining = min(
+                    minimum_remaining, clearance["min_distance_m"]
+                )
+                if clearance["min_distance_m"] < float(args.online_accept_m):
+                    playback_failure_reasons.append("remaining_clearance_below_online_gate")
+            else:
+                playback_failure_reasons.extend(state_reasons)
+            playback_samples.append(
+                {
+                    "playback_time_s": playback_t,
+                    "state_timestamp": float(snapshot["timestamp"]),
+                    "state_age_s": float(aligned["propagation_dt_s"]),
+                    "frame_age_s": float(snapshot.get("latest_frame_age_s", float("inf"))),
+                    "raw_guard_distance_m": float(snapshot["raw_guard_distance_m"]),
+                    "remaining_clearance": clearance,
+                    "worker_update_count": int(snapshot["update_count"]),
+                    "state_reasons": state_reasons,
+                }
+            )
+            if playback_failure_reasons or playback_t >= float(trajectory.total_duration):
+                break
+            time.sleep(0.02)
+
+    playback_diagnostics = worker.diagnostics(since=baseline)
+    if playback_diagnostics["association_failures"]:
+        playback_failure_reasons.append("tracker_association_failed")
+    if playback_diagnostics["geometry_coverage_failures"]:
+        playback_failure_reasons.append("geometry_coverage_failed")
+    playback_failure_reasons = list(dict.fromkeys(playback_failure_reasons))
+    playback_passed = bool(precommand_authorized and not playback_failure_reasons)
+    events.append(
+        "VIRTUAL_LOCAL_PLAYBACK_COMPLETED"
+        if playback_passed
+        else "VIRTUAL_LOCAL_PLAYBACK_HOLD"
+    )
+
+    tail_snapshot, tail_aligned, tail_state_ok, tail_reasons = _playback_snapshot(
+        worker, args
+    )
+    tail_hold = None
+    goal_diagnostic = None
+    if playback_passed and tail_state_ok:
+        tail_forecast = v3_execution_multisphere_forecast(
+            np.asarray(tail_aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(tail_aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(tail_snapshot["velocity"], dtype=np.float64),
+        )
+        q_tail = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
+        tail_hold = _fixed_configuration_clearance(
+            evaluator,
+            q_tail,
+            tail_forecast,
+            horizon_s=float(args.prediction_horizon_s),
+        )
+        goal_diagnostic = _direct_goal_diagnostic(
+            evaluator,
+            q_tail,
+            np.asarray(task_goal_q, dtype=np.float64),
+            tail_forecast,
+        )
+    events.append(
+        "TAIL_RISK_EVALUATED"
+        if playback_passed and tail_state_ok
+        else "TAIL_RISK_NOT_EVALUATED"
+    )
+    result = {
+        "status": (
+            "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+            if playback_passed
+            else "V3_VIRTUAL_PLAYBACK_SHADOW_HOLD"
+        ),
+        "robot_commanded": False,
+        "events": events,
+        "precommand_wait_s": settle_duration,
+        "precommand_samples": precommand_samples,
+        "precommand_state_age_s": float(final_aligned["propagation_dt_s"]),
+        "precommand_clearance_m": (
+            None if final_clearance is None else final_clearance["min_distance_m"]
+        ),
+        "precommand_min_raw_guard_m": precommand_min_raw_guard,
+        "precommand_authorization": command_authorization,
+        "precommand_failure_reasons": precommand_failure_reasons,
+        "precommand_final_state_reasons": final_reasons,
+        "playback_samples": playback_samples,
+        "playback_tracker_update_count": max(
+            0, int(tail_snapshot["update_count"]) - playback_start_update_count
+        ),
+        "playback_min_predicted_remaining_clearance_m": (
+            None if not np.isfinite(minimum_remaining) else minimum_remaining
+        ),
+        "playback_min_raw_guard_m": minimum_raw_guard,
+        "tracker_association_failures": playback_diagnostics[
+            "association_failures"
+        ],
+        "geometry_coverage_failures": playback_diagnostics[
+            "geometry_coverage_failures"
+        ],
+        "playback_failure_reasons": playback_failure_reasons,
+        "tail_state_valid": tail_state_ok,
+        "tail_state_reasons": tail_reasons,
+        "tail_hold_predicted_clearance_m": (
+            None if tail_hold is None else tail_hold["min_distance_m"]
+        ),
+        "tail_hold_status": (
+            None
+            if tail_hold is None
+            else "TAIL_SHORT_HORIZON_SAFE"
+            if tail_hold["min_distance_m"] >= float(args.replan_in_m)
+            else "NEXT_LOCAL_REPLAN_REQUIRED"
+        ),
+        "goal_continuation_diagnostic": goal_diagnostic,
+        "goal_continuation_predicted_safe": bool(
+            goal_diagnostic is not None
+            and goal_diagnostic["min_distance_m"] >= float(args.online_accept_m)
+        ),
+    }
+    trial.write_json(output_dir / "playback_shadow_summary.json", result)
     return result
 
 

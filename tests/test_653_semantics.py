@@ -933,6 +933,44 @@ def test_guarded_candidate_wait_stops_on_existing_hard_guard(monkeypatch):
     assert len(samples) == 1
 
 
+def test_guarded_candidate_wait_uses_shared_provider_without_camera(monkeypatch):
+    class Robot:
+        def __init__(self):
+            self.stopped = False
+
+        def get_joint(self):
+            return np.zeros(6)
+
+        def move_stop(self, *args):
+            self.stopped = True
+            return 0
+
+    monkeypatch.setattr(
+        trial,
+        "execution_hard_guard_distance",
+        lambda *args, **kwargs: pytest.fail("camera must have a single owner"),
+    )
+    robot = Robot()
+    result, samples = trial.wait_for_candidate_goal_guarded(
+        robot,
+        np.ones(6),
+        processor=object(),
+        denoiser=None,
+        args=SimpleNamespace(guided_hard_stop_m=0.10),
+        goal_tolerance_rad=0.01,
+        min_execution_wait_s=0.0,
+        motion_timeout_s=1.0,
+        poll_s=0.0,
+        min_motion_rad=0.001,
+        guard_provider=lambda: {"distance_m": 0.05, "timestamp": 123.0},
+        obstacle_state_provider=lambda: {"timestamp": 122.9, "state_age_s": 0.1},
+    )
+    assert result["guard_stopped"]
+    assert samples[0]["hard_guard_timestamp"] == 123.0
+    assert samples[0]["obstacle_state_timestamp"] == 122.9
+    assert robot.stopped
+
+
 def test_executor_rejects_authorized_csv_playback_time_mismatch(tmp_path):
     q0 = np.zeros(6)
     q1 = np.ones(6) * 0.01
@@ -1878,6 +1916,7 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     original_execution_forecast = trial.constant_multisphere_forecast
     original_worker_factory = trial.PERSISTENT_OBSTACLE_WORKER_FACTORY
     original_latest_state_policy = trial.LATEST_STATE_AUTHORIZATION_POLICY
+    original_playback_shadow = trial.POST_AUTHORIZATION_PLAYBACK_SHADOW
     original_adapter = simple_live.fixed_two_sphere_adapter
     monkeypatch.setattr(simple_live, "make_r06_fast_wrapper", legacy_factory)
 
@@ -1900,6 +1939,10 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
         assert (
             trial.LATEST_STATE_AUTHORIZATION_POLICY
             is dynamic_nubs_v3.latest_state_authorize_with_one_replan
+        )
+        assert (
+            trial.POST_AUTHORIZATION_PLAYBACK_SHADOW
+            is dynamic_nubs_v3.run_virtual_candidate_playback_shadow
         )
         assert simple_live.fixed_two_sphere_adapter is dynamic_nubs_v3.adaptive_geometry_adapter
         calls["factory_result"] = simple_live.make_r06_fast_wrapper(
@@ -1964,6 +2007,7 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     assert trial.constant_multisphere_forecast is original_execution_forecast
     assert trial.PERSISTENT_OBSTACLE_WORKER_FACTORY is original_worker_factory
     assert trial.LATEST_STATE_AUTHORIZATION_POLICY is original_latest_state_policy
+    assert trial.POST_AUTHORIZATION_PLAYBACK_SHADOW is original_playback_shadow
     assert simple_live.fixed_two_sphere_adapter is original_adapter
 
 
@@ -2157,4 +2201,116 @@ def test_v3_latest_state_policy_replans_exactly_once_from_same_stopped_q(
     assert len(result["attempts"]) == 2
     assert len(replans) == 1
     np.testing.assert_allclose(replans[0]["q_now"], q_stopped)
+    assert not worker.stopped
+    worker.stop()
     assert worker.stopped
+
+
+def test_v3_virtual_playback_shadow_keeps_single_stream_and_checks_tail(
+    monkeypatch, tmp_path
+):
+    class Clock:
+        monotonic_value = 0.0
+        epoch = 1000.0
+
+        def monotonic(self):
+            return self.monotonic_value
+
+        def time(self):
+            return self.epoch + self.monotonic_value
+
+        def sleep(self, seconds):
+            self.monotonic_value += float(seconds)
+
+    clock = Clock()
+    monkeypatch.setattr(dynamic_nubs_v3.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(dynamic_nubs_v3.time, "time", clock.time)
+    monkeypatch.setattr(dynamic_nubs_v3.time, "sleep", clock.sleep)
+
+    geometry = {
+        "covered": True,
+        "component_centers": np.asarray([[0.5, 0.0, 0.3]]),
+        "component_base_radii": np.asarray([0.05]),
+    }
+
+    class Worker:
+        def __init__(self):
+            self.count = 0
+
+        def snapshot(self):
+            self.count += 1
+            timestamp = clock.time() - 0.02
+            return {
+                "timestamp": timestamp,
+                "snapshot_timestamp": clock.time(),
+                "state_age_s": 0.02,
+                "latest_frame_timestamp": timestamp,
+                "latest_frame_age_s": 0.02,
+                "center": np.asarray([0.5, 0.01 * clock.monotonic_value, 0.3]),
+                "velocity": np.asarray([0.0, 0.04, 0.0]),
+                "geometry": geometry,
+                "association_error_m": 0.01,
+                "raw_guard_distance_m": 0.20,
+                "worker_error": None,
+                "update_count": self.count,
+            }
+
+        def diagnostics(self, *, since=0):
+            return {
+                "start_index": since,
+                "end_index": self.count,
+                "updates": [],
+                "association_failures": 0,
+                "geometry_coverage_failures": 0,
+            }
+
+    class Evaluator:
+        def configuration(self, q, forecast, tau, density, with_gradient):
+            return SimpleNamespace(min_distance=0.12, nearest_link="left_link")
+
+    class Trajectory:
+        total_duration = 1.0
+
+        def evaluate(self, time_s, derivative_order=0):
+            return np.zeros(6)
+
+    monkeypatch.setattr(
+        trial, "make_risk_stack", lambda *args, **kwargs: (Evaluator(), None, None)
+    )
+    monkeypatch.setattr(
+        trial,
+        "authorize_local_repair_execution",
+        lambda *args, **kwargs: (
+            {
+                "status": "LOCAL_EXECUTION_AUTHORIZED",
+                "local_execution_authorized": True,
+                "verification_min_distance_m": 0.12,
+            },
+            object(),
+        ),
+    )
+    result = dynamic_nubs_v3.run_virtual_candidate_playback_shadow(
+        worker=Worker(),
+        args=SimpleNamespace(
+            candidate_pre_execute_settle_s=0.35,
+            guided_hard_stop_m=0.10,
+            online_accept_m=0.09,
+            prediction_horizon_s=0.5,
+            replan_in_m=0.14,
+        ),
+        stage4_config={},
+        stage4_model=object(),
+        local_artifacts={"candidate_trajectory": Trajectory()},
+        trial_dir=tmp_path,
+        task_goal_q=np.ones(6),
+    )
+    assert result["status"] == "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+    assert result["precommand_clearance_m"] == pytest.approx(0.12)
+    assert result["playback_min_predicted_remaining_clearance_m"] == pytest.approx(
+        0.12
+    )
+    assert result["playback_min_raw_guard_m"] == pytest.approx(0.20)
+    assert result["playback_tracker_update_count"] > 0
+    assert result["tail_hold_status"] == "NEXT_LOCAL_REPLAN_REQUIRED"
+    assert "PRECOMMAND_RECHECK_AUTHORIZED" in result["events"]
+    assert "VIRTUAL_LOCAL_PLAYBACK_COMPLETED" in result["events"]

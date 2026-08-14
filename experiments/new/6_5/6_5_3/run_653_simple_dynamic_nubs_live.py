@@ -353,12 +353,18 @@ def make_guarded_executor(original_executor: Any, live_trial_dir: Path):
         playback_duration_s: float | None = None,
         controller_period_s: float | None = None,
         execution_label: str = "authorized trajectory",
+        guard_provider: Any | None = None,
+        obstacle_state_provider: Any | None = None,
     ) -> dict[str, Any]:
         candidate_path = Path(trajectory_csv).resolve()
         if not candidate_path.is_relative_to(live_trial_dir.resolve()):
             raise RuntimeError("external or prior-run candidate CSV is forbidden")
         guards = [
-            trial.execution_hard_guard_distance(processor, denoiser, runtime_args)
+            float(guard_provider()["distance_m"])
+            if callable(guard_provider)
+            else trial.execution_hard_guard_distance(
+                processor, denoiser, runtime_args
+            )
             for _ in range(3)
         ]
         minimum_guard = float(min(guards))
@@ -376,6 +382,8 @@ def make_guarded_executor(original_executor: Any, live_trial_dir: Path):
             playback_duration_s=playback_duration_s,
             controller_period_s=controller_period_s,
             execution_label=execution_label,
+            guard_provider=guard_provider,
+            obstacle_state_provider=obstacle_state_provider,
         )
         result["pre_execution_hard_guard_samples_m"] = guards
         result["candidate_source"] = "generated_in_current_live_run"
@@ -476,7 +484,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         log["core_summary"] = str(core_trial_dir / "summary.json")
         event_types = [event.get("type") for event in core.get("events", [])]
         log["event_types"] = event_types
-        if "LIVE_LOCAL_REPAIR_EXECUTED_HOLD" in event_types:
+        if "V3_VIRTUAL_PLAYBACK_SHADOW_PASS" in event_types:
+            log["status"] = "SIMPLE_DYNAMIC_NUBS_V3_PLAYBACK_SHADOW_PASS"
+        elif "V3_VIRTUAL_PLAYBACK_SHADOW_HOLD" in event_types:
+            log["status"] = "SIMPLE_DYNAMIC_NUBS_V3_PLAYBACK_SHADOW_HOLD"
+        elif "LIVE_LOCAL_REPAIR_EXECUTED_HOLD" in event_types:
             log["status"] = "SIMPLE_DYNAMIC_NUBS_LIVE_LOCAL_EXECUTED_HOLD"
         elif "LOCAL_EXECUTION_AUTHORIZED_SHADOW" in event_types and not args.execute:
             log["status"] = "SIMPLE_DYNAMIC_NUBS_LIVE_PLAN_AUTHORIZED_HOLD"

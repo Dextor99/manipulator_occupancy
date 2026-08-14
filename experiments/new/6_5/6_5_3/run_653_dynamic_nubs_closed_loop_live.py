@@ -5,10 +5,10 @@ V3 removes fixed-X scene control, uses adaptive PCA 1--4 sphere STRO/Fast/Fresh
 geometry, and treats the 0.11 m coarse target and 3 mm improvement as ranking
 diagnostics.  The four execution safety conditions remain unchanged.
 
-Real execution is intentionally blocked in this first V3 integration: the
-persistent perception worker must be connected to candidate playback and pass
-replay/shadow tests before V3 may command the robot.  Archived V2/r09 behavior
-is unaffected.
+Real execution remains intentionally blocked.  This phase extends the single
+persistent perception stream through the 0.35 s pre-command interval and a
+1 s virtual candidate playback; only a later reviewed phase may command the
+candidate.  Archived V2/r09 behavior is unaffected.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ def validate(args: argparse.Namespace) -> None:
         raise RuntimeError(f"bad V3 scene phrase; required: {SCENE_PHRASE}")
     if args.execute:
         raise RuntimeError(
-            "V3 real execution is not authorized yet: persistent perception "
-            "during local playback must pass replay and shadow validation first"
+            "V3 real execution is not authorized yet: the protected pre-command "
+            "and virtual-playback shadow must pass and be reviewed first"
         )
     if abs(float(args.planning_robust_target_m) - 0.11) > 1.0e-12:
         raise RuntimeError("V3 preferred seed target remains frozen at 0.11 m")
@@ -64,6 +64,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     original_execution_forecast = trial.constant_multisphere_forecast
     original_worker_factory = trial.PERSISTENT_OBSTACLE_WORKER_FACTORY
     original_latest_state_policy = trial.LATEST_STATE_AUTHORIZATION_POLICY
+    original_playback_shadow = trial.POST_AUTHORIZATION_PLAYBACK_SHADOW
     original_adapter = live.fixed_two_sphere_adapter
     original_factory = live.make_r06_fast_wrapper
     try:
@@ -76,6 +77,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         trial.LATEST_STATE_AUTHORIZATION_POLICY = (
             v3.latest_state_authorize_with_one_replan
         )
+        trial.POST_AUTHORIZATION_PLAYBACK_SHADOW = (
+            v3.run_virtual_candidate_playback_shadow
+        )
         live.fixed_two_sphere_adapter = v3.adaptive_geometry_adapter
         live.make_r06_fast_wrapper = v3.make_v3_fast_factory(original_factory)
         result = event.run(args)
@@ -85,6 +89,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         trial.constant_multisphere_forecast = original_execution_forecast
         trial.PERSISTENT_OBSTACLE_WORKER_FACTORY = original_worker_factory
         trial.LATEST_STATE_AUTHORIZATION_POLICY = original_latest_state_policy
+        trial.POST_AUTHORIZATION_PLAYBACK_SHADOW = original_playback_shadow
         live.fixed_two_sphere_adapter = original_adapter
         live.make_r06_fast_wrapper = original_factory
     result["v3_protocol"] = v3.V3_PROTOCOL
