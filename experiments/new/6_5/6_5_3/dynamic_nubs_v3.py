@@ -44,12 +44,16 @@ V3_PROTOCOL = {
     "seed_motion_from_fast_reference_is_hard_gate": False,
     "task_progress_is_hard_gate": False,
     "candidate_contract": "verified_bypass_seed_or_fast_repaired_bypass",
-    "post_plan_authorization": "persistent_latest_state_time_aligned",
+    "post_plan_authorization": "next_valid_persistent_update_time_aligned",
     "independent_post_plan_fresh_window": False,
     "maximum_latest_state_replans": 1,
+    "authorization_update_wait_s": 0.20,
+    "perception_watchdog_s": 0.50,
     "precommand_perception": "active_during_0.35s_settle",
     "command_time_authorization": True,
-    "candidate_playback_mode": "protected_virtual_remaining_trajectory",
+    "candidate_playback_mode": "event_driven_virtual_closed_loop_to_goal",
+    "maximum_local_replans": 3,
+    "local_segment_horizon_s": 1.0,
     "single_rgbd_owner": "persistent_perception_worker",
     "real_candidate_execution_enabled": False,
     "fixed_x_required": False,
@@ -272,6 +276,10 @@ class PersistentPerceptionWorker:
         self._thread: threading.Thread | None = None
         self._error: str | None = None
         self._audits: list[dict[str, Any]] = []
+        # Increment only when a fully associated, fitted and covered obstacle
+        # state is published.  Raw frames and rejected associations do not
+        # satisfy a planning/authorization synchronization barrier.
+        self._state_seq = 0
         self._latest_frame_timestamp = float(initial_fresh["last_timestamp"])
         self._latest_raw_guard_distance_m = float("inf")
         self._samples = [
@@ -330,6 +338,7 @@ class PersistentPerceptionWorker:
             result["raw_guard_distance_m"] = self._latest_raw_guard_distance_m
             result["worker_error"] = self._error
             result["update_count"] = len(self._audits)
+            result["state_seq"] = int(self._state_seq)
             return result
 
     def diagnostics(self, *, since: int = 0) -> dict[str, Any]:
@@ -363,16 +372,32 @@ class PersistentPerceptionWorker:
             **self._initial_snapshot,
             "worker_error": None,
             "update_count": 0,
+            "state_seq": 0,
         }
 
     def wait_for_newer_state(
-        self, *, after_timestamp: float, timeout_s: float = 0.20
+        self,
+        *,
+        after_seq: int | None = None,
+        after_timestamp: float | None = None,
+        timeout_s: float = 0.20,
     ) -> dict[str, Any]:
-        """Wait for at most one camera-period-scale update, never a Fresh window."""
+        """Wait for one new valid publish, never an independent Fresh window.
+
+        ``after_timestamp`` remains as a compatibility fallback for archived
+        callers, while V3 authorization and playback use the monotonic
+        ``state_seq`` barrier.
+        """
+        if after_seq is None and after_timestamp is None:
+            raise ValueError("after_seq or after_timestamp is required")
         deadline = time.monotonic() + max(0.0, float(timeout_s))
         with self._updated:
             while (
-                float(self._state.timestamp) <= float(after_timestamp)
+                (
+                    int(self._state_seq) <= int(after_seq)
+                    if after_seq is not None
+                    else float(self._state.timestamp) <= float(after_timestamp)
+                )
                 and self._error is None
                 and not self._stop.is_set()
             ):
@@ -388,6 +413,7 @@ class PersistentPerceptionWorker:
             result["raw_guard_distance_m"] = self._latest_raw_guard_distance_m
             result["worker_error"] = self._error
             result["update_count"] = len(self._audits)
+            result["state_seq"] = int(self._state_seq)
             return result
 
     def _run(self) -> None:
@@ -507,12 +533,50 @@ class PersistentPerceptionWorker:
                     max_association_error_m=float(self.args.max_track_cluster_association_m),
                     raw_guard_distance_m=float(guard),
                 )
+                self._state_seq += 1
+                audit["state_seq"] = int(self._state_seq)
             self._audits.append(audit)
             self._updated.notify_all()
 
 
 def make_persistent_perception_worker(**kwargs: Any) -> PersistentPerceptionWorker:
     return PersistentPerceptionWorker(**kwargs)
+
+
+def _state_seq(snapshot: dict[str, Any]) -> int:
+    """Return the valid-state sequence, with archived update_count fallback."""
+    return int(snapshot.get("state_seq", snapshot.get("update_count", 0)))
+
+
+def _persistent_state_reasons(
+    snapshot: dict[str, Any],
+    aligned: dict[str, Any],
+    args: Any,
+    *,
+    require_newer_than_seq: int | None = None,
+) -> list[str]:
+    """Evaluate physical validity without the former 0.25 s polling race."""
+    reasons: list[str] = []
+    if snapshot.get("worker_error"):
+        reasons.append("persistent_worker_error")
+    if (
+        require_newer_than_seq is not None
+        and _state_seq(snapshot) <= int(require_newer_than_seq)
+    ):
+        reasons.append("no_new_valid_perception_update")
+    # A synchronized state is propagated to the decision timestamp.  Only a
+    # complete loss over the full short prediction horizon is a hard temporal
+    # failure; 0.25 s remains an audit value in the JSON output.
+    watchdog_s = float(getattr(args, "prediction_horizon_s", 0.5))
+    if float(aligned["propagation_dt_s"]) > watchdog_s:
+        reasons.append("perception_watchdog_expired")
+    if not aligned["geometry"].get("covered", False):
+        reasons.append("geometry_not_covered")
+    if float(snapshot.get("raw_guard_distance_m", float("-inf"))) <= float(
+        args.guided_hard_stop_m
+    ):
+        reasons.append("raw_hard_guard_not_safe")
+    return reasons
 
 
 def latest_state_authorize_with_one_replan(
@@ -532,7 +596,7 @@ def latest_state_authorize_with_one_replan(
     planning_state: dict[str, Any],
     stop_worker_when_done: bool = False,
 ) -> dict[str, Any]:
-    """Authorize against the latest stream state; replan at most once."""
+    """Synchronize to a post-plan valid update; replan only on geometry."""
     attempts: list[dict[str, Any]] = []
     current_candidate = candidate_summary
     current_artifacts = local_artifacts
@@ -544,60 +608,30 @@ def latest_state_authorize_with_one_replan(
         "reason": "latest_state_not_checked",
         "robot_executed": False,
     }
+    current_plan_snapshot = planning_state
     try:
         for attempt_index in (1, 2):
-            if attempt_index == 2:
-                previous_timestamp = (
-                    float(latest_snapshot["timestamp"])
-                    if latest_snapshot is not None
-                    else float(worker.initial_snapshot()["timestamp"])
-                )
-                plan_snapshot = worker.wait_for_newer_state(
-                    after_timestamp=previous_timestamp, timeout_s=0.20
-                )
-                if plan_snapshot.get("worker_error"):
-                    break
-                plan_aligned = time_aligned_snapshot(
-                    plan_snapshot, execution_timestamp=time.time()
-                )
-                attempt_dir = Path(trial_dir) / "latest_state_replan" / "attempt_02"
-                attempt_dir.mkdir(parents=True, exist_ok=True)
-                current_artifacts = {}
-                geometry = plan_aligned["geometry"]
-                current_candidate = trial.run_fast_repair(
-                    args,
-                    stage4_config,
-                    stage4_model,
-                    q_now=np.asarray(q_now, dtype=np.float64),
-                    qd_now=np.asarray(qd_now, dtype=np.float64),
-                    center=np.asarray(plan_aligned["propagated_center"], dtype=np.float64),
-                    velocity=np.asarray(plan_snapshot["velocity"], dtype=np.float64),
-                    radius=float(np.max(geometry["component_base_radii"])),
-                    risk_links=risk_links,
-                    trial_dir=attempt_dir,
-                    reference_goal=reference_goal,
-                    rejoin_goals=rejoin_goals,
-                    obstacle_audit={
-                        "v3_latest_state_replan": True,
-                        "planning_state_timestamp": float(plan_snapshot["timestamp"]),
-                        "planning_state_age_s": float(plan_aligned["propagation_dt_s"]),
-                    },
-                    multisphere_geometry=geometry,
-                    artifacts_out=current_artifacts,
-                )
-
-            latest_snapshot = worker.snapshot()
+            plan_seq = _state_seq(current_plan_snapshot)
+            latest_snapshot = worker.wait_for_newer_state(
+                after_seq=plan_seq, timeout_s=0.20
+            )
             latest_aligned = time_aligned_snapshot(
                 latest_snapshot, execution_timestamp=time.time()
             )
-            state_usable = bool(
-                not latest_snapshot.get("worker_error")
-                and float(latest_aligned["propagation_dt_s"]) <= 0.25
-                and latest_aligned["geometry"].get("covered", False)
-                and float(latest_snapshot.get("raw_guard_distance_m", float("inf")))
-                > float(args.guided_hard_stop_m)
+            state_reasons = _persistent_state_reasons(
+                latest_snapshot,
+                latest_aligned,
+                args,
+                require_newer_than_seq=plan_seq,
             )
-            if state_usable and current_candidate.get("local_repair_ready", False):
+            if state_reasons:
+                local_authorization = {
+                    "status": "LOCAL_EXECUTION_RECHECK_FAILED",
+                    "local_execution_authorized": False,
+                    "reason": state_reasons,
+                    "robot_executed": False,
+                }
+            elif current_candidate.get("local_repair_ready", False):
                 auth_dir = (
                     Path(trial_dir)
                     if attempt_index == 1
@@ -617,13 +651,10 @@ def latest_state_authorize_with_one_replan(
                 local_authorization = {
                     "status": "LOCAL_EXECUTION_RECHECK_FAILED",
                     "local_execution_authorized": False,
-                    "reason": (
-                        "persistent_state_stale_or_invalid"
-                        if not state_usable
-                        else "candidate_not_ready"
-                    ),
+                    "reason": "candidate_not_ready",
                     "robot_executed": False,
                 }
+
             attempts.append(
                 {
                     "attempt": attempt_index,
@@ -631,30 +662,21 @@ def latest_state_authorize_with_one_replan(
                     "candidate_ready": bool(
                         current_candidate.get("local_repair_ready", False)
                     ),
-                    "planning_state_timestamp": float(
-                        (
-                            planning_state
-                            if attempt_index == 1
-                            else plan_snapshot
-                        )["timestamp"]
-                    ),
+                    "planning_state_seq": plan_seq,
+                    "planning_state_timestamp": float(current_plan_snapshot["timestamp"]),
                     "planning_state_center": np.asarray(
-                        (
-                            planning_state
-                            if attempt_index == 1
-                            else plan_snapshot
-                        )["center"]
+                        current_plan_snapshot["center"]
                     ).tolist(),
                     "planning_state_velocity": np.asarray(
-                        (
-                            planning_state
-                            if attempt_index == 1
-                            else plan_snapshot
-                        )["velocity"]
+                        current_plan_snapshot["velocity"]
                     ).tolist(),
+                    "authorization_state_seq": _state_seq(latest_snapshot),
                     "authorization_state_timestamp": float(latest_snapshot["timestamp"]),
                     "authorization_state_age_s": float(
                         latest_aligned["propagation_dt_s"]
+                    ),
+                    "legacy_0p25_age_diagnostic_pass": bool(
+                        float(latest_aligned["propagation_dt_s"]) <= 0.25
                     ),
                     "authorization_state_center": np.asarray(
                         latest_snapshot["center"]
@@ -666,11 +688,45 @@ def latest_state_authorize_with_one_replan(
                         latest_aligned["propagated_center"]
                     ).tolist(),
                     "worker_update_count": int(latest_snapshot["update_count"]),
+                    "state_failure_reasons": state_reasons,
                     "local_authorization": local_authorization,
                 }
             )
             if local_authorization.get("local_execution_authorized", False):
                 break
+            # A missing/new-state synchronization failure is not a planning
+            # failure and must never consume the single Fast retry.
+            if state_reasons:
+                break
+            if attempt_index == 1:
+                current_plan_snapshot = latest_snapshot
+                plan_aligned = latest_aligned
+                attempt_dir = Path(trial_dir) / "latest_state_replan" / "attempt_02"
+                attempt_dir.mkdir(parents=True, exist_ok=True)
+                current_artifacts = {}
+                geometry = plan_aligned["geometry"]
+                current_candidate = trial.run_fast_repair(
+                    args,
+                    stage4_config,
+                    stage4_model,
+                    q_now=np.asarray(q_now, dtype=np.float64),
+                    qd_now=np.asarray(qd_now, dtype=np.float64),
+                    center=np.asarray(plan_aligned["propagated_center"], dtype=np.float64),
+                    velocity=np.asarray(current_plan_snapshot["velocity"], dtype=np.float64),
+                    radius=float(np.max(geometry["component_base_radii"])),
+                    risk_links=risk_links,
+                    trial_dir=attempt_dir,
+                    reference_goal=reference_goal,
+                    rejoin_goals=rejoin_goals,
+                    obstacle_audit={
+                        "v3_latest_state_replan": True,
+                        "planning_state_timestamp": float(current_plan_snapshot["timestamp"]),
+                        "planning_state_seq": _state_seq(current_plan_snapshot),
+                        "planning_state_age_s": float(plan_aligned["propagation_dt_s"]),
+                    },
+                    multisphere_geometry=geometry,
+                    artifacts_out=current_artifacts,
+                )
     finally:
         if stop_worker_when_done:
             worker.stop()
@@ -728,19 +784,7 @@ def _playback_snapshot(
             time.time() if evaluation_timestamp is None else evaluation_timestamp
         ),
     )
-    reasons: list[str] = []
-    if snapshot.get("worker_error"):
-        reasons.append("persistent_worker_error")
-    if float(aligned["propagation_dt_s"]) > 0.25:
-        reasons.append("obstacle_state_stale")
-    if float(snapshot.get("latest_frame_age_s", float("inf"))) > 0.25:
-        reasons.append("camera_frame_stale")
-    if not aligned["geometry"].get("covered", False):
-        reasons.append("geometry_not_covered")
-    if float(snapshot.get("raw_guard_distance_m", float("-inf"))) <= float(
-        args.guided_hard_stop_m
-    ):
-        reasons.append("raw_hard_guard_not_safe")
+    reasons = _persistent_state_reasons(snapshot, aligned, args)
     return snapshot, aligned, not reasons, reasons
 
 
@@ -835,7 +879,7 @@ def _direct_goal_diagnostic(
     }
 
 
-def run_virtual_candidate_playback_shadow(
+def _run_virtual_segment_shadow(
     *,
     worker: PersistentPerceptionWorker,
     args: Any,
@@ -844,34 +888,62 @@ def run_virtual_candidate_playback_shadow(
     local_artifacts: dict[str, Any],
     trial_dir: Path,
     task_goal_q: np.ndarray,
+    segment_label: str,
+    monitoring_threshold_m: float | None = None,
 ) -> dict[str, Any]:
-    """Keep the robot stopped while shadowing pre-command and 1 s playback."""
-    output_dir = Path(trial_dir) / "v3_playback_shadow"
+    """Shadow one authorized segment from command barrier through its tail."""
+    output_dir = Path(trial_dir) / "v3_playback_shadow" / segment_label
     output_dir.mkdir(parents=True, exist_ok=True)
     trajectory = local_artifacts["candidate_trajectory"]
+    monitoring_gate = float(
+        args.online_accept_m
+        if monitoring_threshold_m is None
+        else monitoring_threshold_m
+    )
     evaluator, _, _ = trial.make_risk_stack(stage4_config, stage4_model, None)
     baseline = worker.diagnostics()["end_index"]
+    precommand_baseline = worker.snapshot()
+    precommand_baseline_seq = _state_seq(precommand_baseline)
     events = ["PERSISTENT_TRACKER_RUNNING"]
     precommand_samples: list[dict[str, Any]] = []
     settle_started = time.monotonic()
     settle_duration = max(0.0, float(args.candidate_pre_execute_settle_s))
+    last_precommand_seq = precommand_baseline_seq
     while time.monotonic() - settle_started < settle_duration:
-        snapshot = worker.snapshot()
+        remaining = settle_duration - (time.monotonic() - settle_started)
+        snapshot = worker.wait_for_newer_state(
+            after_seq=last_precommand_seq,
+            timeout_s=min(0.20, max(0.0, remaining)),
+        )
+        if _state_seq(snapshot) <= last_precommand_seq:
+            continue
+        last_precommand_seq = _state_seq(snapshot)
         precommand_samples.append(
             {
                 "elapsed_s": time.monotonic() - settle_started,
+                "state_seq": last_precommand_seq,
                 "state_timestamp": float(snapshot["timestamp"]),
                 "state_age_s": float(snapshot["state_age_s"]),
+                "legacy_0p25_age_diagnostic_pass": bool(
+                    float(snapshot["state_age_s"]) <= 0.25
+                ),
                 "frame_age_s": float(snapshot.get("latest_frame_age_s", float("inf"))),
                 "raw_guard_distance_m": float(snapshot["raw_guard_distance_m"]),
                 "worker_update_count": int(snapshot["update_count"]),
             }
         )
-        time.sleep(0.02)
 
-    command_snapshot, command_aligned, command_state_ok, command_reasons = (
-        _playback_snapshot(worker, args)
+    command_snapshot = worker.snapshot()
+    command_aligned = time_aligned_snapshot(
+        command_snapshot, execution_timestamp=time.time()
     )
+    command_reasons = _persistent_state_reasons(
+        command_snapshot,
+        command_aligned,
+        args,
+        require_newer_than_seq=precommand_baseline_seq,
+    )
+    command_state_ok = not command_reasons
     command_authorization = {
         "status": "PRECOMMAND_RECHECK_FAILED",
         "local_execution_authorized": False,
@@ -889,9 +961,8 @@ def run_virtual_candidate_playback_shadow(
             trial_dir=output_dir / "precommand_authorization",
         )
 
-    final_snapshot, final_aligned, final_state_ok, final_reasons = _playback_snapshot(
-        worker, args
-    )
+    final_snapshot, final_aligned = command_snapshot, command_aligned
+    final_state_ok, final_reasons = command_state_ok, command_reasons
     final_forecast = None
     final_clearance = None
     if final_state_ok:
@@ -912,7 +983,7 @@ def run_virtual_candidate_playback_shadow(
         command_authorization.get("local_execution_authorized", False)
         and final_state_ok
         and final_clearance is not None
-        and final_clearance["min_distance_m"] >= float(args.online_accept_m)
+        and final_clearance["min_distance_m"] >= monitoring_gate
         and precommand_min_raw_guard > float(args.guided_hard_stop_m)
         and diagnostics["association_failures"] == 0
         and diagnostics["geometry_coverage_failures"] == 0
@@ -920,10 +991,12 @@ def run_virtual_candidate_playback_shadow(
     precommand_failure_reasons = list(final_reasons)
     if not command_authorization.get("local_execution_authorized", False):
         precommand_failure_reasons.append("command_time_full_verifier_rejected")
-    if final_clearance is None or final_clearance["min_distance_m"] < float(
-        args.online_accept_m
-    ):
-        precommand_failure_reasons.append("command_time_clearance_below_online_gate")
+    if final_clearance is None or final_clearance["min_distance_m"] < monitoring_gate:
+        precommand_failure_reasons.append(
+            "command_time_predicted_risk_trigger"
+            if monitoring_gate > float(args.online_accept_m)
+            else "command_time_clearance_below_online_gate"
+        )
     if precommand_min_raw_guard <= float(args.guided_hard_stop_m):
         precommand_failure_reasons.append("precommand_raw_hard_guard_not_safe")
     if diagnostics["association_failures"]:
@@ -939,21 +1012,35 @@ def run_virtual_candidate_playback_shadow(
     playback_samples: list[dict[str, Any]] = []
     playback_failure_reasons: list[str] = list(precommand_failure_reasons)
     playback_start_update_count = int(final_snapshot["update_count"])
+    playback_start_state_seq = _state_seq(final_snapshot)
     minimum_remaining = float("inf")
     minimum_raw_guard = float(final_snapshot["raw_guard_distance_m"])
     if precommand_authorized:
         events.append("VIRTUAL_LOCAL_PLAYBACK_STARTED")
         playback_started = time.monotonic()
+        last_playback_seq = _state_seq(final_snapshot)
         while True:
             playback_t = min(
                 float(trajectory.total_duration), time.monotonic() - playback_started
             )
-            snapshot, aligned, state_ok, state_reasons = _playback_snapshot(worker, args)
+            remaining_wall = max(0.0, float(trajectory.total_duration) - playback_t)
+            snapshot = worker.wait_for_newer_state(
+                after_seq=last_playback_seq,
+                timeout_s=min(0.20, remaining_wall),
+            )
+            aligned = time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+            new_update = _state_seq(snapshot) > last_playback_seq
+            state_reasons = _persistent_state_reasons(snapshot, aligned, args)
+            state_ok = not state_reasons
+            playback_t = min(
+                float(trajectory.total_duration), time.monotonic() - playback_started
+            )
             minimum_raw_guard = min(
                 minimum_raw_guard, float(snapshot["raw_guard_distance_m"])
             )
             clearance = None
-            if state_ok:
+            if state_ok and new_update:
+                last_playback_seq = _state_seq(snapshot)
                 forecast = v3_execution_multisphere_forecast(
                     np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
                     np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
@@ -968,25 +1055,35 @@ def run_virtual_candidate_playback_shadow(
                 minimum_remaining = min(
                     minimum_remaining, clearance["min_distance_m"]
                 )
-                if clearance["min_distance_m"] < float(args.online_accept_m):
-                    playback_failure_reasons.append("remaining_clearance_below_online_gate")
-            else:
+                if clearance["min_distance_m"] < monitoring_gate:
+                    playback_failure_reasons.append(
+                        "predicted_risk_trigger_during_goal_segment"
+                        if monitoring_gate > float(args.online_accept_m)
+                        else "remaining_clearance_below_online_gate"
+                    )
+            elif not state_ok:
                 playback_failure_reasons.extend(state_reasons)
-            playback_samples.append(
-                {
-                    "playback_time_s": playback_t,
-                    "state_timestamp": float(snapshot["timestamp"]),
-                    "state_age_s": float(aligned["propagation_dt_s"]),
-                    "frame_age_s": float(snapshot.get("latest_frame_age_s", float("inf"))),
-                    "raw_guard_distance_m": float(snapshot["raw_guard_distance_m"]),
-                    "remaining_clearance": clearance,
-                    "worker_update_count": int(snapshot["update_count"]),
-                    "state_reasons": state_reasons,
-                }
-            )
+            if new_update or state_reasons:
+                playback_samples.append(
+                    {
+                        "playback_time_s": playback_t,
+                        "state_seq": _state_seq(snapshot),
+                        "state_timestamp": float(snapshot["timestamp"]),
+                        "state_age_s": float(aligned["propagation_dt_s"]),
+                        "legacy_0p25_age_diagnostic_pass": bool(
+                            float(aligned["propagation_dt_s"]) <= 0.25
+                        ),
+                        "frame_age_s": float(snapshot.get("latest_frame_age_s", float("inf"))),
+                        "raw_guard_distance_m": float(snapshot["raw_guard_distance_m"]),
+                        "remaining_clearance": clearance,
+                        "worker_update_count": int(snapshot["update_count"]),
+                        "state_reasons": state_reasons,
+                    }
+                )
             if playback_failure_reasons or playback_t >= float(trajectory.total_duration):
                 break
-            time.sleep(0.02)
+        if _state_seq(worker.snapshot()) <= playback_start_state_seq:
+            playback_failure_reasons.append("no_valid_perception_update_during_playback")
 
     playback_diagnostics = worker.diagnostics(since=baseline)
     if playback_diagnostics["association_failures"]:
@@ -1030,14 +1127,47 @@ def run_virtual_candidate_playback_shadow(
         if playback_passed and tail_state_ok
         else "TAIL_RISK_NOT_EVALUATED"
     )
+    goal_risk_stop = bool(
+        monitoring_gate > float(args.online_accept_m)
+        and any(
+            reason
+            in {
+                "command_time_predicted_risk_trigger",
+                "predicted_risk_trigger_during_goal_segment",
+            }
+            for reason in playback_failure_reasons
+        )
+        and not any(
+            reason
+            not in {
+                "command_time_predicted_risk_trigger",
+                "predicted_risk_trigger_during_goal_segment",
+                "command_time_full_verifier_rejected",
+                "command_time_clearance_below_online_gate",
+            }
+            for reason in playback_failure_reasons
+        )
+    )
+    virtual_stop_t = (
+        0.0
+        if not playback_samples
+        else float(playback_samples[-1]["playback_time_s"])
+    )
     result = {
         "status": (
             "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
             if playback_passed
+            else "V3_VIRTUAL_GOAL_SEGMENT_RISK_STOP"
+            if goal_risk_stop
             else "V3_VIRTUAL_PLAYBACK_SHADOW_HOLD"
         ),
         "robot_commanded": False,
         "events": events,
+        "monitoring_threshold_m": monitoring_gate,
+        "virtual_stop_time_s": virtual_stop_t,
+        "virtual_stop_q_rad": np.asarray(
+            trajectory.evaluate(virtual_stop_t), dtype=np.float64
+        ).tolist(),
         "precommand_wait_s": settle_duration,
         "precommand_samples": precommand_samples,
         "precommand_state_age_s": float(final_aligned["propagation_dt_s"]),
@@ -1081,7 +1211,321 @@ def run_virtual_candidate_playback_shadow(
             and goal_diagnostic["min_distance_m"] >= float(args.online_accept_m)
         ),
     }
-    trial.write_json(output_dir / "playback_shadow_summary.json", result)
+    result["segment_label"] = segment_label
+    trial.write_json(output_dir / "segment_shadow_summary.json", result)
+    return result
+
+
+def _bounded_goal_artifacts(
+    q_now: np.ndarray,
+    q_goal: np.ndarray,
+    *,
+    max_joint_delta_rad: float,
+    duration_s: float,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Construct one zero-boundary NUBS step toward the preset task goal."""
+    event = importlib.import_module(
+        "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_event_replan_live"
+    )
+    current = np.asarray(q_now, dtype=np.float64)
+    goal = np.asarray(q_goal, dtype=np.float64)
+    delta = goal - current
+    peak = float(np.max(np.abs(delta)))
+    scale = 1.0 if peak <= max_joint_delta_rad else float(max_joint_delta_rad / peak)
+    target = current + scale * delta
+    trajectory = event.make_terminal_trajectory(current, target, float(duration_s))
+    return (
+        {
+            "candidate_trajectory": trajectory,
+            "q_now": current.copy(),
+            "qd_now": np.zeros(6, dtype=np.float64),
+            "local_tail_state": trajectory.tail_state,
+        },
+        {
+            "mode": "GOAL_DIRECTED_NUBS",
+            "q_start_rad": current.tolist(),
+            "q_target_rad": target.tolist(),
+            "q_preset_goal_rad": goal.tolist(),
+            "goal_step_scale": scale,
+            "remaining_goal_error_max_abs_rad": peak,
+        },
+    )
+
+
+def _snapshot_fresh(snapshot: dict[str, Any], aligned: dict[str, Any]) -> dict[str, Any]:
+    geometry = aligned["geometry"]
+    return {
+        "accepted": True,
+        "reason": "persistent_latest_state",
+        "center": np.asarray(aligned["propagated_center"], dtype=np.float64),
+        "velocity": np.asarray(snapshot["velocity"], dtype=np.float64),
+        "radius": float(np.max(geometry["component_base_radii"])),
+        "last_timestamp": float(snapshot["timestamp"]),
+    }
+
+
+def run_virtual_candidate_playback_shadow(
+    *,
+    worker: PersistentPerceptionWorker,
+    args: Any,
+    stage4_config: dict[str, Any],
+    stage4_model: Any,
+    local_artifacts: dict[str, Any],
+    trial_dir: Path,
+    task_goal_q: np.ndarray,
+    risk_links: set[str] | None = None,
+) -> dict[str, Any]:
+    """Run a no-motion closed-loop shadow from first local segment to goal.
+
+    Every segment remains one second.  The virtual robot advances only after
+    command-time verification and event-driven remaining-trajectory checks;
+    the real robot remains stopped for the entire function.
+    """
+    root = Path(trial_dir) / "v3_playback_shadow"
+    root.mkdir(parents=True, exist_ok=True)
+    q_goal = np.asarray(task_goal_q, dtype=np.float64)
+    q_escape_start = np.asarray(local_artifacts["q_now"], dtype=np.float64)
+    artifacts = local_artifacts
+    segments: list[dict[str, Any]] = []
+    decisions: list[dict[str, Any]] = []
+    max_local_replans = int(getattr(args, "max_local_replans", 3))
+    max_segments = int(getattr(args, "max_closed_loop_segments", 12))
+    goal_tolerance = float(getattr(args, "closed_loop_goal_tolerance_rad", 0.01))
+    local_replans = 1
+    overall_events = ["V3_CLOSED_LOOP_SHADOW_STARTED"]
+    status = "V3_VIRTUAL_CLOSED_LOOP_LIMIT_HOLD"
+
+    for segment_index in range(1, max_segments + 1):
+        segment_kind = (
+            "local"
+            if segment_index == 1 or artifacts.get("v3_local_bypass")
+            else "goal"
+        )
+        label = f"segment_{segment_index:02d}_{segment_kind}"
+        segment = _run_virtual_segment_shadow(
+            worker=worker,
+            args=args,
+            stage4_config=stage4_config,
+            stage4_model=stage4_model,
+            local_artifacts=artifacts,
+            trial_dir=trial_dir,
+            task_goal_q=q_goal,
+            segment_label=label,
+            monitoring_threshold_m=(
+                float(args.online_accept_m)
+                if segment_kind == "local"
+                else float(args.replan_in_m)
+            ),
+        )
+        segments.append(segment)
+        overall_events.extend(segment.get("events", []))
+        risk_stop = bool(
+            segment_kind == "goal"
+            and segment["status"] == "V3_VIRTUAL_GOAL_SEGMENT_RISK_STOP"
+        )
+        if (
+            segment["status"] != "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+            and not risk_stop
+        ):
+            status = "V3_VIRTUAL_CLOSED_LOOP_SEGMENT_HOLD"
+            break
+
+        trajectory = artifacts["candidate_trajectory"]
+        q_virtual = np.asarray(
+            segment["virtual_stop_q_rad"]
+            if risk_stop
+            else trajectory.evaluate(trajectory.total_duration),
+            dtype=np.float64,
+        )
+        goal_error = float(np.max(np.abs(q_goal - q_virtual)))
+        if not risk_stop and goal_error <= goal_tolerance:
+            status = "V3_VIRTUAL_CLOSED_LOOP_GOAL_REACHED"
+            overall_events.append("DYNAMIC_NUBS_CLOSED_LOOP_GOAL_REACHED")
+            break
+
+        snapshot = worker.snapshot()
+        aligned = time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+        reasons = _persistent_state_reasons(snapshot, aligned, args)
+        if reasons:
+            decisions.append(
+                {
+                    "after_segment": segment_index,
+                    "decision": "OPERATOR_INTERVENTION_REQUIRED",
+                    "reasons": reasons,
+                }
+            )
+            status = "V3_VIRTUAL_CLOSED_LOOP_OBSERVATION_HOLD"
+            break
+        forecast = v3_execution_multisphere_forecast(
+            np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(snapshot["velocity"], dtype=np.float64),
+        )
+        evaluator, _, _ = trial.make_risk_stack(stage4_config, stage4_model, None)
+        hold = _fixed_configuration_clearance(
+            evaluator,
+            q_virtual,
+            forecast,
+            horizon_s=float(args.prediction_horizon_s),
+        )
+        risk_remains = bool(
+            risk_stop
+            or hold["min_distance_m"] < float(args.replan_in_m)
+        )
+        goal_artifacts, goal_step = _bounded_goal_artifacts(
+            q_virtual,
+            q_goal,
+            max_joint_delta_rad=float(args.max_joint_delta_rad),
+            duration_s=float(args.local_horizon_s),
+        )
+        goal_trajectory = goal_artifacts["candidate_trajectory"]
+        _, goal_verifier, _ = trial.make_risk_stack(
+            stage4_config, stage4_model, None
+        )
+        goal_verification = goal_verifier.verify(
+            goal_trajectory,
+            forecast,
+            current_q=q_virtual,
+            current_qd=np.zeros(6),
+            current_qdd=np.zeros(6),
+            q_goal=np.asarray(
+                goal_trajectory.evaluate(goal_trajectory.total_duration),
+                dtype=np.float64,
+            ),
+            solver_success=True,
+        )
+        goal_step_safe = bool(goal_verification.accepted)
+        decision = {
+            "after_segment": segment_index,
+            "q_virtual_rad": q_virtual.tolist(),
+            "goal_error_max_abs_rad": goal_error,
+            "latest_state_seq": _state_seq(snapshot),
+            "stationary_predicted_clearance_m": hold["min_distance_m"],
+            "risk_threshold_m": float(args.replan_in_m),
+            "risk_remains": risk_remains,
+            "goal_segment_interrupted_by_stro": risk_stop,
+            "goal_step_safe": goal_step_safe,
+            "goal_step_min_distance_m": float(goal_verification.min_distance),
+            "goal_step_checks": goal_verification.checks,
+        }
+
+        if not risk_remains and goal_step_safe:
+            artifacts = goal_artifacts
+            decision["decision"] = "GOAL_DIRECTED_NUBS"
+            decision["goal_step"] = goal_step
+            decisions.append(decision)
+            overall_events.append("LATEST_STATE_GOAL_DIRECTED_CONTINUATION")
+            continue
+
+        if local_replans >= max_local_replans:
+            decision["decision"] = "MAX_LOCAL_REPLANS_OPERATOR_INTERVENTION_REQUIRED"
+            decisions.append(decision)
+            status = "V3_VIRTUAL_CLOSED_LOOP_LOCAL_REPLAN_LIMIT_HOLD"
+            break
+
+        live = importlib.import_module(
+            "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_live"
+        )
+        event = importlib.import_module(
+            "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_event_replan_live"
+        )
+        if live.ACTIVE_BASE_FAST_REPAIR is None:
+            decision["decision"] = "BASE_FAST_UNAVAILABLE"
+            decisions.append(decision)
+            status = "V3_VIRTUAL_CLOSED_LOOP_PLANNER_HOLD"
+            break
+        planning_snapshot = snapshot
+        planning_fresh = _snapshot_fresh(snapshot, aligned)
+        next_artifacts: dict[str, Any] = {}
+        nominal_audit = goal_step
+        nominal_trajectory = goal_trajectory
+        reference_goal = (
+            np.asarray(nominal_trajectory.evaluate(nominal_trajectory.total_duration)),
+            np.zeros(6),
+            np.zeros(6),
+        )
+        local_dir = root / f"local_replan_{local_replans + 1:02d}"
+        candidate = event.plan_goal_directed_continuation(
+            live.ACTIVE_BASE_FAST_REPAIR,
+            args,
+            stage4_config,
+            stage4_model,
+            q_escape_start=q_escape_start,
+            q_now=q_virtual,
+            q_final=q_goal,
+            fresh=planning_fresh,
+            geometry=aligned["geometry"],
+            risk_links=set(risk_links or ()),
+            trial_dir=local_dir,
+            nominal_reference_goal=reference_goal,
+            artifacts_out=next_artifacts,
+            forward_m=float(args.forward_m),
+            side_m=float(args.continuation_side_m),
+            robust_target_m=float(args.planning_robust_target_m),
+            max_joint_delta_rad=float(args.max_joint_delta_rad),
+            tcp_link=args.tcp_link,
+        )
+        decision["local_candidate_status"] = candidate.get("status")
+        decision["nominal_goal_step"] = nominal_audit
+        if not candidate.get("local_repair_ready", False):
+            decision["decision"] = "LOCAL_REPLAN_NOT_READY"
+            decisions.append(decision)
+            status = "V3_VIRTUAL_CLOSED_LOOP_PLANNER_HOLD"
+            break
+        authorization = latest_state_authorize_with_one_replan(
+            worker=worker,
+            args=args,
+            stage4_config=stage4_config,
+            stage4_model=stage4_model,
+            q_now=q_virtual,
+            qd_now=np.zeros(6),
+            reference_goal=reference_goal,
+            rejoin_goals=[],
+            risk_links=set(risk_links or ()),
+            trial_dir=local_dir,
+            candidate_summary=candidate,
+            local_artifacts=next_artifacts,
+            planning_state=planning_snapshot,
+        )
+        if not authorization["authorized"]:
+            decision["decision"] = "LOCAL_REPLAN_LATEST_STATE_REJECTED"
+            decision["authorization"] = {
+                key: authorization[key] for key in ("status", "attempts")
+            }
+            decisions.append(decision)
+            status = "V3_VIRTUAL_CLOSED_LOOP_AUTHORIZATION_HOLD"
+            break
+        artifacts = authorization["local_artifacts"]
+        artifacts["v3_local_bypass"] = True
+        local_replans += 1
+        decision["decision"] = "NEXT_LOCAL_NUBS"
+        decision["local_replan_index"] = local_replans
+        decisions.append(decision)
+        overall_events.append("LATEST_STATE_NEXT_LOCAL_REPLAN")
+    else:
+        status = "V3_VIRTUAL_CLOSED_LOOP_SEGMENT_LIMIT_HOLD"
+
+    result = {
+        "status": status,
+        "legacy_first_segment_passed": bool(
+            segments and segments[0]["status"] == "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+        ),
+        "robot_commanded": False,
+        "events": overall_events,
+        "segments": segments,
+        "decisions": decisions,
+        "segments_completed": sum(
+            row["status"] == "V3_VIRTUAL_PLAYBACK_SHADOW_PASS" for row in segments
+        ),
+        "local_replans_used": local_replans,
+        "max_local_replans": max_local_replans,
+        "max_closed_loop_segments": max_segments,
+        "goal_tolerance_rad": goal_tolerance,
+        "playback_failure_reasons": (
+            [] if status == "V3_VIRTUAL_CLOSED_LOOP_GOAL_REACHED" else [status]
+        ),
+    }
+    trial.write_json(root / "playback_shadow_summary.json", result)
     return result
 
 

@@ -484,7 +484,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         log["core_summary"] = str(core_trial_dir / "summary.json")
         event_types = [event.get("type") for event in core.get("events", [])]
         log["event_types"] = event_types
-        if "V3_VIRTUAL_PLAYBACK_SHADOW_PASS" in event_types:
+        if "V3_VIRTUAL_CLOSED_LOOP_GOAL_REACHED" in event_types:
+            log["status"] = "DYNAMIC_NUBS_CLOSED_LOOP_GOAL_REACHED_SHADOW"
+        elif "V3_VIRTUAL_PLAYBACK_SHADOW_PASS" in event_types:
             log["status"] = "SIMPLE_DYNAMIC_NUBS_V3_PLAYBACK_SHADOW_PASS"
         elif "V3_VIRTUAL_PLAYBACK_SHADOW_HOLD" in event_types:
             log["status"] = "SIMPLE_DYNAMIC_NUBS_V3_PLAYBACK_SHADOW_HOLD"

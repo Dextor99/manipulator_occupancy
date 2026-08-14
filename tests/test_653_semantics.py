@@ -2142,10 +2142,12 @@ def test_v3_latest_state_policy_replans_exactly_once_from_same_stopped_q(
         def snapshot(self):
             return state(now - 0.02, [0.5, 0.001, 0.3], 1)
 
-        def wait_for_newer_state(self, *, after_timestamp, timeout_s):
+        def wait_for_newer_state(self, *, after_seq, timeout_s):
             assert timeout_s == pytest.approx(0.20)
-            assert after_timestamp > now - 0.03
-            return state(now, [0.5, 0.002, 0.3], 2)
+            next_seq = int(after_seq) + 1
+            return state(
+                now, [0.5, 0.001 * next_seq, 0.3], next_seq
+            )
 
         def stop(self):
             self.stopped = True
@@ -2253,7 +2255,16 @@ def test_v3_virtual_playback_shadow_keeps_single_stream_and_checks_tail(
                 "raw_guard_distance_m": 0.20,
                 "worker_error": None,
                 "update_count": self.count,
+                "state_seq": self.count,
             }
+
+        def wait_for_newer_state(self, *, after_seq, timeout_s):
+            clock.sleep(min(float(timeout_s), 0.10))
+            snapshot = self.snapshot()
+            snapshot["state_seq"] = max(int(after_seq) + 1, self.count)
+            snapshot["update_count"] = snapshot["state_seq"]
+            self.count = snapshot["state_seq"]
+            return snapshot
 
         def diagnostics(self, *, since=0):
             return {
@@ -2289,7 +2300,7 @@ def test_v3_virtual_playback_shadow_keeps_single_stream_and_checks_tail(
             object(),
         ),
     )
-    result = dynamic_nubs_v3.run_virtual_candidate_playback_shadow(
+    result = dynamic_nubs_v3._run_virtual_segment_shadow(
         worker=Worker(),
         args=SimpleNamespace(
             candidate_pre_execute_settle_s=0.35,
@@ -2303,6 +2314,7 @@ def test_v3_virtual_playback_shadow_keeps_single_stream_and_checks_tail(
         local_artifacts={"candidate_trajectory": Trajectory()},
         trial_dir=tmp_path,
         task_goal_q=np.ones(6),
+        segment_label="segment_01_local",
     )
     assert result["status"] == "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
     assert result["precommand_clearance_m"] == pytest.approx(0.12)
@@ -2314,3 +2326,91 @@ def test_v3_virtual_playback_shadow_keeps_single_stream_and_checks_tail(
     assert result["tail_hold_status"] == "NEXT_LOCAL_REPLAN_REQUIRED"
     assert "PRECOMMAND_RECHECK_AUTHORIZED" in result["events"]
     assert "VIRTUAL_LOCAL_PLAYBACK_COMPLETED" in result["events"]
+
+
+def test_v3_missing_post_plan_update_does_not_consume_fast_retry(
+    monkeypatch, tmp_path
+):
+    now = time.time()
+    geometry = {
+        "covered": True,
+        "component_centers": np.asarray([[0.5, 0.0, 0.3]]),
+        "component_base_radii": np.asarray([0.05]),
+    }
+    snapshot = {
+        "timestamp": now,
+        "center": np.asarray([0.5, 0.0, 0.3]),
+        "velocity": np.zeros(3),
+        "geometry": geometry,
+        "raw_guard_distance_m": 0.20,
+        "worker_error": None,
+        "update_count": 4,
+        "state_seq": 4,
+    }
+
+    class Worker:
+        def wait_for_newer_state(self, *, after_seq, timeout_s):
+            assert after_seq == 4
+            return dict(snapshot)
+
+    replans = []
+    monkeypatch.setattr(trial, "run_fast_repair", lambda *a, **k: replans.append(k))
+    result = dynamic_nubs_v3.latest_state_authorize_with_one_replan(
+        worker=Worker(),
+        args=SimpleNamespace(guided_hard_stop_m=0.10, prediction_horizon_s=0.5),
+        stage4_config={},
+        stage4_model=object(),
+        q_now=np.zeros(6),
+        qd_now=np.zeros(6),
+        reference_goal=(np.ones(6), np.zeros(6), np.zeros(6)),
+        rejoin_goals=[],
+        risk_links={"left_link"},
+        trial_dir=tmp_path,
+        candidate_summary={"local_repair_ready": True},
+        local_artifacts={"candidate_trajectory": object()},
+        planning_state=dict(snapshot),
+    )
+    assert not result["authorized"]
+    assert len(result["attempts"]) == 1
+    assert result["attempts"][0]["state_failure_reasons"] == [
+        "no_new_valid_perception_update"
+    ]
+    assert replans == []
+
+
+def test_v3_closed_loop_shadow_reports_goal_only_after_segment_tail(
+    monkeypatch, tmp_path
+):
+    class Trajectory:
+        total_duration = 1.0
+        tail_state = None
+
+        def evaluate(self, time_s, derivative_order=0):
+            return np.ones(6) if derivative_order == 0 else np.zeros(6)
+
+    monkeypatch.setattr(
+        dynamic_nubs_v3,
+        "_run_virtual_segment_shadow",
+        lambda **kwargs: {
+            "status": "V3_VIRTUAL_PLAYBACK_SHADOW_PASS",
+            "events": ["VIRTUAL_LOCAL_PLAYBACK_COMPLETED"],
+        },
+    )
+    result = dynamic_nubs_v3.run_virtual_candidate_playback_shadow(
+        worker=object(),
+        args=SimpleNamespace(
+            max_local_replans=3,
+            max_closed_loop_segments=12,
+            closed_loop_goal_tolerance_rad=0.01,
+            online_accept_m=0.09,
+            replan_in_m=0.14,
+        ),
+        stage4_config={},
+        stage4_model=object(),
+        local_artifacts={"candidate_trajectory": Trajectory(), "q_now": np.zeros(6)},
+        trial_dir=tmp_path,
+        task_goal_q=np.ones(6),
+    )
+    assert result["status"] == "V3_VIRTUAL_CLOSED_LOOP_GOAL_REACHED"
+    assert result["segments_completed"] == 1
+    assert "DYNAMIC_NUBS_CLOSED_LOOP_GOAL_REACHED" in result["events"]

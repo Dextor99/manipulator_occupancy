@@ -4356,6 +4356,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             local_artifacts=local_artifacts,
                             trial_dir=trial_dir,
                             task_goal_q=np.asarray(reference.q[-1], dtype=np.float64),
+                            risk_links=risk_links,
                         )
                     finally:
                         persistent_worker.stop()
@@ -4363,7 +4364,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     candidate_summary["v3_playback_shadow"] = playback_shadow
                     candidate_summary["command_time_authorized"] = bool(
                         playback_shadow["status"]
-                        == "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+                        in {
+                            "V3_VIRTUAL_PLAYBACK_SHADOW_PASS",
+                            "V3_VIRTUAL_CLOSED_LOOP_GOAL_REACHED",
+                        }
                     )
                     for event_type in playback_shadow.get("events", []):
                         log["events"].append(

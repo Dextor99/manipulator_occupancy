@@ -5,10 +5,10 @@ V3 removes fixed-X scene control, uses adaptive PCA 1--4 sphere STRO/Fast/Fresh
 geometry, and treats the 0.11 m coarse target and 3 mm improvement as ranking
 diagnostics.  The four execution safety conditions remain unchanged.
 
-Real execution remains intentionally blocked.  This phase extends the single
-persistent perception stream through the 0.35 s pre-command interval and a
-1 s virtual candidate playback; only a later reviewed phase may command the
-candidate.  Archived V2/r09 behavior is unaffected.
+Real execution remains intentionally blocked.  The persistent stream drives a
+bounded virtual closed loop of one-second local/goal-directed NUBS segments
+until the preset goal or a fail-closed condition.  Archived V2/r09 behavior is
+unaffected.
 """
 
 from __future__ import annotations
@@ -42,6 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
         planning_robust_target_m=0.11,
     )
     p.add_argument("--scene-operator-phrase", default="")
+    p.add_argument("--max-local-replans", type=int, default=3)
+    p.add_argument("--max-closed-loop-segments", type=int, default=12)
+    p.add_argument("--closed-loop-goal-tolerance-rad", type=float, default=0.01)
     return p
 
 
@@ -50,11 +53,13 @@ def validate(args: argparse.Namespace) -> None:
         raise RuntimeError(f"bad V3 scene phrase; required: {SCENE_PHRASE}")
     if args.execute:
         raise RuntimeError(
-            "V3 real execution is not authorized yet: the protected pre-command "
-            "and virtual-playback shadow must pass and be reviewed first"
+            "V3 real execution is not authorized yet: the event-driven virtual "
+            "closed loop must reach the preset goal and be reviewed first"
         )
     if abs(float(args.planning_robust_target_m) - 0.11) > 1.0e-12:
         raise RuntimeError("V3 preferred seed target remains frozen at 0.11 m")
+    if args.max_local_replans < 1 or args.max_closed_loop_segments < 1:
+        raise ValueError("closed-loop segment/replan limits must be positive")
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
