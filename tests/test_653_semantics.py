@@ -1567,6 +1567,23 @@ def test_simple_dynamic_nubs_parser_is_shadow_only():
     assert tuple(mode_action.choices) == ("shadow",)
 
 
+def test_simple_live_copies_v3_callback_parameters_to_core_namespace():
+    wrapper = SimpleNamespace(
+        forward_m=0.051,
+        max_joint_delta_rad=0.119,
+        planning_robust_target_m=0.11,
+        tcp_link="gripper_base_link",
+        continuation_side_m=0.041,
+        max_local_replans=3,
+        max_closed_loop_segments=12,
+        closed_loop_goal_tolerance_rad=0.009,
+    )
+    core = SimpleNamespace()
+    simple_live.copy_wrapper_runtime_parameters(wrapper, core)
+    for name, value in vars(wrapper).items():
+        assert getattr(core, name) == value
+
+
 def test_simple_bypass_side_is_orthogonal_to_task_and_points_away():
     task, side, _ = simple_bypass.task_and_side_directions(
         np.zeros(3),

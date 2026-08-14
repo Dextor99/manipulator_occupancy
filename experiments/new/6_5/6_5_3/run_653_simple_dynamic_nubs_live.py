@@ -392,6 +392,21 @@ def make_guarded_executor(original_executor: Any, live_trial_dir: Path):
     return guarded_executor
 
 
+def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
+    """Expose reviewed orchestration parameters to in-core callback hooks."""
+    for name, default in (
+        ("forward_m", 0.05),
+        ("max_joint_delta_rad", 0.12),
+        ("planning_robust_target_m", 0.11),
+        ("tcp_link", "gripper_base_link"),
+        ("continuation_side_m", 0.04),
+        ("max_local_replans", 3),
+        ("max_closed_loop_segments", 12),
+        ("closed_loop_goal_tolerance_rad", 0.01),
+    ):
+        setattr(core_args, name, getattr(wrapper_args, name, default))
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     global ACTIVE_BASE_FAST_REPAIR
     side_lengths = validate_request(args)
@@ -449,6 +464,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 else []
             )
         )
+        # The core trial parser intentionally knows nothing about the simple
+        # planner/V3 orchestration surface.  Playback and continuation hooks
+        # execute inside the core call, so explicitly carry their reviewed
+        # wrapper parameters into that Namespace instead of relying on parser
+        # side effects.
+        copy_wrapper_runtime_parameters(args, live_args)
         trial.fit_pca_multisphere = fixed_two_sphere_adapter
         trial.run_fast_repair = make_r06_fast_wrapper(
             original_fast,
