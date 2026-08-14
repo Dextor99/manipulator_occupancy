@@ -62,12 +62,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     original_predictor = trial.RISK_SPHERE_PREDICTOR
     original_trigger_gate = trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK
     original_execution_forecast = trial.constant_multisphere_forecast
+    original_worker_factory = trial.PERSISTENT_OBSTACLE_WORKER_FACTORY
+    original_latest_state_policy = trial.LATEST_STATE_AUTHORIZATION_POLICY
     original_adapter = live.fixed_two_sphere_adapter
     original_factory = live.make_r06_fast_wrapper
     try:
         trial.RISK_SPHERE_PREDICTOR = v3.adaptive_multisphere_predictor
         trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK = False
         trial.constant_multisphere_forecast = v3.v3_execution_multisphere_forecast
+        trial.PERSISTENT_OBSTACLE_WORKER_FACTORY = (
+            v3.make_persistent_perception_worker
+        )
+        trial.LATEST_STATE_AUTHORIZATION_POLICY = (
+            v3.latest_state_authorize_with_one_replan
+        )
         live.fixed_two_sphere_adapter = v3.adaptive_geometry_adapter
         live.make_r06_fast_wrapper = v3.make_v3_fast_factory(original_factory)
         result = event.run(args)
@@ -75,6 +83,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         trial.RISK_SPHERE_PREDICTOR = original_predictor
         trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK = original_trigger_gate
         trial.constant_multisphere_forecast = original_execution_forecast
+        trial.PERSISTENT_OBSTACLE_WORKER_FACTORY = original_worker_factory
+        trial.LATEST_STATE_AUTHORIZATION_POLICY = original_latest_state_policy
         live.fixed_two_sphere_adapter = original_adapter
         live.make_r06_fast_wrapper = original_factory
     result["v3_protocol"] = v3.V3_PROTOCOL

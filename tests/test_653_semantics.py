@@ -1876,6 +1876,8 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     original_predictor = trial.RISK_SPHERE_PREDICTOR
     original_gate = trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK
     original_execution_forecast = trial.constant_multisphere_forecast
+    original_worker_factory = trial.PERSISTENT_OBSTACLE_WORKER_FACTORY
+    original_latest_state_policy = trial.LATEST_STATE_AUTHORIZATION_POLICY
     original_adapter = simple_live.fixed_two_sphere_adapter
     monkeypatch.setattr(simple_live, "make_r06_fast_wrapper", legacy_factory)
 
@@ -1890,6 +1892,14 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
         assert (
             trial.constant_multisphere_forecast
             is dynamic_nubs_v3.v3_execution_multisphere_forecast
+        )
+        assert (
+            trial.PERSISTENT_OBSTACLE_WORKER_FACTORY
+            is dynamic_nubs_v3.make_persistent_perception_worker
+        )
+        assert (
+            trial.LATEST_STATE_AUTHORIZATION_POLICY
+            is dynamic_nubs_v3.latest_state_authorize_with_one_replan
         )
         assert simple_live.fixed_two_sphere_adapter is dynamic_nubs_v3.adaptive_geometry_adapter
         calls["factory_result"] = simple_live.make_r06_fast_wrapper(
@@ -1952,6 +1962,8 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     assert trial.RISK_SPHERE_PREDICTOR is original_predictor
     assert trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK is original_gate
     assert trial.constant_multisphere_forecast is original_execution_forecast
+    assert trial.PERSISTENT_OBSTACLE_WORKER_FACTORY is original_worker_factory
+    assert trial.LATEST_STATE_AUTHORIZATION_POLICY is original_latest_state_policy
     assert simple_live.fixed_two_sphere_adapter is original_adapter
 
 
@@ -2024,3 +2036,125 @@ def test_candidate_return_reverses_only_authorized_waypoint_geometry():
     np.testing.assert_allclose(command_times, [0.0, 0.5, 1.0])
     np.testing.assert_allclose(command_q[0], qs[-1])
     np.testing.assert_allclose(command_q[-1], qs[0])
+
+
+def test_v3_latest_state_is_time_aligned_without_radius_inflation():
+    geometry = {
+        "covered": True,
+        "component_centers": np.asarray([[1.0, 2.0, 3.0], [1.1, 2.0, 3.0]]),
+        "component_base_radii": np.asarray([0.04, 0.05]),
+    }
+    aligned = dynamic_nubs_v3.time_aligned_snapshot(
+        {
+            "timestamp": 10.0,
+            "center": np.asarray([1.0, 2.0, 3.0]),
+            "velocity": np.asarray([0.0, 0.1, 0.0]),
+            "geometry": geometry,
+        },
+        execution_timestamp=10.2,
+    )
+    assert aligned["propagation_dt_s"] == pytest.approx(0.2)
+    np.testing.assert_allclose(aligned["propagated_center"], [1.0, 2.02, 3.0])
+    np.testing.assert_allclose(
+        aligned["geometry"]["component_centers"],
+        geometry["component_centers"] + np.asarray([0.0, 0.02, 0.0]),
+    )
+    np.testing.assert_allclose(
+        aligned["geometry"]["component_base_radii"],
+        geometry["component_base_radii"],
+    )
+
+
+def test_v3_latest_state_policy_replans_exactly_once_from_same_stopped_q(
+    monkeypatch, tmp_path
+):
+    now = time.time()
+    geometry = {
+        "covered": True,
+        "component_centers": np.asarray([[0.5, 0.0, 0.3]]),
+        "component_base_radii": np.asarray([0.05]),
+    }
+
+    def state(timestamp, center, update_count):
+        return {
+            "timestamp": timestamp,
+            "snapshot_timestamp": timestamp,
+            "state_age_s": 0.0,
+            "center": np.asarray(center),
+            "velocity": np.asarray([0.0, 0.05, 0.0]),
+            "geometry": geometry,
+            "association_error_m": 0.01,
+            "raw_guard_distance_m": 0.20,
+            "worker_error": None,
+            "update_count": update_count,
+        }
+
+    class Worker:
+        stopped = False
+
+        def initial_snapshot(self):
+            return state(now - 0.04, [0.5, 0.0, 0.3], 0)
+
+        def snapshot(self):
+            return state(now - 0.02, [0.5, 0.001, 0.3], 1)
+
+        def wait_for_newer_state(self, *, after_timestamp, timeout_s):
+            assert timeout_s == pytest.approx(0.20)
+            assert after_timestamp > now - 0.03
+            return state(now, [0.5, 0.002, 0.3], 2)
+
+        def stop(self):
+            self.stopped = True
+
+    worker = Worker()
+    authorization_calls = []
+
+    def fake_authorize(*args, **kwargs):
+        authorization_calls.append(kwargs)
+        accepted = len(authorization_calls) == 2
+        return (
+            {
+                "status": "LOCAL_EXECUTION_AUTHORIZED" if accepted else "LOCAL_EXECUTION_RECHECK_FAILED",
+                "local_execution_authorized": accepted,
+                "robot_executed": False,
+            },
+            object() if accepted else None,
+        )
+
+    replans = []
+
+    def fake_fast(*args, **kwargs):
+        replans.append(kwargs)
+        return {
+            "status": "LOCAL_REPAIR_READY",
+            "candidate_source": "SAFE_BYPASS_SEED",
+            "local_repair_ready": True,
+        }
+
+    monkeypatch.setattr(trial, "authorize_local_repair_execution", fake_authorize)
+    monkeypatch.setattr(trial, "run_fast_repair", fake_fast)
+    q_stopped = np.arange(6, dtype=np.float64) * 0.01
+    result = dynamic_nubs_v3.latest_state_authorize_with_one_replan(
+        worker=worker,
+        args=SimpleNamespace(guided_hard_stop_m=0.10),
+        stage4_config={},
+        stage4_model=object(),
+        q_now=q_stopped,
+        qd_now=np.zeros(6),
+        reference_goal=(np.zeros(6), np.zeros(6), np.zeros(6)),
+        rejoin_goals=[],
+        risk_links={"link"},
+        trial_dir=tmp_path,
+        candidate_summary={
+            "status": "LOCAL_REPAIR_READY",
+            "candidate_source": "FAST_REPAIRED_BYPASS",
+            "local_repair_ready": True,
+        },
+        local_artifacts={"candidate": object()},
+        planning_state=worker.initial_snapshot(),
+    )
+    assert result["status"] == "V3_LATEST_STATE_AUTHORIZED"
+    assert len(result["attempts"]) == 2
+    assert len(replans) == 1
+    np.testing.assert_allclose(replans[0]["q_now"], q_stopped)
+    assert worker.stopped

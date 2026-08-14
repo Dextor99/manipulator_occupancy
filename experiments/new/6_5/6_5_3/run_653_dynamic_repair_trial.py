@@ -116,6 +116,11 @@ RISK_SPHERE_PREDICTOR = None
 # trigger. V3 sets this false so age+association make a track risk-eligible;
 # speed then selects dynamic or quasi-static prediction rather than existence.
 RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK = True
+# Optional V3-only hooks.  The default/V2 path retains its archived serial
+# Fresh #2 behavior.  V3 installs a persistent perception worker before Fast
+# and an immediate latest-state authorization policy afterwards.
+PERSISTENT_OBSTACLE_WORKER_FACTORY = None
+LATEST_STATE_AUTHORIZATION_POLICY = None
 
 SCENARIOS = {
     "D1": {
@@ -3861,41 +3866,117 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         f"exceeds {args.max_track_cluster_association_m:.4f} m"
                     )
                 fresh_recheck = None
+                persistent_worker = None
                 if args.mode in robot_motion_modes:
-                    time.sleep(max(args.post_stop_settle_s, 0.0))
-                    fresh_recheck, fresh_frames, fresh_latest_points = capture_post_stop_obstacle(
-                        processor,
-                        state_reader,
-                        denoiser,
-                        args,
-                        trigger_cluster_center=np.asarray(obstacle["associated_cluster_center"], dtype=np.float64),
-                        trigger_velocity=np.asarray(obstacle["window_velocity"], dtype=np.float64),
-                        trigger_timestamp=timestamp,
-                    )
-                    multisphere_geometry = None
-                    if fresh_recheck["accepted"] and fresh_latest_points is not None:
+                    if callable(PERSISTENT_OBSTACLE_WORKER_FACTORY):
+                        cluster_index = int(obstacle["associated_cluster_index"])
+                        fresh_latest_points = np.asarray(
+                            eval_clusters[cluster_index].points, dtype=np.float64
+                        )
                         multisphere_geometry = fit_pca_multisphere(
                             fresh_latest_points,
                             fit_margin_m=args.multisphere_fit_margin_m,
                             max_components=args.multisphere_max_components,
                         )
-                        if not multisphere_geometry["covered"]:
-                            fresh_recheck = {
-                                **fresh_recheck,
-                                "accepted": False,
-                                "reason": "fresh_multisphere_coverage_failed",
+                        tracked_center = np.asarray(obstacle["center"], dtype=np.float64)
+                        raw_center = np.mean(fresh_latest_points, axis=0)
+                        multisphere_geometry = translated_multisphere_geometry(
+                            multisphere_geometry, raw_center, tracked_center
+                        )
+                        history = list(
+                            dynamic_speed_history.get(int(obstacle["track_id"]), [])
+                        )
+                        fresh_frames = [
+                            {
+                                "timestamp": float(sample_timestamp),
+                                "associated": True,
+                                "center": np.asarray(sample_center, dtype=np.float64).tolist(),
+                                "radius": float(obstacle["raw_radius"]),
+                                "association_error_m": float(
+                                    obstacle["association_error_m"]
+                                ),
                             }
-                        np.save(trial_dir / "fresh_latest_cluster_points.npy", fresh_latest_points)
-                        write_json(trial_dir / "fresh_multisphere.json", multisphere_geometry)
-                    write_json(trial_dir / "post_stop_fresh_recheck.json", {"result": fresh_recheck, "frames": fresh_frames})
-                    log["events"].append(
-                        {
-                            "type": "POST_STOP_FRESH_RECHECK_READY" if fresh_recheck["accepted"] else "POST_STOP_FRESH_RECHECK_REJECTED",
-                            "frame": frame_index,
-                            "t_s": time.perf_counter() - started,
-                            "recheck": fresh_recheck,
+                            for sample_timestamp, sample_center in history
+                        ]
+                        fresh_recheck = {
+                            "accepted": bool(multisphere_geometry.get("covered", False)),
+                            "reason": (
+                                "persistent_tracker_seed_ready"
+                                if multisphere_geometry.get("covered", False)
+                                else "persistent_tracker_seed_geometry_failed"
+                            ),
+                            "track_id": int(obstacle["track_id"]),
+                            "center": tracked_center.tolist(),
+                            "velocity": np.asarray(
+                                obstacle["window_velocity"], dtype=np.float64
+                            ).tolist(),
+                            "radius": float(obstacle["raw_radius"]),
+                            "last_timestamp": float(timestamp),
+                            "max_association_error_m": float(
+                                obstacle["association_error_m"]
+                            ),
+                            "source": "pretrigger_tracker_continuation",
+                            "history_frame_count": len(fresh_frames),
                         }
-                    )
+                        np.save(
+                            trial_dir / "persistent_seed_cluster_points.npy",
+                            fresh_latest_points,
+                        )
+                        write_json(
+                            trial_dir / "persistent_seed_multisphere.json",
+                            multisphere_geometry,
+                        )
+                        write_json(
+                            trial_dir / "persistent_tracker_seed.json",
+                            {"result": fresh_recheck, "frames": fresh_frames},
+                        )
+                        log["events"].append(
+                            {
+                                "type": (
+                                    "PERSISTENT_TRACKER_SEED_READY"
+                                    if fresh_recheck["accepted"]
+                                    else "PERSISTENT_TRACKER_SEED_REJECTED"
+                                ),
+                                "frame": frame_index,
+                                "t_s": time.perf_counter() - started,
+                                "recheck": fresh_recheck,
+                            }
+                        )
+                    else:
+                        time.sleep(max(args.post_stop_settle_s, 0.0))
+                        fresh_recheck, fresh_frames, fresh_latest_points = capture_post_stop_obstacle(
+                            processor,
+                            state_reader,
+                            denoiser,
+                            args,
+                            trigger_cluster_center=np.asarray(obstacle["associated_cluster_center"], dtype=np.float64),
+                            trigger_velocity=np.asarray(obstacle["window_velocity"], dtype=np.float64),
+                            trigger_timestamp=timestamp,
+                        )
+                        multisphere_geometry = None
+                        if fresh_recheck["accepted"] and fresh_latest_points is not None:
+                            multisphere_geometry = fit_pca_multisphere(
+                                fresh_latest_points,
+                                fit_margin_m=args.multisphere_fit_margin_m,
+                                max_components=args.multisphere_max_components,
+                            )
+                            if not multisphere_geometry["covered"]:
+                                fresh_recheck = {
+                                    **fresh_recheck,
+                                    "accepted": False,
+                                    "reason": "fresh_multisphere_coverage_failed",
+                                }
+                            np.save(trial_dir / "fresh_latest_cluster_points.npy", fresh_latest_points)
+                            write_json(trial_dir / "fresh_multisphere.json", multisphere_geometry)
+                        write_json(trial_dir / "post_stop_fresh_recheck.json", {"result": fresh_recheck, "frames": fresh_frames})
+                        log["events"].append(
+                            {
+                                "type": "POST_STOP_FRESH_RECHECK_READY" if fresh_recheck["accepted"] else "POST_STOP_FRESH_RECHECK_REJECTED",
+                                "frame": frame_index,
+                                "t_s": time.perf_counter() - started,
+                                "recheck": fresh_recheck,
+                            }
+                        )
                     if not fresh_recheck["accepted"]:
                         candidate_summary = {
                             "status": "REJECTED_FRESH_RECHECK",
@@ -3957,24 +4038,76 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 risk_links = set(
                     stage4_model.surface_by_link(q_repair_start, density="coarse")
                 )
+                if (
+                    callable(PERSISTENT_OBSTACLE_WORKER_FACTORY)
+                    and args.mode in robot_motion_modes
+                    and fresh_recheck.get("accepted", False)
+                    and multisphere_geometry is not None
+                ):
+                    persistent_worker = PERSISTENT_OBSTACLE_WORKER_FACTORY(
+                        processor=processor,
+                        denoiser=denoiser,
+                        args=args,
+                        initial_fresh=fresh_recheck,
+                        initial_geometry=multisphere_geometry,
+                        initial_frames=fresh_frames,
+                        output_dir=trial_dir / "persistent_perception",
+                    )
+                    persistent_worker.start()
+                    planning_state = persistent_worker.snapshot()
+                    planning_timestamp = time.time()
+                    planning_dt = max(
+                        0.0,
+                        planning_timestamp - float(planning_state["timestamp"]),
+                    )
+                    planning_center = np.asarray(
+                        planning_state["center"], dtype=np.float64
+                    ) + np.asarray(
+                        planning_state["velocity"], dtype=np.float64
+                    ) * planning_dt
+                    planning_geometry = translated_multisphere_geometry(
+                        planning_state["geometry"],
+                        np.asarray(planning_state["center"], dtype=np.float64),
+                        planning_center,
+                    )
+                    obstacle["center"] = planning_center
+                    obstacle["window_velocity"] = np.asarray(
+                        planning_state["velocity"], dtype=np.float64
+                    )
+                    obstacle["multisphere_geometry"] = planning_geometry
+                    obstacle["planning_state_timestamp"] = float(
+                        planning_state["timestamp"]
+                    )
+                    obstacle["planning_state_center"] = np.asarray(
+                        planning_state["center"], dtype=np.float64
+                    )
+                    obstacle["planning_state_velocity"] = np.asarray(
+                        planning_state["velocity"], dtype=np.float64
+                    )
+                    obstacle["planning_state_age_s"] = planning_dt
                 local_artifacts: dict[str, Any] = {}
-                candidate_summary = run_fast_repair(
-                    args,
-                    stage4_config,
-                    stage4_model,
-                    q_now=q_repair_start,
-                    qd_now=qd_repair_start,
-                    center=obstacle["center"],
-                    velocity=obstacle["window_velocity"],
-                    radius=obstacle["inflated_radius"],
-                    risk_links=risk_links,
-                    trial_dir=trial_dir,
-                    reference_goal=reference_goal,
-                    rejoin_goals=rejoin_goals,
-                    obstacle_audit=obstacle,
-                    multisphere_geometry=obstacle.get("multisphere_geometry"),
-                    artifacts_out=local_artifacts,
-                )
+                try:
+                    candidate_summary = run_fast_repair(
+                        args,
+                        stage4_config,
+                        stage4_model,
+                        q_now=q_repair_start,
+                        qd_now=qd_repair_start,
+                        center=obstacle["center"],
+                        velocity=obstacle["window_velocity"],
+                        radius=obstacle["inflated_radius"],
+                        risk_links=risk_links,
+                        trial_dir=trial_dir,
+                        reference_goal=reference_goal,
+                        rejoin_goals=rejoin_goals,
+                        obstacle_audit=obstacle,
+                        multisphere_geometry=obstacle.get("multisphere_geometry"),
+                        artifacts_out=local_artifacts,
+                    )
+                except Exception:
+                    if persistent_worker is not None:
+                        persistent_worker.stop()
+                    raise
                 log["events"].append({"type": candidate_summary["status"], "frame": frame_index, "t_s": now_rel, "candidate": candidate_summary})
                 # Defaults let both failure modes enter the same rolling loop:
                 # (a) Fast itself found no local step, or (b) Fresh #2 later
@@ -3993,7 +4126,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "reason": "initial_fast_not_ready",
                     "robot_executed": False,
                 }
-                if candidate_summary.get("local_repair_ready") and args.mode in robot_motion_modes:
+                if (
+                    candidate_summary.get("local_repair_ready")
+                    and args.mode in robot_motion_modes
+                    and not callable(LATEST_STATE_AUTHORIZATION_POLICY)
+                ):
                     fresh2, fresh2_frames, fresh2_points = capture_post_stop_obstacle(
                         processor,
                         state_reader,
@@ -4084,6 +4221,85 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "type": (
                                 "LOCAL_EXECUTION_AUTHORIZED_SHADOW"
                                 if local_authorization.get("local_execution_authorized", False)
+                                else local_authorization["status"]
+                            ),
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "authorization": local_authorization,
+                        }
+                    )
+                if (
+                    callable(LATEST_STATE_AUTHORIZATION_POLICY)
+                    and persistent_worker is not None
+                    and args.mode in robot_motion_modes
+                ):
+                    latest_outcome = LATEST_STATE_AUTHORIZATION_POLICY(
+                        worker=persistent_worker,
+                        args=args,
+                        stage4_config=stage4_config,
+                        stage4_model=stage4_model,
+                        q_now=q_repair_start,
+                        qd_now=qd_repair_start,
+                        reference_goal=reference_goal,
+                        rejoin_goals=rejoin_goals,
+                        risk_links=risk_links,
+                        trial_dir=trial_dir,
+                        candidate_summary=candidate_summary,
+                        local_artifacts=local_artifacts,
+                        planning_state=planning_state,
+                    )
+                    candidate_summary = latest_outcome["candidate_summary"]
+                    local_artifacts = latest_outcome["local_artifacts"]
+                    fresh2 = latest_outcome.get("fresh") or fresh_recheck
+                    fresh2_geometry = (
+                        latest_outcome.get("fresh_geometry") or multisphere_geometry
+                    )
+                    local_authorization = latest_outcome["local_authorization"]
+                    authorization = latest_outcome["execution_authorization"]
+                    candidate_summary["execution_authorization_status"] = authorization[
+                        "status"
+                    ]
+                    candidate_summary["execution_authorized"] = False
+                    candidate_summary["local_execution_authorization_status"] = (
+                        local_authorization["status"]
+                    )
+                    candidate_summary["local_execution_authorized"] = bool(
+                        local_authorization.get("local_execution_authorized", False)
+                    )
+                    candidate_summary["accepted_for_switch"] = bool(
+                        candidate_summary["local_execution_authorized"]
+                    )
+                    candidate_summary["v3_latest_state_authorization"] = {
+                        key: latest_outcome[key]
+                        for key in (
+                            "status",
+                            "authorized",
+                            "attempts",
+                            "fresh",
+                            "fresh_geometry",
+                            "local_authorization",
+                            "execution_authorization",
+                        )
+                    }
+                    write_json(
+                        trial_dir / "candidate" / "candidate_summary.json",
+                        candidate_summary,
+                    )
+                    log["events"].append(
+                        {
+                            "type": latest_outcome["status"],
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "attempts": latest_outcome["attempts"],
+                        }
+                    )
+                    log["events"].append(
+                        {
+                            "type": (
+                                "LOCAL_EXECUTION_AUTHORIZED_SHADOW"
+                                if local_authorization.get(
+                                    "local_execution_authorized", False
+                                )
                                 else local_authorization["status"]
                             ),
                             "frame": frame_index,
