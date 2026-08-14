@@ -13,7 +13,6 @@ permitted in this pilot.
 from __future__ import annotations
 
 import argparse
-import copy
 from datetime import datetime, timezone
 import importlib
 import json
@@ -123,6 +122,7 @@ def make_r06_fast_wrapper(
     required_component_count: int | None = 2,
     coarse_gate_is_hard: bool = True,
     clearance_improvement_is_hard: bool = True,
+    verified_seed_is_candidate: bool = False,
 ):
     def run_r06_fast(
         runtime_args: Any,
@@ -256,10 +256,10 @@ def make_r06_fast_wrapper(
                 "simple_live_audit": audit,
             }
         selected_goal = goals[int(selected["candidate"]) - 1]
+        # Keep the configured improvement as an optimizer preference.  V3
+        # changes only the final acceptance contract: failure to improve an
+        # already-safe seed is diagnostic, not an execution veto.
         fast_args = runtime_args
-        if not clearance_improvement_is_hard:
-            fast_args = copy.copy(runtime_args)
-            fast_args.min_clearance_improvement_m = 0.0
         result = original_fast(
             fast_args,
             config,
@@ -280,6 +280,8 @@ def make_r06_fast_wrapper(
             },
             multisphere_geometry=multisphere_geometry,
             artifacts_out=artifacts_out,
+            accept_verified_seed_without_fast_step=verified_seed_is_candidate,
+            original_task_reference_goal=reference_goal,
         )
         audit.update(
             {
@@ -289,7 +291,9 @@ def make_r06_fast_wrapper(
                     selected["coarse_min_distance_m"] >= robust_target_m
                 ),
                 "clearance_improvement_is_hard_gate": bool(clearance_improvement_is_hard),
+                "verified_seed_is_candidate": bool(verified_seed_is_candidate),
                 "fast_status": result.get("status"),
+                "final_candidate_source": result.get("candidate_source"),
             }
         )
         result["simple_live_audit"] = audit
@@ -316,19 +320,24 @@ def select_planning_seed(
 ) -> dict[str, Any] | None:
     """Select the seed that is allowed to reach Fast.
 
-    V2 retains the established 0.11 m hard gate.  V3 ranks all candidates
-    having positive task progress, so a sub-0.11 m coarse seed still reaches
-    the unchanged Fast optimizer and final 0.09 m verifier.
+    V2 retains the established 0.11 m hard gate.  V3 treats both the preferred
+    clearance and task progress as ranking diagnostics: every geometrically
+    generated seed may reach the unchanged absolute verifier.  Positive task
+    progress is preferred, but a temporarily lateral/backward seed is not
+    rejected solely for that reason.
     """
     if coarse_gate_is_hard:
         return simple.select_robust_candidate(rows, robust_target_m)
-    ranked = [row for row in rows if row["task_progress_ok"]]
     return (
         max(
-            ranked,
-            key=lambda row: (row["coarse_min_distance_m"], row["task_progress_m"]),
+            rows,
+            key=lambda row: (
+                bool(row["task_progress_ok"]),
+                row["coarse_min_distance_m"],
+                row["task_progress_m"],
+            ),
         )
-        if ranked
+        if rows
         else None
     )
 

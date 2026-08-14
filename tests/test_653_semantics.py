@@ -1695,6 +1695,7 @@ def test_v2_predictor_and_fast_factory_defaults_remain_unchanged():
     assert signature.parameters["required_component_count"].default == 2
     assert signature.parameters["coarse_gate_is_hard"].default is True
     assert signature.parameters["clearance_improvement_is_hard"].default is True
+    assert signature.parameters["verified_seed_is_candidate"].default is False
 
 
 def test_v2_runtime_predictor_dispatch_keeps_legacy_arguments(monkeypatch):
@@ -1814,6 +1815,54 @@ def test_v3_soft_coarse_seed_reaches_fast_selection_below_preferred_target():
     assert selected is rows[0]
 
 
+def test_v3_task_progress_is_ranking_diagnostic_not_seed_gate():
+    rows = [
+        {
+            "candidate": 1,
+            "task_progress_ok": False,
+            "coarse_min_distance_m": 0.121,
+            "task_progress_m": -0.002,
+        },
+        {
+            "candidate": 2,
+            "task_progress_ok": False,
+            "coarse_min_distance_m": 0.114,
+            "task_progress_m": -0.001,
+        },
+    ]
+    selected = simple_live.select_planning_seed(
+        rows, robust_target_m=0.11, coarse_gate_is_hard=False
+    )
+    assert selected is rows[0]
+
+
+def test_v3_verified_safe_seed_does_not_require_fast_extra_step():
+    revised = trial.candidate_acceptance_contract(
+        hard_safety_ready=True,
+        repair_step_ok=False,
+        clearance_gain_m=0.0,
+        minimum_clearance_gain_m=0.003,
+        delta_from_fast_seed_rad=0.0,
+        minimum_candidate_delta_rad=0.0001,
+        accept_verified_seed_without_fast_step=True,
+    )
+    assert revised["local_repair_ready"]
+    assert revised["candidate_source"] == "SAFE_BYPASS_SEED"
+    assert not revised["fast_extra_correction_applied"]
+
+    legacy = trial.candidate_acceptance_contract(
+        hard_safety_ready=True,
+        repair_step_ok=False,
+        clearance_gain_m=0.0,
+        minimum_clearance_gain_m=0.003,
+        delta_from_fast_seed_rad=0.0,
+        minimum_candidate_delta_rad=0.0001,
+        accept_verified_seed_without_fast_step=False,
+    )
+    assert not legacy["local_repair_ready"]
+    assert legacy["candidate_source"] == "NO_SAFE_CANDIDATE"
+
+
 def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     monkeypatch, tmp_path
 ):
@@ -1891,6 +1940,7 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
         "required_component_count": None,
         "coarse_gate_is_hard": False,
         "clearance_improvement_is_hard": False,
+        "verified_seed_is_candidate": True,
     }
     assert calls["spheres"]
     component_count = len(calls["spheres"]) // 5

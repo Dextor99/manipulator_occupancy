@@ -37,6 +37,10 @@ V3_PROTOCOL = {
     "fresh_execution_clearance_m": 0.09,
     "raw_hard_guard_m": 0.10,
     "clearance_improvement_is_hard_gate": False,
+    "accepted_fast_step_is_hard_gate": False,
+    "seed_motion_from_fast_reference_is_hard_gate": False,
+    "task_progress_is_hard_gate": False,
+    "candidate_contract": "verified_bypass_seed_or_fast_repaired_bypass",
     "fixed_x_required": False,
     "execution_forecast": "fresh_geometry_constant_velocity_no_legacy_inflation",
     "execution_forecast_margin_m": 0.0,
@@ -200,6 +204,7 @@ def make_v3_fast_factory(legacy_factory: Any):
             required_component_count=None,
             coarse_gate_is_hard=False,
             clearance_improvement_is_hard=False,
+            verified_seed_is_candidate=True,
         )
 
     return factory
