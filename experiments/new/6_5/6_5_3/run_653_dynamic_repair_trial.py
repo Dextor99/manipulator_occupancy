@@ -122,6 +122,11 @@ RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK = True
 PERSISTENT_OBSTACLE_WORKER_FACTORY = None
 LATEST_STATE_AUTHORIZATION_POLICY = None
 POST_AUTHORIZATION_PLAYBACK_SHADOW = None
+# Optional final-live consumer for a latest-state-authorized local candidate.
+# The default, V2 and V3 shadow paths never install it.  A handler owns the
+# persistent worker and all subsequent robot commands, then returns one
+# terminal closed-loop result so the legacy single-segment path is skipped.
+POST_AUTHORIZATION_CLOSED_LOOP_HANDLER = None
 
 SCENARIOS = {
     "D1": {
@@ -1195,6 +1200,7 @@ def wait_for_candidate_goal_guarded(
     min_motion_rad: float,
     guard_provider: Any | None = None,
     obstacle_state_provider: Any | None = None,
+    motion_monitor_provider: Any | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], np.ndarray | None]:
     started = time.perf_counter()
     samples: list[dict[str, Any]] = []
@@ -1223,6 +1229,15 @@ def wait_for_candidate_goal_guarded(
             if callable(obstacle_state_provider)
             else None
         )
+        motion_monitor = (
+            motion_monitor_provider(
+                elapsed_s=now - started,
+                actual_q=last.copy(),
+                obstacle_snapshot=obstacle_snapshot,
+            )
+            if callable(motion_monitor_provider)
+            else None
+        )
         minimum_guard_distance = min(minimum_guard_distance, guard_distance)
         samples.append(
             {
@@ -1243,14 +1258,41 @@ def wait_for_candidate_goal_guarded(
                     if obstacle_snapshot is None
                     else obstacle_snapshot.get("state_age_s")
                 ),
+                "motion_monitor": motion_monitor,
             }
         )
+        # The independent raw-cloud hard guard always has priority over the
+        # predictive monitor so an actual distance violation is never
+        # mislabeled as a planner-triggered stop.
         if guard_distance <= args.guided_hard_stop_m:
             stop_return = maybe_move_stop(robot)
             return (
                 {
                     "reached": False,
                     "guard_stopped": True,
+                    "elapsed_s": now - started,
+                    "hard_guard_distance_m": guard_distance,
+                    "minimum_hard_guard_distance_m": minimum_guard_distance,
+                    "stop_return": stop_return,
+                    "actual_joint_rad": last.tolist(),
+                    "sample_count": len(samples),
+                    "max_motion_from_start_rad": max_motion,
+                },
+                samples,
+            )
+        if motion_monitor is not None and not bool(
+            motion_monitor.get("motion_safe", False)
+        ):
+            stop_return = maybe_move_stop(robot)
+            return (
+                {
+                    "reached": False,
+                    "guard_stopped": False,
+                    "monitor_stopped": True,
+                    "monitor_stop_reason": motion_monitor.get(
+                        "reason", "motion_monitor_not_safe"
+                    ),
+                    "motion_monitor": motion_monitor,
                     "elapsed_s": now - started,
                     "hard_guard_distance_m": guard_distance,
                     "minimum_hard_guard_distance_m": minimum_guard_distance,
@@ -1551,6 +1593,7 @@ def execute_authorized_trajectory_offline_track(
     execution_label: str = "authorized trajectory",
     guard_provider: Any | None = None,
     obstacle_state_provider: Any | None = None,
+    motion_monitor_provider: Any | None = None,
 ) -> dict[str, Any]:
     times, qs = load_fast_candidate_csv(trajectory_csv)
     source_duration = float(times[-1] - times[0])
@@ -1634,6 +1677,7 @@ def execute_authorized_trajectory_offline_track(
         min_motion_rad=args.candidate_min_observed_motion_rad,
         guard_provider=guard_provider,
         obstacle_state_provider=obstacle_state_provider,
+        motion_monitor_provider=motion_monitor_provider,
     )
     log["goal_check"] = goal_check
     log["feedback_samples"] = feedback_samples
@@ -1650,6 +1694,9 @@ def execute_authorized_trajectory_offline_track(
         goal_tolerance_rad=args.candidate_goal_tolerance_rad,
     )
     log["elapsed_s"] = time.perf_counter() - started
+    if goal_check.get("monitor_stopped", False):
+        log["status"] = "STOPPED_BY_MOTION_MONITOR"
+        return log
     if not goal_check["reached"]:
         raise RuntimeError(f"dynamic candidate offline track did not reach goal: {goal_check}")
     log["status"] = (
@@ -4340,6 +4387,59 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "authorization": local_authorization,
                         }
                     )
+                closed_loop_result = None
+                if (
+                    callable(POST_AUTHORIZATION_CLOSED_LOOP_HANDLER)
+                    and persistent_worker is not None
+                    and args.mode == "live-stop-replan-execute"
+                    and local_authorization.get("local_execution_authorized", False)
+                ):
+                    if commander is not None:
+                        commander.stop()
+                        commander = None
+                    try:
+                        closed_loop_result = POST_AUTHORIZATION_CLOSED_LOOP_HANDLER(
+                            worker=persistent_worker,
+                            args=args,
+                            stage4_config=stage4_config,
+                            stage4_model=stage4_model,
+                            robot=robot,
+                            processor=processor,
+                            state_reader=state_reader,
+                            denoiser=denoiser,
+                            local_artifacts=local_artifacts,
+                            trial_dir=trial_dir,
+                            task_goal_q=np.asarray(reference.q[-1], dtype=np.float64),
+                            risk_links=risk_links,
+                        )
+                    finally:
+                        persistent_worker.stop()
+                    persistent_worker = None
+                    candidate_summary["final_closed_loop_execution"] = (
+                        closed_loop_result
+                    )
+                    write_json(
+                        trial_dir / "candidate" / "candidate_summary.json",
+                        candidate_summary,
+                    )
+                    for event_type in closed_loop_result.get("events", []):
+                        log["events"].append(
+                            {
+                                "type": event_type,
+                                "frame": frame_index,
+                                "t_s": time.perf_counter() - started,
+                            }
+                        )
+                    log["events"].append(
+                        {
+                            "type": closed_loop_result["status"],
+                            "frame": frame_index,
+                            "t_s": time.perf_counter() - started,
+                            "closed_loop_execution": closed_loop_result,
+                        }
+                    )
+                    break
+
                 playback_shadow = None
                 if (
                     callable(POST_AUTHORIZATION_PLAYBACK_SHADOW)

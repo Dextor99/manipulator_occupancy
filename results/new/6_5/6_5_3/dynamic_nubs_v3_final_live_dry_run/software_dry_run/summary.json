@@ -1,0 +1,65 @@
+{
+  "status": "FINAL_LIVE_SOFTWARE_DRY_RUN_PASS",
+  "robot_commanded": false,
+  "source": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_nubs_v3_playback_shadow/r04/core_live/trials/D2_opposing_approach_r04/v3_playback_shadow/playback_shadow_summary.json",
+  "scope": "orchestration_only_not_a_new_geometry_authorization",
+  "parked_robot_guard_is_not_a_virtual_candidate_gate": true,
+  "trace": [
+    "LOCAL_NUBS_1",
+    "LOCAL_NUBS_2",
+    "LOCAL_NUBS_3",
+    "GOAL_DIRECTED_NUBS",
+    "GOAL_REACHED"
+  ],
+  "transition_audit": [
+    {
+      "after_segment": 1,
+      "hold_clearance_m": 0.11854737229716565,
+      "goal_step_safe": false,
+      "state_source": "archived_r04_tail_state",
+      "action": "NEXT_LOCAL_NUBS"
+    },
+    {
+      "after_segment": 2,
+      "hold_clearance_m": 0.12069238223847713,
+      "goal_step_safe": false,
+      "state_source": "archived_r04_tail_state",
+      "action": "NEXT_LOCAL_NUBS"
+    },
+    {
+      "after_segment": 3,
+      "hold_clearance_m": 0.15,
+      "goal_step_safe": true,
+      "state_source": "mock_newer_post_crossing_state",
+      "action": "GOAL_DIRECTED_NUBS"
+    },
+    {
+      "after_segment": "mock_goal_segment",
+      "state_source": "mock_goal_feedback",
+      "action": "GOAL_REACHED"
+    }
+  ],
+  "archived_segment_checks": [
+    {
+      "segment": 1,
+      "latest_state_authorized": true,
+      "predicted_clearance_m": 0.14641861041807663,
+      "predicted_clearance_pass": true,
+      "archived_status": "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+    },
+    {
+      "segment": 2,
+      "latest_state_authorized": true,
+      "predicted_clearance_m": 0.12830865395464175,
+      "predicted_clearance_pass": true,
+      "archived_status": "V3_VIRTUAL_PLAYBACK_SHADOW_PASS"
+    },
+    {
+      "segment": 3,
+      "latest_state_authorized": true,
+      "predicted_clearance_m": 0.09632844412015275,
+      "predicted_clearance_pass": true,
+      "archived_status": "V3_VIRTUAL_PLAYBACK_SHADOW_HOLD"
+    }
+  ]
+}

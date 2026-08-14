@@ -81,6 +81,102 @@ dynamic_nubs_v3 = importlib.import_module(
 dynamic_nubs_v3_runner = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_dynamic_nubs_closed_loop_live"
 )
+dynamic_nubs_v3_final = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_dynamic_nubs_v3_final_live"
+)
+
+
+def test_v3_final_live_is_default_off_and_uses_separate_core_hook():
+    assert trial.POST_AUTHORIZATION_CLOSED_LOOP_HANDLER is None
+    args = dynamic_nubs_v3_final.build_parser().parse_args(["--repeat", "1"])
+    assert not args.execute
+    assert not args.software_dry_run
+    with pytest.raises(RuntimeError, match="no parked shadow mode"):
+        dynamic_nubs_v3_final.validate(args)
+    assert dynamic_nubs_v3_final.FINAL_PROTOCOL["parked_robot_shadow_required"] is False
+    assert dynamic_nubs_v3_final.FINAL_PROTOCOL["fresh_execution_clearance_m"] == 0.09
+    assert dynamic_nubs_v3_final.FINAL_PROTOCOL["raw_hard_guard_m"] == 0.10
+
+
+def test_v3_final_decision_has_only_goal_local_or_fail_closed_paths():
+    decide = dynamic_nubs_v3_final.decide_next_motion
+    base = {
+        "execution_status": "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION",
+        "segment_kind": "local",
+        "monitor_stop_reason": None,
+        "goal_error_max_abs_rad": 0.5,
+        "goal_tolerance_rad": 0.01,
+        "risk_remains": True,
+        "goal_step_safe": False,
+        "local_replans": 1,
+        "max_local_replans": 3,
+    }
+    assert decide(**base) == "NEXT_LOCAL_NUBS"
+    assert decide(**{**base, "risk_remains": False, "goal_step_safe": True}) == (
+        "GOAL_DIRECTED_NUBS"
+    )
+    assert decide(**{**base, "local_replans": 3}) == "MAX_LOCAL_REPLANS_HOLD"
+    assert decide(**{**base, "goal_error_max_abs_rad": 0.001}) == "GOAL_REACHED"
+    assert decide(
+        **{
+            **base,
+            "execution_status": "STOPPED_BY_MOTION_MONITOR",
+            "segment_kind": "local",
+            "monitor_stop_reason": "local_remaining_clearance_below_0p09",
+        }
+    ) == "FAIL_CLOSED_HOLD"
+    assert decide(
+        **{
+            **base,
+            "execution_status": "STOPPED_BY_MOTION_MONITOR",
+            "segment_kind": "goal",
+            "monitor_stop_reason": "predicted_goal_risk_replan",
+        }
+    ) == "NEXT_LOCAL_NUBS"
+
+
+def test_v3_final_software_dry_run_ignores_only_parked_shadow_guard(
+    tmp_path,
+):
+    archived = {
+        "segments": [
+            {
+                "status": "V3_VIRTUAL_PLAYBACK_SHADOW_PASS",
+                "precommand_authorization": {"local_execution_authorized": True},
+                "playback_min_predicted_remaining_clearance_m": 0.13,
+                "tail_hold_predicted_clearance_m": 0.118,
+            },
+            {
+                "status": "V3_VIRTUAL_PLAYBACK_SHADOW_PASS",
+                "precommand_authorization": {"local_execution_authorized": True},
+                "playback_min_predicted_remaining_clearance_m": 0.11,
+                "tail_hold_predicted_clearance_m": 0.120,
+            },
+            {
+                "status": "V3_VIRTUAL_PLAYBACK_PARKED_ROBOT_GUARD_HOLD",
+                "precommand_authorization": {"local_execution_authorized": True},
+                "playback_min_predicted_remaining_clearance_m": 0.096,
+            },
+        ]
+    }
+    source = tmp_path / "r04.json"
+    source.write_text(json.dumps(archived), encoding="utf-8")
+    args = dynamic_nubs_v3_final.build_parser().parse_args(
+        [
+            "--repeat",
+            "1",
+            "--software-dry-run",
+            "--r04-shadow-summary",
+            str(source),
+            "--output",
+            str(tmp_path / "out"),
+        ]
+    )
+    result = dynamic_nubs_v3_final.run(args)
+    assert result["status"] == "FINAL_LIVE_SOFTWARE_DRY_RUN_PASS"
+    assert result["robot_commanded"] is False
+    assert result["parked_robot_guard_is_not_a_virtual_candidate_gate"] is True
+    assert result["trace"][-1] == "GOAL_REACHED"
 
 
 def test_event_replan_extension_is_default_off_and_bounded():
@@ -968,6 +1064,80 @@ def test_guarded_candidate_wait_uses_shared_provider_without_camera(monkeypatch)
     assert result["guard_stopped"]
     assert samples[0]["hard_guard_timestamp"] == 123.0
     assert samples[0]["obstacle_state_timestamp"] == 122.9
+    assert robot.stopped
+
+
+def test_guarded_candidate_wait_motion_monitor_stops_before_goal():
+    class Robot:
+        def __init__(self):
+            self.stopped = False
+
+        def get_joint(self):
+            return np.zeros(6)
+
+        def move_stop(self, *args):
+            self.stopped = True
+            return 0
+
+    robot = Robot()
+    result, samples = trial.wait_for_candidate_goal_guarded(
+        robot,
+        np.ones(6),
+        processor=object(),
+        denoiser=None,
+        args=SimpleNamespace(guided_hard_stop_m=0.10),
+        goal_tolerance_rad=0.01,
+        min_execution_wait_s=0.0,
+        motion_timeout_s=1.0,
+        poll_s=0.0,
+        min_motion_rad=0.001,
+        guard_provider=lambda: {"distance_m": 0.20, "timestamp": 123.0},
+        obstacle_state_provider=lambda: {"timestamp": 122.9, "state_age_s": 0.1},
+        motion_monitor_provider=lambda **kwargs: {
+            "motion_safe": False,
+            "reason": "predicted_goal_risk_replan",
+        },
+    )
+    assert not result["guard_stopped"]
+    assert result["monitor_stopped"]
+    assert result["monitor_stop_reason"] == "predicted_goal_risk_replan"
+    assert samples[0]["motion_monitor"]["motion_safe"] is False
+    assert robot.stopped
+
+
+def test_raw_hard_guard_has_priority_over_motion_monitor():
+    class Robot:
+        def __init__(self):
+            self.stopped = False
+
+        def get_joint(self):
+            return np.zeros(6)
+
+        def move_stop(self, *args):
+            self.stopped = True
+            return 0
+
+    robot = Robot()
+    result, _ = trial.wait_for_candidate_goal_guarded(
+        robot,
+        np.ones(6),
+        processor=object(),
+        denoiser=None,
+        args=SimpleNamespace(guided_hard_stop_m=0.10),
+        goal_tolerance_rad=0.01,
+        min_execution_wait_s=0.0,
+        motion_timeout_s=1.0,
+        poll_s=0.0,
+        min_motion_rad=0.001,
+        guard_provider=lambda: {"distance_m": 0.05, "timestamp": 123.0},
+        obstacle_state_provider=lambda: {"timestamp": 122.9, "state_age_s": 0.1},
+        motion_monitor_provider=lambda **kwargs: {
+            "motion_safe": False,
+            "reason": "predicted_goal_risk_replan",
+        },
+    )
+    assert result["guard_stopped"]
+    assert not result.get("monitor_stopped", False)
     assert robot.stopped
 
 

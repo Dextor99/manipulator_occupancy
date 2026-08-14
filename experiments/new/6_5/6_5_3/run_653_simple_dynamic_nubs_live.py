@@ -355,6 +355,7 @@ def make_guarded_executor(original_executor: Any, live_trial_dir: Path):
         execution_label: str = "authorized trajectory",
         guard_provider: Any | None = None,
         obstacle_state_provider: Any | None = None,
+        motion_monitor_provider: Any | None = None,
     ) -> dict[str, Any]:
         candidate_path = Path(trajectory_csv).resolve()
         if not candidate_path.is_relative_to(live_trial_dir.resolve()):
@@ -384,6 +385,7 @@ def make_guarded_executor(original_executor: Any, live_trial_dir: Path):
             execution_label=execution_label,
             guard_provider=guard_provider,
             obstacle_state_provider=obstacle_state_provider,
+            motion_monitor_provider=motion_monitor_provider,
         )
         result["pre_execution_hard_guard_samples_m"] = guards
         result["candidate_source"] = "generated_in_current_live_run"
