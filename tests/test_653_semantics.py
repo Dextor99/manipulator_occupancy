@@ -135,11 +135,15 @@ def test_r04_offline_replay_validates_archived_hashes():
 
 def test_d2_complete_scene_is_opposing_and_freezes_planner_defaults():
     args = d2_complete.build_parser().parse_args(["--repeat", "1"])
-    assert args.task_geometry_id == "D2_COMPLETE_V1_OPPOSING_OBLIQUE_XP10"
+    assert args.task_geometry_id == "D2_COMPLETE_V2_OPPOSING_FIXED_X_XP10"
     assert args.post_local_monitor_max_s == 6.0
-    direction = np.asarray(d2_complete.SCENE_PROTOCOL["obstacle_direction_unit_base"])
+    direction = np.asarray(
+        d2_complete.SCENE_PROTOCOL["obstacle_nominal_direction_unit_base"]
+    )
     robot_task = np.array([0.0, -1.0, 0.0])
     assert float(np.dot(direction, robot_task)) < 0.0
+    assert d2_complete.SCENE_PROTOCOL["direction_is_diagnostic_not_a_planning_gate"]
+    assert np.isclose(d2_complete.SCENE_PROTOCOL["fixed_x_lane_m"], 0.7749155588)
     assert args.forward_m == 0.05
     assert args.planning_robust_target_m == 0.11
 

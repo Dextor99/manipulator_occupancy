@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Frozen D2-COMPLETE-v1 opposing-oblique protected live experiment.
+"""Frozen D2-COMPLETE-v2 fixed-X opposing protected live experiment.
 
 Only the physical obstacle corridor differs from the validated simple dynamic
 NUBS pilot.  Detection, STRO, fixed two-sphere geometry, 0.11 m bypass gate,
 Fast, Fresh authorization, 1 s execution and all safety thresholds remain
-unchanged.  The obstacle follows an independent A-to-B path and continues out
-of the ROI; it must never follow the robot's avoidance motion.
+unchanged.  The obstacle moves mainly along base +Y, opposite to the robot's
+base -Y task motion, while remaining in one fixed-X lane.  Small transverse
+and speed variations from manual operation are diagnostics, not validity
+gates.  The obstacle must never follow the robot's avoidance motion.
 """
 
 from __future__ import annotations
@@ -28,26 +30,30 @@ event = importlib.import_module(
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
 
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_complete_live"
-SCENE_PHRASE = "CCRO_653_D2_COMPLETE_V1_FIXED_CORRIDOR_CONFIRMED"
+SCENE_PHRASE = "CCRO_653_D2_COMPLETE_V2_FIXED_X_OPPOSING_CONFIRMED"
 SCENE_PROTOCOL = {
-    "scene_id": "D2_COMPLETE_V1_OPPOSING_OBLIQUE_XP10",
-    "classification": "opposing_oblique",
+    "scene_id": "D2_COMPLETE_V2_OPPOSING_FIXED_X_XP10",
+    "classification": "opposing_approach",
     "robot_task_direction": "approximately base -Y",
-    "obstacle_direction_unit_base": [0.906307787, 0.422618262, 0.0],
+    "obstacle_nominal_direction_unit_base": [0.0, 1.0, 0.0],
     "opposing_condition": "obstacle velocity dot robot task velocity < 0",
+    "direction_is_diagnostic_not_a_planning_gate": True,
     "nominal_speed_m_s": 0.10,
-    "offline_trigger_center_base_m": [0.60, -0.12, 0.3662453],
-    "corridor_point_a_base_m": [0.464, -0.183, 0.3662453],
-    "corridor_point_b_base_m": [0.827, -0.014, 0.3662453],
-    "operator_rule": "move A toward B and continue out of ROI; never steer toward robot avoidance",
-    "offline_scene_search_id": 1494,
+    "fixed_x_lane_m": 0.7749155588,
+    "fixed_x_lane_tolerance_m": 0.025,
+    "fixed_x_lane_source": "d2_fixed_x_opposing_search_r02",
     "offline_expected": {
-        "trigger_current_m": 0.1374618194,
-        "trigger_predicted_m": 0.1145028772,
-        "coarse_m": 0.1258061946,
-        "fast_m": 0.1345227926,
-        "tail_hold_min_m": 0.1488079986,
+        "speed_y_m_s": 0.08,
+        "trigger_current_m": 0.1760151840,
+        "trigger_predicted_m": 0.1331116060,
+        "coarse_m": 0.1250675599,
+        "fast_m": 0.1338093914,
+        "fast_ms": 48.0826940,
     },
+    "operator_rule": (
+        "keep X approximately constant; move mainly from base -Y toward +Y "
+        "and continue past the encounter; never steer toward robot avoidance"
+    ),
 }
 
 
@@ -65,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def validate_frozen_request(args: argparse.Namespace) -> None:
     if args.scene_operator_phrase != SCENE_PHRASE:
-        raise RuntimeError(f"bad fixed-corridor phrase; required: {SCENE_PHRASE}")
+        raise RuntimeError(f"bad fixed-X opposing phrase; required: {SCENE_PHRASE}")
     expected = {
         "forward_m": 0.05,
         "side_lengths_m": "0.04,0.06,0.08",
@@ -86,6 +92,12 @@ def validate_frozen_request(args: argparse.Namespace) -> None:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     validate_frozen_request(args)
+    output = args.output.resolve() / f"r{args.repeat:02d}"
+    if output.exists() and any(output.iterdir()):
+        raise RuntimeError(
+            f"refusing to overwrite existing D2 result directory: {output}; "
+            "choose a new --repeat value"
+        )
     result = event.run(args)
     result["scene_protocol"] = SCENE_PROTOCOL
     result["scene_operator_phrase"] = SCENE_PHRASE
