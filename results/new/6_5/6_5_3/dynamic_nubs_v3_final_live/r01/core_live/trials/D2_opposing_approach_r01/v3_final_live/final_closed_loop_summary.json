@@ -1,0 +1,359 @@
+{
+  "status": "FINAL_EXECUTION_MONITOR_FAIL_CLOSED_HOLD",
+  "robot_commanded": true,
+  "events": [
+    "DYNAMIC_NUBS_FINAL_CLOSED_LOOP_STARTED"
+  ],
+  "segments": [
+    {
+      "segment": 1,
+      "kind": "local",
+      "authorization": {
+        "status": "LOCAL_EXECUTION_AUTHORIZED",
+        "authorization_mode": "LOCAL_ONLY",
+        "local_execution_authorized": true,
+        "native_candidate_duration_s": 1.0,
+        "authorized_execution_duration_s": 1.0,
+        "time_scale": 1.0,
+        "verification_min_distance_m": 0.1465809424468805,
+        "verification_checks": {
+          "solver_ok": true,
+          "finite_ok": true,
+          "goal_ok": true,
+          "distance_ok": true,
+          "position_ok": true,
+          "velocity_ok": true,
+          "acceleration_ok": true,
+          "continuity_q_ok": true,
+          "continuity_qd_ok": true,
+          "continuity_qdd_ok": true,
+          "forecast_horizon_ok": true
+        },
+        "verification_reasons": [],
+        "verification_ms": 25.510573002975434,
+        "forecast_builder": "v3_execution_multisphere_forecast",
+        "forecast_component_radii_at_0s_m": [
+          0.13915928039487638,
+          0.13918692962370827,
+          0.16437194548021908,
+          0.16899123671479352
+        ],
+        "forecast_component_radii_at_execution_end_m": [
+          0.13915928039487638,
+          0.13918692962370827,
+          0.16437194548021908,
+          0.16899123671479352
+        ],
+        "authorized_trajectory_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_nubs_v3_final_live/r01/core_live/trials/D2_opposing_approach_r01/v3_final_live/segment_01_local/command_authorization/local_execution_authorization/authorized_local_repair.csv",
+        "authorization_compute_ms": 115.19843601854518,
+        "robot_executed": false,
+        "persistent_state_seq": 7,
+        "persistent_state_age_s": 0.16116809844970703,
+        "raw_guard_distance_m": 0.2236046751244579
+      },
+      "execution": {
+        "trajectory_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/dynamic_nubs_v3_final_live/r01/core_live/trials/D2_opposing_approach_r01/v3_final_live/segment_01_local/command_authorization/local_execution_authorization/authorized_local_repair.csv",
+        "robot_commanded": true,
+        "source_trajectory_stats": {
+          "waypoints": 101,
+          "duration_from_csv_s": 1.0,
+          "max_abs_joint_step_rad": 0.001990959999999875,
+          "max_abs_csv_qd_rad_s": 0.19909599999998734
+        },
+        "execution_waypoint_stats": {
+          "waypoints": 201,
+          "duration_from_csv_s": 1.0,
+          "max_abs_joint_step_rad": 0.0009954800000000485,
+          "max_abs_csv_qd_rad_s": 0.19909600000000954
+        },
+        "execution_label": "V3 final-live local segment 1",
+        "playback_duration_s": 1.0,
+        "controller_waypoint_period_s": 0.005,
+        "joint_velc": 0.006,
+        "joint_acc": 0.012,
+        "min_execution_wait_s": 0.9,
+        "actual_start_joint_rad": [
+          0.666121244430542,
+          -0.23093904554843903,
+          1.3053961992263794,
+          -0.034409768879413605,
+          1.570844054222107,
+          0.666121244430542
+        ],
+        "candidate_start_joint_rad": [
+          0.67605424,
+          -0.23701696,
+          1.29744744,
+          -0.0362768,
+          1.57084036,
+          0.67607993
+        ],
+        "start_error": {
+          "l2_rad": 0.017362299831133094,
+          "max_abs_rad": 0.009958685569458003
+        },
+        "offline_track_return": {
+          "requested_waypoints": 201,
+          "block": false,
+          "joint_velc": 0.006,
+          "joint_acc": 0.012,
+          "init_profile_ret": 0,
+          "clear_ret": 0,
+          "append_ret": 0,
+          "appended_waypoints": 201,
+          "startup_ret": 0
+        },
+        "goal_check": {
+          "reached": false,
+          "guard_stopped": false,
+          "monitor_stopped": true,
+          "monitor_stop_reason": "perception_watchdog_expired",
+          "motion_monitor": {
+            "motion_safe": false,
+            "reason": "perception_watchdog_expired",
+            "state_failure_reasons": [
+              "perception_watchdog_expired"
+            ],
+            "segment_kind": "local"
+          },
+          "elapsed_s": 0.41006441303761676,
+          "hard_guard_distance_m": 0.22059085486349475,
+          "minimum_hard_guard_distance_m": 0.22059085486349475,
+          "stop_return": {
+            "method": "move_control_stop",
+            "return": 0
+          },
+          "actual_joint_rad": [
+            0.6624531745910645,
+            -0.21150949597358704,
+            1.299189805984497,
+            -0.02194948121905327,
+            1.6175637245178223,
+            0.6751629114151001
+          ],
+          "sample_count": 6,
+          "max_motion_from_start_rad": 0.04671967029571533
+        },
+        "feedback_samples": [
+          {
+            "t_s": 0.00038761604810133576,
+            "actual_joint_rad": [
+              0.666121244430542,
+              -0.23093904554843903,
+              1.3053961992263794,
+              -0.034409768879413605,
+              1.570844054222107,
+              0.666121244430542
+            ],
+            "goal_l2_error_rad": 0.14608234724648408,
+            "goal_max_abs_error_rad": 0.12464949577789297,
+            "max_motion_from_start_rad": 0.0,
+            "hard_guard_distance_m": 0.2236046751244579,
+            "hard_guard_timestamp": 1786697860.768603,
+            "obstacle_state_timestamp": 1786697860.768603,
+            "obstacle_state_age_s": 0.29552316665649414,
+            "motion_monitor": {
+              "motion_safe": true,
+              "reason": "clear",
+              "segment_kind": "local",
+              "threshold_m": 0.09,
+              "remaining_clearance": {
+                "min_distance_m": 0.16264445442670392,
+                "tau_s": 0.0,
+                "nearest_link": "left_link"
+              },
+              "state_seq": 7,
+              "state_age_s": 0.29557013511657715
+            }
+          },
+          {
+            "t_s": 0.07383229403058067,
+            "actual_joint_rad": [
+              0.6822385787963867,
+              -0.237042635679245,
+              1.2961528301239014,
+              -0.03537079319357872,
+              1.5716840028762817,
+              0.6765934228897095
+            ],
+            "goal_l2_error_rad": 0.15004532688360328,
+            "goal_max_abs_error_rad": 0.12380954712371817,
+            "max_motion_from_start_rad": 0.016117334365844727,
+            "hard_guard_distance_m": 0.224315051131665,
+            "hard_guard_timestamp": 1786697860.9200177,
+            "obstacle_state_timestamp": 1786697860.9200177,
+            "obstacle_state_age_s": 0.21757888793945312,
+            "motion_monitor": {
+              "motion_safe": true,
+              "reason": "clear",
+              "segment_kind": "local",
+              "threshold_m": 0.09,
+              "remaining_clearance": {
+                "min_distance_m": 0.175258725284275,
+                "tau_s": 0.0,
+                "nearest_link": "left_link"
+              },
+              "state_seq": 8,
+              "state_age_s": 0.21759486198425293
+            }
+          },
+          {
+            "t_s": 0.1957864590222016,
+            "actual_joint_rad": [
+              0.6707025766372681,
+              -0.22625863552093506,
+              1.297953724861145,
+              -0.03022088296711445,
+              1.5905596017837524,
+              0.6757534742355347
+            ],
+            "goal_l2_error_rad": 0.1261781680479296,
+            "goal_max_abs_error_rad": 0.10493394821624746,
+            "max_motion_from_start_rad": 0.019715547561645508,
+            "hard_guard_distance_m": 0.22818977237168625,
+            "hard_guard_timestamp": 1786697861.100929,
+            "obstacle_state_timestamp": 1786697860.9200177,
+            "obstacle_state_age_s": 0.33956408500671387,
+            "motion_monitor": {
+              "motion_safe": true,
+              "reason": "clear",
+              "segment_kind": "local",
+              "threshold_m": 0.09,
+              "remaining_clearance": {
+                "min_distance_m": 0.19982065903811336,
+                "tau_s": 0.0,
+                "nearest_link": "left_link"
+              },
+              "state_seq": 8,
+              "state_age_s": 0.3395981788635254
+            }
+          },
+          {
+            "t_s": 0.2589627919951454,
+            "actual_joint_rad": [
+              0.6673316955566406,
+              -0.22016237676143646,
+              1.2983131408691406,
+              -0.026721583679318428,
+              1.6013914346694946,
+              0.6756324768066406
+            ],
+            "goal_l2_error_rad": 0.11296020970728664,
+            "goal_max_abs_error_rad": 0.09410211533050528,
+            "max_motion_from_start_rad": 0.030547380447387695,
+            "hard_guard_distance_m": 0.22818977237168625,
+            "hard_guard_timestamp": 1786697861.100929,
+            "obstacle_state_timestamp": 1786697860.9200177,
+            "obstacle_state_age_s": 0.40259647369384766,
+            "motion_monitor": {
+              "motion_safe": true,
+              "reason": "clear",
+              "segment_kind": "local",
+              "threshold_m": 0.09,
+              "remaining_clearance": {
+                "min_distance_m": 0.2125853130021802,
+                "tau_s": 0.0,
+                "nearest_link": "left_link"
+              },
+              "state_seq": 8,
+              "state_age_s": 0.4026205539703369
+            }
+          },
+          {
+            "t_s": 0.35118960204999894,
+            "actual_joint_rad": [
+              0.6638396978378296,
+              -0.2144879251718521,
+              1.2991567850112915,
+              -0.02367345243692398,
+              1.6124944686889648,
+              0.675302267074585
+            ],
+            "goal_l2_error_rad": 0.09987323057578894,
+            "goal_max_abs_error_rad": 0.08299908131103506,
+            "max_motion_from_start_rad": 0.04165041446685791,
+            "hard_guard_distance_m": 0.22059085486349475,
+            "hard_guard_timestamp": 1786697861.2495804,
+            "obstacle_state_timestamp": 1786697860.9200177,
+            "obstacle_state_age_s": 0.494997501373291,
+            "motion_monitor": {
+              "motion_safe": true,
+              "reason": "clear",
+              "segment_kind": "local",
+              "threshold_m": 0.09,
+              "remaining_clearance": {
+                "min_distance_m": 0.23129637783763674,
+                "tau_s": 0.0,
+                "nearest_link": "left_link"
+              },
+              "state_seq": 8,
+              "state_age_s": 0.49501967430114746
+            }
+          },
+          {
+            "t_s": 0.41006441303761676,
+            "actual_joint_rad": [
+              0.6624531745910645,
+              -0.21150949597358704,
+              1.299189805984497,
+              -0.02194948121905327,
+              1.6175637245178223,
+              0.6751629114151001
+            ],
+            "goal_l2_error_rad": 0.09365049217297883,
+            "goal_max_abs_error_rad": 0.07792982548217764,
+            "max_motion_from_start_rad": 0.04671967029571533,
+            "hard_guard_distance_m": 0.22059085486349475,
+            "hard_guard_timestamp": 1786697861.2495804,
+            "obstacle_state_timestamp": 1786697860.9200177,
+            "obstacle_state_age_s": 0.5537586212158203,
+            "motion_monitor": {
+              "motion_safe": false,
+              "reason": "perception_watchdog_expired",
+              "state_failure_reasons": [
+                "perception_watchdog_expired"
+              ],
+              "segment_kind": "local"
+            }
+          }
+        ],
+        "tracking_metrics": {
+          "requested_duration_s": 1.0,
+          "command_to_last_feedback_duration_s": 0.41006441303761676,
+          "observed_motion_duration_s": 0.3362321190070361,
+          "duration_error_s": -0.5899355869623832,
+          "tracking_rmse_rad": 0.003343535215977576,
+          "tracking_max_error_rad": 0.009958678204753046,
+          "tracking_sample_count": 6
+        },
+        "timing_check": {
+          "accepted": false,
+          "requested_duration_s": 1.0,
+          "first_goal_tolerance_time_s": null,
+          "valid_completion_time_s": null,
+          "completion_to_requested_ratio": null,
+          "actual_to_requested_ratio": null,
+          "relative_tolerance": 0.2,
+          "reason": "authorized_time_axis_not_followed"
+        },
+        "elapsed_s": 0.4244351569795981,
+        "status": "STOPPED_BY_MOTION_MONITOR",
+        "pre_execution_hard_guard_samples_m": [
+          0.2236046751244579,
+          0.2236046751244579,
+          0.2236046751244579
+        ],
+        "candidate_source": "generated_in_current_live_run"
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "segment": 1,
+      "decision": "HOLD",
+      "reason": "perception_watchdog_expired"
+    }
+  ],
+  "local_replans_used": 1,
+  "segments_attempted": 1
+}
