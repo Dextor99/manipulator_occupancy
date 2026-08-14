@@ -16,9 +16,11 @@ from typing import Any
 
 import numpy as np
 
+from planning.obstacle_forecast import CompositeForecast, ConstantVelocitySphereForecast
 from risk.prediction import RiskSphere
 
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
+config64 = importlib.import_module("experiments.new.6_4.config_64")
 _BASE_ADAPTIVE_FIT = trial.fit_pca_multisphere
 
 
@@ -36,6 +38,11 @@ V3_PROTOCOL = {
     "raw_hard_guard_m": 0.10,
     "clearance_improvement_is_hard_gate": False,
     "fixed_x_required": False,
+    "execution_forecast": "fresh_geometry_constant_velocity_no_legacy_inflation",
+    "execution_forecast_margin_m": 0.0,
+    "execution_forecast_uncertainty_m": 0.0,
+    "execution_forecast_uncertainty_growth_m_s": 0.0,
+    "execution_forecast_velocity_radius_scale_s": 0.0,
 }
 
 
@@ -106,6 +113,45 @@ def adaptive_multisphere_predictor(
                 for center, radius in zip(shifted, radii)
             )
     return predictions
+
+
+def v3_execution_multisphere_forecast(
+    centers: np.ndarray,
+    radii: np.ndarray,
+    velocity: np.ndarray,
+    *,
+    object_id: int = 1,
+) -> CompositeForecast:
+    """Move the Fresh geometry without reapplying the legacy 6.4 shell.
+
+    The radii already cover every Fresh point and include the geometry fitter's
+    explicit margin.  The final 0.09 m verifier threshold and 0.10 m raw-cloud
+    guard remain separate safety distances rather than being folded into the
+    obstacle geometry a second time.
+    """
+    center_values = np.asarray(centers, dtype=np.float64)
+    radius_values = np.asarray(radii, dtype=np.float64)
+    velocity_value = np.asarray(velocity, dtype=np.float64)
+    if center_values.ndim != 2 or center_values.shape[1] != 3:
+        raise ValueError("centers must have shape (M, 3)")
+    if radius_values.shape != (len(center_values),) or len(center_values) == 0:
+        raise ValueError("radii must have shape (M,) with M > 0")
+    forecasts = [
+        ConstantVelocitySphereForecast(
+            center,
+            velocity_value,
+            float(radius),
+            config64.FORECAST_HORIZON,
+            object_id=int(object_id),
+            margin=0.0,
+            uncertainty=0.0,
+            uncertainty_growth=0.0,
+            velocity_radius_scale=0.0,
+            beyond_horizon="hold_inflate",
+        )
+        for center, radius in zip(center_values, radius_values)
+    ]
+    return CompositeForecast(forecasts)
 
 
 @dataclass

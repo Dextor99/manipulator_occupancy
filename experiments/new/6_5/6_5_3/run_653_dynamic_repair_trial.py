@@ -1683,9 +1683,13 @@ def run_fast_repair(
             )
         forecast = forecast_override
         geometry_mode = "offline_forecast_override"
+        forecast_builder = type(forecast_override).__name__
     elif multisphere_geometry is None:
         forecast = constant_forecast(center, velocity, radius)
         geometry_mode = "single_sphere"
+        forecast_builder = getattr(
+            constant_forecast, "__name__", type(constant_forecast).__name__
+        )
     else:
         forecast = constant_multisphere_forecast(
             np.asarray(multisphere_geometry["component_centers"], dtype=np.float64),
@@ -1694,6 +1698,11 @@ def run_fast_repair(
             object_id=int(obstacle_audit.get("track_id") or 1),
         )
         geometry_mode = "fresh_pca_multisphere"
+        forecast_builder = getattr(
+            constant_multisphere_forecast,
+            "__name__",
+            type(constant_multisphere_forecast).__name__,
+        )
     head, tail, durations, p_inner, q_goal = make_local_reference(
         q_now, qd_now, args, reference_goal=reference_goal
     )
@@ -1916,6 +1925,16 @@ def run_fast_repair(
         "obstacle_velocity": velocity.tolist(),
         "obstacle_radius": radius,
         "obstacle_geometry_mode": geometry_mode,
+        "forecast_builder": forecast_builder,
+        "forecast_component_radii_at_0s_m": [
+            float(sphere.radius) for sphere in forecast.occupancy_at(0.0).spheres
+        ],
+        "forecast_component_radii_at_candidate_end_m": [
+            float(sphere.radius)
+            for sphere in forecast.occupancy_at(
+                float(candidate_trajectory.total_duration)
+            ).spheres
+        ],
         "multisphere_geometry": multisphere_geometry,
         "obstacle_association": obstacle_audit,
         "risk_links": sorted(risk_links),
@@ -2002,6 +2021,18 @@ def authorize_local_repair_execution(
         "verification_checks": verification.checks,
         "verification_reasons": verification.reasons,
         "verification_ms": float(verification.validation_ms),
+        "forecast_builder": getattr(
+            constant_multisphere_forecast,
+            "__name__",
+            type(constant_multisphere_forecast).__name__,
+        ),
+        "forecast_component_radii_at_0s_m": [
+            float(sphere.radius) for sphere in forecast.occupancy_at(0.0).spheres
+        ],
+        "forecast_component_radii_at_execution_end_m": [
+            float(sphere.radius)
+            for sphere in forecast.occupancy_at(requested_duration).spheres
+        ],
         "authorized_trajectory_csv": str(trajectory_csv) if authorized else None,
         "authorization_compute_ms": (time.perf_counter() - started) * 1000.0,
         "robot_executed": False,

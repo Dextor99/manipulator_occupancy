@@ -1760,6 +1760,36 @@ def test_v3_adaptive_policy_allows_one_to_four_components(component_count):
     )
 
 
+def test_v3_execution_forecast_uses_fresh_radii_without_legacy_shell():
+    centers = np.asarray([[0.0, 0.0, 0.3], [0.1, 0.0, 0.3]])
+    radii = np.asarray([0.105, 0.126])
+    velocity = np.asarray([0.0, 0.06, 0.0])
+    forecast = dynamic_nubs_v3.v3_execution_multisphere_forecast(
+        centers, radii, velocity, object_id=9
+    )
+    at_zero = forecast.occupancy_at(0.0)
+    at_one = forecast.occupancy_at(1.0)
+    np.testing.assert_allclose([sphere.radius for sphere in at_zero.spheres], radii)
+    np.testing.assert_allclose([sphere.radius for sphere in at_one.spheres], radii)
+    np.testing.assert_allclose(at_one.spheres[0].center, centers[0] + velocity)
+    assert all(sphere.object_id == 9 for sphere in at_one.spheres)
+    assert all(item.margin == 0.0 for item in forecast.forecasts)
+    assert all(item.uncertainty == 0.0 for item in forecast.forecasts)
+    assert all(item.uncertainty_growth == 0.0 for item in forecast.forecasts)
+    assert all(item.velocity_radius_scale == 0.0 for item in forecast.forecasts)
+
+
+def test_v2_execution_forecast_retains_archived_legacy_inflation():
+    centers = np.asarray([[0.0, 0.0, 0.3]])
+    radii = np.asarray([0.126])
+    velocity = np.asarray([0.0, 0.06, 0.0])
+    forecast = trial.common64.constant_multisphere_forecast(centers, radii, velocity)
+    assert forecast.occupancy_at(0.0).spheres[0].radius == pytest.approx(0.176)
+    assert forecast.occupancy_at(1.0).spheres[0].radius == pytest.approx(
+        0.126 + 0.035 + 0.015 + 0.003 + 0.080 * 0.06
+    )
+
+
 def test_v3_soft_coarse_seed_reaches_fast_selection_below_preferred_target():
     rows = [
         {
@@ -1796,6 +1826,7 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
 
     original_predictor = trial.RISK_SPHERE_PREDICTOR
     original_gate = trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK
+    original_execution_forecast = trial.constant_multisphere_forecast
     original_adapter = simple_live.fixed_two_sphere_adapter
     monkeypatch.setattr(simple_live, "make_r06_fast_wrapper", legacy_factory)
 
@@ -1807,6 +1838,10 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     def fake_event_run(args):
         assert trial.RISK_SPHERE_PREDICTOR is dynamic_nubs_v3.adaptive_multisphere_predictor
         assert trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK is False
+        assert (
+            trial.constant_multisphere_forecast
+            is dynamic_nubs_v3.v3_execution_multisphere_forecast
+        )
         assert simple_live.fixed_two_sphere_adapter is dynamic_nubs_v3.adaptive_geometry_adapter
         calls["factory_result"] = simple_live.make_r06_fast_wrapper(
             "original-fast", marker="v3"
@@ -1866,6 +1901,7 @@ def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     )
     assert trial.RISK_SPHERE_PREDICTOR is original_predictor
     assert trial.RISK_TRIGGER_REQUIRES_DYNAMIC_TRACK is original_gate
+    assert trial.constant_multisphere_forecast is original_execution_forecast
     assert simple_live.fixed_two_sphere_adapter is original_adapter
 
 
