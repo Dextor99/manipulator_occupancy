@@ -499,109 +499,152 @@ def run_final_closed_loop(
     artifacts = local_artifacts
     segment_kind = "local"
     local_replans = 1
-    # Fix 1: the first segment may be re-anchored once against the measured
-    # robot state before command; see the start-sync check in the loop.
-    reanchor_used = False
+    # Re-anchor: EVERY segment about to be sent is start-synced once against
+    # the measured robot state right after command-time authorization.  If the
+    # candidate start drifts beyond the ~0.002 rad sync value, the candidate is
+    # re-anchored once from the latest actual q WITHOUT consuming a segment
+    # index; segment_index advances only when a trajectory actually executes.
+    # The sync value is a re-anchor signal, not a failure condition; the
+    # executor's own 0.035 rad gate stays a hard safety limit for any residual
+    # mismatch after the re-anchor.
     latest_seq = v3._state_seq(worker.snapshot())
 
     for segment_index in range(1, int(args.max_closed_loop_segments) + 1):
-        segment_dir = root / f"segment_{segment_index:02d}_{segment_kind}"
-        authorization, command_snapshot = _command_time_authorize(
-            worker=worker,
-            args=args,
-            config=stage4_config,
-            model=stage4_model,
-            artifacts=artifacts,
-            output_dir=segment_dir / "command_authorization",
-        )
-        if not authorization.get("local_execution_authorized", False):
-            result["status"] = "FINAL_COMMAND_AUTHORIZATION_HOLD"
-            result["decisions"].append(
-                {"segment": segment_index, "authorization": authorization}
+        reanchored = False
+        retry_hold = None
+        while True:
+            segment_dir = root / f"segment_{segment_index:02d}_{segment_kind}"
+            authorization, command_snapshot = _command_time_authorize(
+                worker=worker,
+                args=args,
+                config=stage4_config,
+                model=stage4_model,
+                artifacts=artifacts,
+                output_dir=segment_dir / "command_authorization",
             )
-            break
-        latest_seq = int(authorization["persistent_state_seq"])
-        trajectory = artifacts["candidate_trajectory"]
-        # Fix 1: re-anchor the first local segment once against the measured
-        # robot state before command.  The candidate start was planned from the
-        # post-stop state; if the arm settled further after planning, replan
-        # the local bypass once from the latest actual q instead of executing a
-        # stale trajectory (r01 start jitter) or failing the experiment.  The
-        # ~0.002 rad start-sync value is a re-anchor signal, not a failure
-        # condition; the executor's own 0.035 rad gate stays a hard safety
-        # limit for any residual mismatch after the re-anchor.
-        if (
-            segment_index == 1
-            and segment_kind == "local"
-            and not reanchor_used
-            and robot is not None
-        ):
-            actual_start = np.asarray(robot.get_joint(), dtype=np.float64)
-            candidate_start = np.asarray(
-                trajectory.evaluate(0.0), dtype=np.float64
-            )
-            start_sync_err = float(
-                trial.joint_error(actual_start, candidate_start)["max_abs_rad"]
-            )
-            if start_sync_err > float(args.candidate_start_sync_rad):
-                snapshot, aligned, reasons = _latest_decision_state(
-                    worker, args, after_seq=latest_seq
+            if not authorization.get("local_execution_authorized", False):
+                result["status"] = "FINAL_COMMAND_AUTHORIZATION_HOLD"
+                result["decisions"].append(
+                    {"segment": segment_index, "authorization": authorization}
                 )
-                if reasons:
-                    result["status"] = "FINAL_START_REANCHOR_STATE_HOLD"
-                    result["decisions"].append(
-                        {
-                            "segment": segment_index,
-                            "decision": "HOLD",
-                            "start_sync_error_rad": start_sync_err,
-                            "reason": reasons,
-                        }
-                    )
-                    break
-                latest_seq = v3._state_seq(snapshot)
-                try:
-                    replanned, planning = _plan_next_local(
-                        worker=worker,
-                        args=args,
-                        config=stage4_config,
-                        model=stage4_model,
-                        q_escape_start=q_escape_start,
-                        q_now=actual_start,
-                        q_goal=q_goal,
-                        snapshot=snapshot,
-                        aligned=aligned,
-                        risk_links=set(risk_links or ()),
-                        output_dir=root / "start_reanchor",
-                    )
-                except Exception as exc:
-                    trial.maybe_move_stop(robot)
-                    result["status"] = (
-                        "FINAL_START_REANCHOR_EXCEPTION_FAIL_CLOSED_HOLD"
-                    )
-                    result["decisions"].append(
-                        {
-                            "segment": segment_index,
-                            "decision": "HOLD",
-                            "start_sync_error_rad": start_sync_err,
-                            "exception": f"{type(exc).__name__}: {exc}",
-                        }
-                    )
-                    break
-                if replanned is None:
-                    result["status"] = "FINAL_START_REANCHOR_FAIL_CLOSED_HOLD"
-                    result["decisions"].append(
-                        {
-                            "segment": segment_index,
-                            "decision": "HOLD",
-                            "start_sync_error_rad": start_sync_err,
-                            "planning": planning,
-                        }
-                    )
-                    break
-                artifacts = replanned
-                reanchor_used = True
-                result["events"].append("CANDIDATE_START_REANCHORED_ONCE")
-                continue
+                retry_hold = "AUTHORIZATION"
+                break
+            latest_seq = int(authorization["persistent_state_seq"])
+            trajectory = artifacts["candidate_trajectory"]
+            if robot is not None:
+                actual_start = np.asarray(robot.get_joint(), dtype=np.float64)
+                candidate_start = np.asarray(
+                    trajectory.evaluate(0.0), dtype=np.float64
+                )
+                start_sync_err = float(
+                    trial.joint_error(actual_start, candidate_start)["max_abs_rad"]
+                )
+                if start_sync_err > float(args.candidate_start_sync_rad):
+                    if reanchored:
+                        # Re-anchored once for this segment and the candidate
+                        # start is still beyond sync: fail closed (severe
+                        # post-re-anchor start mismatch).
+                        result["status"] = (
+                            "FINAL_START_REANCHOR_STILL_MISMATCHED_HOLD"
+                        )
+                        result["decisions"].append(
+                            {
+                                "segment": segment_index,
+                                "decision": "HOLD",
+                                "start_sync_error_rad": start_sync_err,
+                                "reason": "re-anchored once and still mismatched",
+                            }
+                        )
+                        retry_hold = "STILL_MISMATCHED"
+                        break
+                    if segment_kind == "goal":
+                        # Goal-trajectory re-anchor: rebuild deterministically
+                        # from the measured start (no perception needed).
+                        replanned, goal_step = v3._bounded_goal_artifacts(
+                            actual_start,
+                            q_goal,
+                            max_joint_delta_rad=float(args.max_joint_delta_rad),
+                            duration_s=float(args.local_horizon_s),
+                        )
+                        if not goal_step:
+                            result["status"] = (
+                                "FINAL_START_REANCHOR_FAIL_CLOSED_HOLD"
+                            )
+                            result["decisions"].append(
+                                {
+                                    "segment": segment_index,
+                                    "decision": "HOLD",
+                                    "start_sync_error_rad": start_sync_err,
+                                    "reason": "goal step unavailable after re-anchor",
+                                }
+                            )
+                            retry_hold = "REPLAN_NONE"
+                            break
+                    else:
+                        snapshot, aligned, reasons = _latest_decision_state(
+                            worker, args, after_seq=latest_seq
+                        )
+                        if reasons:
+                            result["status"] = "FINAL_START_REANCHOR_STATE_HOLD"
+                            result["decisions"].append(
+                                {
+                                    "segment": segment_index,
+                                    "decision": "HOLD",
+                                    "start_sync_error_rad": start_sync_err,
+                                    "reason": reasons,
+                                }
+                            )
+                            retry_hold = "STATE"
+                            break
+                        latest_seq = v3._state_seq(snapshot)
+                        try:
+                            replanned, planning = _plan_next_local(
+                                worker=worker,
+                                args=args,
+                                config=stage4_config,
+                                model=stage4_model,
+                                q_escape_start=q_escape_start,
+                                q_now=actual_start,
+                                q_goal=q_goal,
+                                snapshot=snapshot,
+                                aligned=aligned,
+                                risk_links=set(risk_links or ()),
+                                output_dir=root / "start_reanchor",
+                            )
+                        except Exception as exc:
+                            trial.maybe_move_stop(robot)
+                            result["status"] = (
+                                "FINAL_START_REANCHOR_EXCEPTION_FAIL_CLOSED_HOLD"
+                            )
+                            result["decisions"].append(
+                                {
+                                    "segment": segment_index,
+                                    "decision": "HOLD",
+                                    "start_sync_error_rad": start_sync_err,
+                                    "exception": f"{type(exc).__name__}: {exc}",
+                                }
+                            )
+                            retry_hold = "EXCEPTION"
+                            break
+                        if replanned is None:
+                            result["status"] = "FINAL_START_REANCHOR_FAIL_CLOSED_HOLD"
+                            result["decisions"].append(
+                                {
+                                    "segment": segment_index,
+                                    "decision": "HOLD",
+                                    "start_sync_error_rad": start_sync_err,
+                                    "planning": planning,
+                                }
+                            )
+                            retry_hold = "REPLAN_NONE"
+                            break
+                    artifacts = replanned
+                    reanchored = True
+                    result["events"].append("CANDIDATE_START_REANCHORED_ONCE")
+                    continue
+            break
+        if retry_hold is not None:
+            break
         monitor = _execution_monitor(
             worker=worker,
             args=args,
