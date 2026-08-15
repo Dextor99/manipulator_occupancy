@@ -1168,11 +1168,14 @@ def execution_hard_guard_distance(processor: Any, denoiser: Any, args: argparse.
     robot_points = np.asarray(frame.robot_points, dtype=np.float64)
     if denoiser is not None:
         scene_points = denoiser.filter(scene_points)
+    # The raw hard guard sees the broad safety ROI (not the planning ROI) so
+    # an obstacle just outside the task box is still a physical protection.
+    rois = apply_two_layer_roi(scene_points, args, need_planning=False)
     plane_removal = None
     if args.remove_planes:
         plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
     clustered = FastClusteringFilter(
-        scene_points,
+        rois["safety_points"],
         robot_points,
         workspace=getattr(processor, "_workspace", None),
         plane_removal=plane_removal,
@@ -2868,6 +2871,59 @@ def maybe_move_stop(robot: Any) -> Any:
     return {"method": None, "return": None, "error": "no supported stop function found"}
 
 
+def wait_until_robot_static(
+    robot: Any,
+    *,
+    step_tolerance_rad: float,
+    settle_samples: int,
+    timeout_s: float,
+    poll_s: float,
+    label: str = "robot",
+) -> dict[str, Any]:
+    """Wait until consecutive joint reads stop changing (truly static).
+
+    A STRO stop command returns before the arm physically settles; reading the
+    joints while it is still decelerating yields a candidate start up to
+    ~1e-2 rad away from the true stopped pose (r01 start jitter).  Poll the
+    real joint state and require ``settle_samples`` consecutive reads whose
+    per-sample max step stays below ``step_tolerance_rad`` before returning.
+    """
+    started = time.perf_counter()
+    last = np.asarray(robot.get_joint(), dtype=np.float64)
+    quiet_samples = 0
+    total_samples = 0
+    last_step = float("inf")
+    while time.perf_counter() - started < max(0.0, float(timeout_s)):
+        current = np.asarray(robot.get_joint(), dtype=np.float64)
+        total_samples += 1
+        last_step = float(np.max(np.abs(current - last)))
+        if last_step <= step_tolerance_rad:
+            quiet_samples += 1
+            if quiet_samples >= int(settle_samples):
+                return {
+                    "static": True,
+                    "label": label,
+                    "actual_joint": current.tolist(),
+                    "max_step_rad": last_step,
+                    "quiet_samples": quiet_samples,
+                    "wait_s": time.perf_counter() - started,
+                    "sample_count": total_samples,
+                }
+        else:
+            quiet_samples = 0
+        last = current
+        time.sleep(max(0.0, float(poll_s)))
+    return {
+        "static": False,
+        "label": label,
+        "actual_joint": last.tolist(),
+        "max_step_rad": last_step,
+        "quiet_samples": quiet_samples,
+        "wait_s": time.perf_counter() - started,
+        "sample_count": total_samples,
+    }
+
+
 def filter_guard_clusters(clusters: list[Any], args: argparse.Namespace) -> list[Any]:
     """Keep only obstacle clusters in the dynamic-test guard workspace.
 
@@ -2889,6 +2945,241 @@ def filter_guard_clusters(clusters: list[Any], args: argparse.Namespace) -> list
             continue
         kept.append(cluster)
     return kept
+
+
+def crop_points_roi(points: np.ndarray, roi: dict[str, float]) -> np.ndarray:
+    """Keep only points inside an axis-aligned ROI box.
+
+    roi keys: x_min, x_max, y_min, y_max, z_min, z_max.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[1] != 3 or len(pts) == 0:
+        return pts
+    mask = (
+        (pts[:, 0] >= roi["x_min"])
+        & (pts[:, 0] <= roi["x_max"])
+        & (pts[:, 1] >= roi["y_min"])
+        & (pts[:, 1] <= roi["y_max"])
+        & (pts[:, 2] >= roi["z_min"])
+        & (pts[:, 2] <= roi["z_max"])
+    )
+    return pts[mask]
+
+
+def detect_tabletop_z(
+    points: np.ndarray,
+    *,
+    xy_bounds: tuple[float, float, float, float],
+    distance_threshold: float,
+    min_plane_points: int,
+    reference_xy: tuple[float, float] | None = None,
+    z_sanity: tuple[float, float] = (0.10, 1.20),
+    min_horizontal_normal_z: float = 0.85,
+) -> tuple[float | None, dict[str, Any]]:
+    """RANSAC-fit the dominant near-horizontal tabletop plane in a broad XY crop.
+
+    Returns (table_z, audit) where table_z is the fitted plane height evaluated
+    at the ROI center; None (with table_plane_valid False) when no suitable
+    horizontal plane was found, in which case the caller falls back to the
+    fixed Z band.  This is a per-frame, stateless estimate -- no caching, no
+    gates -- exactly the tabletop-relative Z the two-layer ROI needs.
+    """
+    x_min, x_max, y_min, y_max = xy_bounds
+    pts = np.asarray(points, dtype=np.float64)
+    audit: dict[str, Any] = {"table_plane_valid": False}
+    if pts.ndim != 2 or pts.shape[1] != 3:
+        return None, audit
+    mask = (
+        (pts[:, 0] >= x_min)
+        & (pts[:, 0] <= x_max)
+        & (pts[:, 1] >= y_min)
+        & (pts[:, 1] <= y_max)
+    )
+    crop = pts[mask]
+    audit["crop_point_count"] = int(len(crop))
+    if len(crop) < int(min_plane_points):
+        return None, audit
+    import open3d as o3d
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(crop)
+    plane_model, inliers = pcd.segment_plane(
+        distance_threshold=float(distance_threshold),
+        ransac_n=3,
+        num_iterations=50,
+    )
+    if len(inliers) < int(min_plane_points):
+        return None, audit
+    normal = np.asarray(plane_model[:3], dtype=np.float64)
+    norm_len = float(np.linalg.norm(normal))
+    if norm_len <= 1.0e-12:
+        return None, audit
+    normal = normal / norm_len
+    audit["plane_inliers"] = int(len(inliers))
+    audit["plane_normal"] = normal.tolist()
+    # The tabletop is roughly horizontal; a wall that wins RANSAC has a large
+    # transverse normal and is rejected before it distorts the Z band.
+    if abs(float(normal[2])) < float(min_horizontal_normal_z):
+        return None, audit
+    # plane model: a*x + b*y + c*z + d = 0  ->  z = -(a*x + b*y + d)/c
+    a, b, c, d = (float(value) for value in plane_model)
+    if abs(c) <= 1.0e-9:
+        return None, audit
+    if reference_xy is None:
+        reference_xy = ((x_min + x_max) / 2.0, (y_min + y_max) / 2.0)
+    z_table = -(a * reference_xy[0] + b * reference_xy[1] + d) / c
+    lo, hi = z_sanity
+    if not (float(lo) <= z_table <= float(hi)):
+        return None, audit
+    audit.update(
+        {
+            "table_plane_valid": True,
+            "table_z_m": float(z_table),
+            "reference_xy": [float(reference_xy[0]), float(reference_xy[1])],
+        }
+    )
+    return float(z_table), audit
+
+
+def resolve_planning_roi(
+    args: argparse.Namespace,
+    table_z: float | None,
+    table_valid: bool,
+) -> dict[str, Any]:
+    """Planning/task ROI applied before clustering (V3 frozen bounds).
+
+    Only the workspace the arm really operates in reaches clustering, the
+    persistent tracker, PCA multi-sphere and STRO/Fast.  Z is tabletop-relative
+    when the table plane was detected, otherwise a fixed fallback band.
+    """
+    x_min = float(getattr(args, "planning_roi_x_min", 0.10))
+    x_max = float(getattr(args, "planning_roi_x_max", 0.70))
+    y_min = float(getattr(args, "planning_roi_y_min", -0.50))
+    y_max = float(getattr(args, "planning_roi_y_max", 0.50))
+    if table_valid and table_z is not None:
+        z_min = table_z + float(
+            getattr(args, "planning_roi_z_table_offset_lo", 0.05)
+        )
+        z_max = table_z + float(
+            getattr(args, "planning_roi_z_table_offset_hi", 0.80)
+        )
+        table_relative = True
+    else:
+        z_min = float(getattr(args, "planning_roi_z_fallback_lo", 0.40))
+        z_max = float(getattr(args, "planning_roi_z_fallback_hi", 0.90))
+        table_relative = False
+    return {
+        "x_min": x_min,
+        "x_max": x_max,
+        "y_min": y_min,
+        "y_max": y_max,
+        "z_min": z_min,
+        "z_max": z_max,
+        "table_relative": table_relative,
+        "table_z_m": float(table_z) if table_z is not None else None,
+    }
+
+
+def resolve_safety_roi(
+    args: argparse.Namespace,
+    table_z: float | None,
+    table_valid: bool,
+) -> dict[str, Any]:
+    """Broad safety ROI for the 0.10 m raw hard guard.
+
+    Deliberately wider than the planning ROI so an obstacle that slips just
+    outside the task box does not vanish from the hard-guard world; it only
+    removes obviously below-table, far-wall and out-of-workspace points.
+    """
+    x_min = float(getattr(args, "safety_roi_x_min", 0.00))
+    x_max = float(getattr(args, "safety_roi_x_max", 0.85))
+    y_min = float(getattr(args, "safety_roi_y_min", -0.65))
+    y_max = float(getattr(args, "safety_roi_y_max", 0.65))
+    if table_valid and table_z is not None:
+        z_min = table_z + float(getattr(args, "safety_roi_z_table_offset_lo", 0.00))
+        z_max = table_z + float(getattr(args, "safety_roi_z_table_offset_hi", 0.90))
+        table_relative = True
+    else:
+        z_min = float(getattr(args, "safety_roi_z_fallback_lo", 0.30))
+        z_max = float(getattr(args, "safety_roi_z_fallback_hi", 1.10))
+        table_relative = False
+    return {
+        "x_min": x_min,
+        "x_max": x_max,
+        "y_min": y_min,
+        "y_max": y_max,
+        "z_min": z_min,
+        "z_max": z_max,
+        "table_relative": table_relative,
+        "table_z_m": float(table_z) if table_z is not None else None,
+    }
+
+
+def apply_two_layer_roi(
+    points: np.ndarray,
+    args: argparse.Namespace,
+    *,
+    need_planning: bool = True,
+    need_safety: bool = True,
+) -> dict[str, Any]:
+    """Crop the denoised scene cloud into the planning ROI and the broad
+    safety ROI, resolving the tabletop-relative Z band from a RANSAC plane fit.
+
+    Returns both cropped clouds plus an audit payload: raw/roi point counts,
+    the retain ratio and the resolved bounds.  No hard gates -- this only
+    restricts what clustering (and therefore tracker / STRO / PCA / Fast) and
+    the raw hard guard can see.  The table plane is detected from the broad
+    safety XY crop so the two Z bands stay consistent with each other.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    raw_count = int(len(pts))
+    if getattr(args, "remove_planes", True):
+        safety_xy = (
+            float(getattr(args, "safety_roi_x_min", 0.00)),
+            float(getattr(args, "safety_roi_x_max", 0.85)),
+            float(getattr(args, "safety_roi_y_min", -0.65)),
+            float(getattr(args, "safety_roi_y_max", 0.65)),
+        )
+        table_z, table_audit = detect_tabletop_z(
+            pts,
+            xy_bounds=safety_xy,
+            distance_threshold=float(
+                getattr(args, "roi_table_distance_threshold", args.plane_dist)
+            ),
+            min_plane_points=int(getattr(args, "roi_table_min_plane_points", 150)),
+        )
+    else:
+        table_z, table_audit = None, {"table_plane_valid": False}
+    table_valid = bool(table_audit.get("table_plane_valid", False))
+    planning_roi = resolve_planning_roi(args, table_z, table_valid)
+    safety_roi = resolve_safety_roi(args, table_z, table_valid)
+    result: dict[str, Any] = {
+        "planning_roi": planning_roi,
+        "safety_roi": safety_roi,
+        "table_audit": table_audit,
+        "raw_point_count": raw_count,
+        "planning_roi_point_count": 0,
+        "safety_roi_point_count": 0,
+        "rho_retain": 0.0,
+        "planning_points": (
+            crop_points_roi(pts, planning_roi) if need_planning else pts[:0].copy()
+        ),
+        "safety_points": (
+            crop_points_roi(pts, safety_roi) if need_safety else pts[:0].copy()
+        ),
+    }
+    if need_planning:
+        result["planning_roi_point_count"] = int(len(result["planning_points"]))
+    if need_safety:
+        result["safety_roi_point_count"] = int(len(result["safety_points"]))
+    if raw_count > 0:
+        numerator = (
+            result["planning_roi_point_count"]
+            if need_planning
+            else result["safety_roi_point_count"]
+        )
+        result["rho_retain"] = float(numerator / raw_count)
+    return result
 
 
 def guided_guard_distance(
@@ -3096,11 +3387,15 @@ def capture_post_stop_obstacle(
         )
         if denoiser is not None:
             scene_points = denoiser.filter(scene_points)
+        # Two-layer ROI: the tracker clusters come from the planning ROI; the
+        # raw guard distance is measured on the broad safety ROI clusters so a
+        # missed task-box point can still stop the robot.
+        rois = apply_two_layer_roi(scene_points, args)
         plane_removal = None
         if args.remove_planes:
             plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
         clustered = FastClusteringFilter(
-            scene_points,
+            rois["planning_points"],
             robot_points,
             workspace=getattr(processor, "_workspace", None),
             plane_removal=plane_removal,
@@ -3110,23 +3405,47 @@ def capture_post_stop_obstacle(
             min_volume=args.cluster_min_volume,
         )
         clusters = filter_guard_clusters(list(clustered.clusters), args)
+        guard_clustered = FastClusteringFilter(
+            rois["safety_points"],
+            robot_points,
+            workspace=getattr(processor, "_workspace", None),
+            plane_removal=plane_removal,
+            eps=args.cluster_eps,
+            min_samples=args.cluster_min_samples,
+            min_points=args.cluster_min_points,
+            min_volume=args.cluster_min_volume,
+        )
+        guard_clusters = filter_guard_clusters(list(guard_clustered.clusters), args)
         cluster_summaries = []
         for cluster in clusters:
-            detection = make_occupancy_object(np.asarray(cluster.points), timestamp=timestamp, margin=0.0)
+            cluster_points = np.asarray(cluster.points, dtype=np.float64)
+            cluster_center = np.asarray(cluster.center, dtype=np.float64)
             cluster_summaries.append(
                 {
-                    "center": np.asarray(detection.center, dtype=np.float64).tolist(),
-                    "radius_m": float(detection.radius),
-                    "point_count": int(len(np.asarray(cluster.points))),
+                    "center": cluster_center.tolist(),
+                    "radius_m": float(
+                        np.max(np.linalg.norm(cluster_points - cluster_center, axis=1))
+                        if len(cluster_points)
+                        else 0.0
+                    ),
+                    "point_count": int(len(cluster_points)),
                 }
             )
-        frame_guard_distance, _, _, _, _ = _find_nearest_cluster_distance_detail(robot_points, clusters, [])
+        frame_guard_distance, _, _, _, _ = _find_nearest_cluster_distance_detail(robot_points, guard_clusters, [])
         common_audit = {
             "timestamp": timestamp,
             "frame_valid": frame_valid,
             "raw_scene_point_count": int(len(raw_scene_points)) if raw_scene_points.ndim == 2 else 0,
             "robot_point_count": int(len(robot_points)) if robot_points.ndim == 2 else 0,
+            "raw_point_count": rois["raw_point_count"],
+            "roi_point_count": rois["planning_roi_point_count"],
+            "safety_roi_point_count": rois["safety_roi_point_count"],
+            "rho_retain": rois["rho_retain"],
+            "planning_roi": rois["planning_roi"],
+            "safety_roi": rois["safety_roi"],
+            "table_plane_valid": bool(rois["table_audit"].get("table_plane_valid", False)),
             "cluster_count": len(clusters),
+            "guard_cluster_count": len(guard_clusters),
             "all_external_clusters": cluster_summaries,
             "raw_guard_distance_m": float(frame_guard_distance),
         }
@@ -3163,15 +3482,20 @@ def capture_post_stop_obstacle(
         )
         if not association["associated"]:
             continue
-        detection = make_occupancy_object(np.asarray(clusters[index].points), timestamp=timestamp, margin=0.0)
         latest_points = np.asarray(clusters[index].points, dtype=np.float64).copy()
-        frame_audit[-1]["center"] = np.asarray(detection.center, dtype=np.float64).tolist()
-        frame_audit[-1]["radius"] = float(detection.radius)
+        tracking_center = np.asarray(clusters[index].center, dtype=np.float64)
+        tracking_radius = float(
+            np.max(np.linalg.norm(latest_points - tracking_center, axis=1))
+            if len(latest_points)
+            else 0.0
+        )
+        frame_audit[-1]["center"] = tracking_center.tolist()
+        frame_audit[-1]["radius"] = tracking_radius
         samples.append(
             {
                 "timestamp": timestamp,
-                "center": np.asarray(detection.center, dtype=np.float64),
-                "radius": float(detection.radius),
+                "center": tracking_center,
+                "radius": tracking_radius,
                 "association_error_m": error,
             }
         )
@@ -3499,11 +3823,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 reference_state = "RUNNING"
             previous_frame_perf = frame_started
+            # Two-layer ROI before clustering: the task trackers / STRO / PCA /
+            # Fast only see the planning ROI; the raw hard guard measures the
+            # broad safety ROI so a near-miss just outside the task box still
+            # stops the robot instead of vanishing from the guard world.
+            rois = apply_two_layer_roi(scene_points, args)
             plane_removal = None
             if args.remove_planes:
                 plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
             cluster_result = FastClusteringFilter(
-                scene_points,
+                rois["planning_points"],
                 robot_points,
                 workspace=getattr(processor, "_workspace", None),
                 plane_removal=plane_removal,
@@ -3513,8 +3842,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 min_volume=args.cluster_min_volume,
             )
             clusters = list(cluster_result.clusters)
-            guard_clusters = filter_guard_clusters(clusters, args) if args.mode in robot_motion_modes else clusters
-            eval_clusters = guard_clusters if args.mode in robot_motion_modes else clusters
+            eval_clusters = filter_guard_clusters(clusters, args) if args.mode in robot_motion_modes else clusters
+            safety_cluster_result = FastClusteringFilter(
+                rois["safety_points"],
+                robot_points,
+                workspace=getattr(processor, "_workspace", None),
+                plane_removal=plane_removal,
+                eps=args.cluster_eps,
+                min_samples=args.cluster_min_samples,
+                min_points=args.cluster_min_points,
+                min_volume=args.cluster_min_volume,
+            )
+            guard_clusters = (
+                filter_guard_clusters(list(safety_cluster_result.clusters), args)
+                if args.mode in robot_motion_modes
+                else list(safety_cluster_result.clusters)
+            )
             dynamic_clusters, cluster_audits = dynamic_cluster_inputs(eval_clusters, args)
             cluster_dt = None if previous_cluster_timestamp is None else max(timestamp - previous_cluster_timestamp, 1.0e-6)
             for audit in cluster_audits:
@@ -3661,7 +4004,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     rob_pts_for_guard = robot_points
                     guard_robot_points_source = "insufficient"
 
-                guard = guided_guard_distance(rob_pts_for_guard, eval_clusters, tracked, motion_dir_y=motion_dir_y)
+                guard = guided_guard_distance(rob_pts_for_guard, guard_clusters, tracked, motion_dir_y=motion_dir_y)
                 guard_distance = guard["distance"]
                 guard_obj = guard["object"]
                 guard_speed_scale = guided_controller.evaluate(
@@ -3729,7 +4072,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "scene_points": int(len(scene_points)),
                 "robot_points": int(len(robot_points)),
                 "cluster_count": int(len(clusters)),
-                "guard_cluster_count": int(len(eval_clusters)),
+                "guard_cluster_count": int(len(guard_clusters)),
+                "raw_point_count": int(rois["raw_point_count"]),
+                "roi_point_count": int(rois["planning_roi_point_count"]),
+                "safety_roi_point_count": int(rois["safety_roi_point_count"]),
+                "rho_retain": f"{rois['rho_retain']:.6f}",
+                "table_z_m": (
+                    "" if rois["planning_roi"]["table_z_m"] is None
+                    else f"{rois['planning_roi']['table_z_m']:.6f}"
+                ),
+                "table_plane_valid": int(bool(rois["table_audit"].get("table_plane_valid", False))),
                 "stable_track_count": int(len(stable)),
                 "risk_sphere_count": int(len(risk_spheres)),
                 "nearest_distance_m": "" if math.isinf(current_best["distance"]) else f"{current_best['distance']:.6f}",
@@ -3774,7 +4126,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "guard_in_motion_direction": int(bool(guided_info["guard_in_motion_direction"])),
                 "guard_speed_scale": f"{guided_info['guard_speed_scale']:.6f}",
                 "guard_decision": guided_info["guard_decision"],
-                "guard_cluster_count": guided_info.get("guard_cluster_count", len(eval_clusters) if args.mode == "moving-shadow-stop" else ""),
+                "guard_cluster_count": guided_info.get("guard_cluster_count", len(guard_clusters) if args.mode == "moving-shadow-stop" else ""),
                 "guard_robot_points_source": guided_info.get("guard_robot_points_source", ""),
                 "guard_robot_points_count": guided_info.get("guard_robot_points_count", ""),
                 "elapsed_ms": f"{(time.perf_counter() - frame_started) * 1000.0:.4f}",
@@ -4081,6 +4433,36 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 # Both active modes stop before repair. Anchor the candidate at
                 # the measured stopped state, not at the last moving sample.
                 if args.mode in robot_motion_modes:
+                    # Fix 1: wait until the arm is truly static before reading
+                    # q_stop_actual.  The STRO stop returns before the joints
+                    # settle; reading q while still decelerating produces a
+                    # candidate start up to ~1e-2 rad away from the true stop
+                    # (r01 violent start jitter).  Planning must anchor on the
+                    # measured stopped pose, never on a drifting read.
+                    if robot is not None:
+                        static_audit = wait_until_robot_static(
+                            robot,
+                            step_tolerance_rad=args.candidate_static_tolerance_rad,
+                            settle_samples=2,
+                            timeout_s=max(
+                                3.0, float(args.candidate_pre_execute_settle_s)
+                            ),
+                            poll_s=args.poll_s,
+                            label="post_stop_repair_start",
+                        )
+                        log["events"].append(
+                            {
+                                "type": "POST_STOP_WAIT_FOR_STATIC",
+                                "frame": frame_index,
+                                "t_s": time.perf_counter() - started,
+                                "static": static_audit,
+                            }
+                        )
+                        if not static_audit["static"]:
+                            raise RuntimeError(
+                                "robot did not reach a static state after the "
+                                f"STRO stop: {static_audit}"
+                            )
                     _, q_repair_start = q_from_reader(state_reader)
                     q_repair_start = np.asarray(q_repair_start, dtype=np.float64)
                     qd_repair_start = np.zeros(6, dtype=np.float64)
@@ -5143,6 +5525,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--guard-max-y", type=float, default=0.65)
     parser.add_argument("--guard-min-z", type=float, default=0.30)
     parser.add_argument("--guard-max-z", type=float, default=1.10)
+    # Two-layer perception ROI (V3 frozen bounds).  The planning ROI crops the
+    # cloud before clustering so the tracker / STRO / PCA / Fast never absorb
+    # far walls, table edges or background; the broad safety ROI keeps the
+    # 0.10 m raw hard guard wider than the planning box.  Z is tabletop-relative
+    # when the table plane is detected, with a fixed-band fallback.  The
+    # retained fraction is recorded per frame as an audit, never gated.
+    parser.add_argument("--planning-roi-x-min", type=float, default=0.10)
+    parser.add_argument("--planning-roi-x-max", type=float, default=0.70)
+    parser.add_argument("--planning-roi-y-min", type=float, default=-0.50)
+    parser.add_argument("--planning-roi-y-max", type=float, default=0.50)
+    parser.add_argument("--planning-roi-z-table-offset-lo", type=float, default=0.05)
+    parser.add_argument("--planning-roi-z-table-offset-hi", type=float, default=0.80)
+    parser.add_argument("--planning-roi-z-fallback-lo", type=float, default=0.40)
+    parser.add_argument("--planning-roi-z-fallback-hi", type=float, default=0.90)
+    parser.add_argument("--safety-roi-x-min", type=float, default=0.00)
+    parser.add_argument("--safety-roi-x-max", type=float, default=0.85)
+    parser.add_argument("--safety-roi-y-min", type=float, default=-0.65)
+    parser.add_argument("--safety-roi-y-max", type=float, default=0.65)
+    parser.add_argument("--safety-roi-z-table-offset-lo", type=float, default=0.00)
+    parser.add_argument("--safety-roi-z-table-offset-hi", type=float, default=0.90)
+    parser.add_argument("--safety-roi-z-fallback-lo", type=float, default=0.30)
+    parser.add_argument("--safety-roi-z-fallback-hi", type=float, default=1.10)
+    parser.add_argument("--roi-table-min-plane-points", type=int, default=150)
+    parser.add_argument("--roi-table-distance-threshold", type=float, default=0.02)
     parser.add_argument("--settle-s", type=float, default=0.4)
     parser.add_argument("--poll-s", type=float, default=0.04)
     parser.add_argument("--motion-timeout-s", type=float, default=90.0)
@@ -5168,6 +5574,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-joint-velc", type=float, default=0.006)
     parser.add_argument("--candidate-joint-acc", type=float, default=0.012)
     parser.add_argument("--candidate-start-tolerance-rad", type=float, default=0.035)
+    parser.add_argument(
+        "--candidate-start-sync-rad",
+        type=float,
+        default=0.002,
+        help="re-anchor threshold: measured robot start vs candidate first point; a mismatch above this replans once instead of failing the experiment",
+    )
+    parser.add_argument(
+        "--candidate-static-tolerance-rad",
+        type=float,
+        default=5.0e-4,
+        help="per-poll joint step that counts as static while waiting after a STRO stop",
+    )
     parser.add_argument("--candidate-goal-tolerance-rad", type=float, default=0.012)
     parser.add_argument("--candidate-min-observed-motion-rad", type=float, default=0.003)
     parser.add_argument("--candidate-min-execution-wait-s", type=float, default=0.0)

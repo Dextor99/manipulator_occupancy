@@ -280,6 +280,8 @@ class PersistentPerceptionWorker:
         # state is published.  Raw frames and rejected associations do not
         # satisfy a planning/authorization synchronization barrier.
         self._state_seq = 0
+        # One re-bootstrap per lost-track episode; reset on association.
+        self._re_bootstrapped = False
         self._latest_frame_timestamp = float(initial_fresh["last_timestamp"])
         self._latest_raw_guard_distance_m = float("inf")
         self._samples = [
@@ -432,6 +434,13 @@ class PersistentPerceptionWorker:
         robot_points = np.asarray(frame.robot_points, dtype=np.float64)
         if self.denoiser is not None:
             scene_points = self.denoiser.filter(scene_points)
+        # Two-layer ROI before clustering: the persistent tracker only sees the
+        # planning ROI so far-wall/table-edge background never merges into a
+        # cluster or inflates the sphere radius, while the raw hard guard
+        # measures the broad safety ROI so a near-miss just outside the task
+        # box still stops the robot.  The retain ratio is recorded per frame as
+        # an audit, never a gate.
+        rois = trial.apply_two_layer_roi(scene_points, self.args)
         plane_removal = None
         if self.args.remove_planes:
             plane_removal = {
@@ -440,7 +449,7 @@ class PersistentPerceptionWorker:
                 "max_planes": self.args.max_planes,
             }
         clustered = trial.FastClusteringFilter(
-            scene_points,
+            rois["planning_points"],
             robot_points,
             workspace=getattr(self.processor, "_workspace", None),
             plane_removal=plane_removal,
@@ -450,12 +459,35 @@ class PersistentPerceptionWorker:
             min_volume=self.args.cluster_min_volume,
         )
         clusters = trial.filter_guard_clusters(list(clustered.clusters), self.args)
+        guard_clustered = trial.FastClusteringFilter(
+            rois["safety_points"],
+            robot_points,
+            workspace=getattr(self.processor, "_workspace", None),
+            plane_removal=plane_removal,
+            eps=self.args.cluster_eps,
+            min_samples=self.args.cluster_min_samples,
+            min_points=self.args.cluster_min_points,
+            min_volume=self.args.cluster_min_volume,
+        )
+        guard_clusters = trial.filter_guard_clusters(
+            list(guard_clustered.clusters), self.args
+        )
         guard, _, _, _, _ = trial._find_nearest_cluster_distance_detail(
-            robot_points, clusters, []
+            robot_points, guard_clusters, []
         )
         audit: dict[str, Any] = {
             "timestamp": timestamp,
+            "raw_point_count": rois["raw_point_count"],
+            "roi_point_count": rois["planning_roi_point_count"],
+            "safety_roi_point_count": rois["safety_roi_point_count"],
+            "rho_retain": rois["rho_retain"],
+            "planning_roi": rois["planning_roi"],
+            "safety_roi": rois["safety_roi"],
+            "table_plane_valid": bool(
+                rois["table_audit"].get("table_plane_valid", False)
+            ),
             "cluster_count": len(clusters),
+            "guard_cluster_count": len(guard_clusters),
             "raw_guard_distance_m": float(guard),
             "associated": False,
         }
@@ -489,15 +521,68 @@ class PersistentPerceptionWorker:
         )
         if not association.get("associated", False):
             with self._lock:
+                # Fresh camera frames but the object association was
+                # momentarily lost.  Re-bootstrap the track once against the
+                # latest cluster so a temporary loss recovers instead of
+                # decaying the propagated state toward the hard watch
+                # boundary.  The flag resets on the next successful
+                # association, so each lost-track episode gets exactly one
+                # re-bootstrap attempt; if the state still cannot recover
+                # within the prediction horizon, _persistent_state_reasons
+                # reports obstacle_track_stale and the caller fails closed.
+                if clusters and not self._re_bootstrapped:
+                    self._re_bootstrapped = True
+                    audit["re_bootstrapped"] = True
+                    expected = np.asarray(state["center"], dtype=np.float64)
+                    cluster_centers = np.asarray(
+                        [
+                            np.asarray(cluster.center, dtype=np.float64)
+                            for cluster in clusters
+                        ],
+                        dtype=np.float64,
+                    )
+                    re_index = int(
+                        np.argmin(np.linalg.norm(cluster_centers - expected, axis=1))
+                    )
+                    re_points = np.asarray(clusters[re_index].points, dtype=np.float64)
+                    re_center = np.asarray(clusters[re_index].center, dtype=np.float64)
+                    self._samples = [
+                        {
+                            "timestamp": timestamp,
+                            "center": re_center,
+                            "radius": float(
+                                np.max(np.linalg.norm(re_points - re_center, axis=1))
+                                if len(re_points)
+                                else 0.0
+                            ),
+                            "association_error_m": float(
+                                np.linalg.norm(re_center - expected)
+                            ),
+                        }
+                    ]
+                    audit["re_bootstrap_cluster_index"] = re_index
                 self._audits.append(audit)
             return
         index = int(association["cluster_index"])
         points = np.asarray(clusters[index].points, dtype=np.float64)
-        detection = trial.make_occupancy_object(points, timestamp=timestamp, margin=0.0)
+        # Unify the tracker on the cluster point-mean center.  Association
+        # (above) already uses clusters[index].center, so the velocity history
+        # and the fitted state must use the identical center.  Feeding the OBB
+        # center from make_occupancy_object back into the tracker is what made
+        # the expected center diverge from the associated cluster and dropped
+        # the track (r01: association error 0.313 m over three frames -> stale
+        # propagated state -> misleading perception_watchdog_expired).  PCA
+        # multi-sphere geometry is fitted from the raw points separately and
+        # never feeds the tracker center.
+        tracking_center = np.asarray(clusters[index].center, dtype=np.float64)
         sample = {
             "timestamp": timestamp,
-            "center": np.asarray(detection.center, dtype=np.float64),
-            "radius": float(detection.radius),
+            "center": tracking_center,
+            "radius": float(
+                np.max(np.linalg.norm(points - tracking_center, axis=1))
+                if len(points)
+                else 0.0
+            ),
             "association_error_m": float(association["association_error_m"]),
         }
         samples = (samples + [sample])[-8:]
@@ -523,6 +608,9 @@ class PersistentPerceptionWorker:
         )
         with self._updated:
             self._samples = samples
+            # The lost-track episode recovered: allow one fresh re-bootstrap
+            # the next time association is lost.
+            self._re_bootstrapped = False
             if updated:
                 self._state.update(
                     timestamp=float(fitted["last_timestamp"]),
@@ -565,12 +653,20 @@ def _persistent_state_reasons(
         and _state_seq(snapshot) <= int(require_newer_than_seq)
     ):
         reasons.append("no_new_valid_perception_update")
-    # A synchronized state is propagated to the decision timestamp.  Only a
-    # complete loss over the full short prediction horizon is a hard temporal
-    # failure; 0.25 s remains an audit value in the JSON output.
+    # Split watchdog semantics without relaxing the hard gate.  A truly dead
+    # camera (no new frame for the whole short prediction horizon) is
+    # perception_watchdog_expired; a live camera whose object association was
+    # lost is obstacle_track_stale.  Both share the same 0.5 s bound on how far
+    # a propagated state may be used, but track-staleness additionally triggers
+    # one re-bootstrap against the latest cluster (worker) before the caller
+    # fails closed.  The 0.25 s age gate remains an audit value in the JSON
+    # output only.
     watchdog_s = float(getattr(args, "prediction_horizon_s", 0.5))
-    if float(aligned["propagation_dt_s"]) > watchdog_s:
+    frame_age_s = float(snapshot.get("latest_frame_age_s", float("inf")))
+    if frame_age_s > watchdog_s:
         reasons.append("perception_watchdog_expired")
+    elif float(aligned["propagation_dt_s"]) > watchdog_s:
+        reasons.append("obstacle_track_stale")
     if not aligned["geometry"].get("covered", False):
         reasons.append("geometry_not_covered")
     if float(snapshot.get("raw_guard_distance_m", float("-inf"))) <= float(

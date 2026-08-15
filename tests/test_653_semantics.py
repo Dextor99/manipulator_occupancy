@@ -2340,6 +2340,8 @@ def test_v3_latest_state_policy_replans_exactly_once_from_same_stopped_q(
             "timestamp": timestamp,
             "snapshot_timestamp": timestamp,
             "state_age_s": 0.0,
+            "latest_frame_timestamp": timestamp,
+            "latest_frame_age_s": 0.02,
             "center": np.asarray(center),
             "velocity": np.asarray([0.0, 0.05, 0.0]),
             "geometry": geometry,
@@ -2559,6 +2561,8 @@ def test_v3_missing_post_plan_update_does_not_consume_fast_retry(
     }
     snapshot = {
         "timestamp": now,
+        "latest_frame_timestamp": now,
+        "latest_frame_age_s": 0.02,
         "center": np.asarray([0.5, 0.0, 0.3]),
         "velocity": np.zeros(3),
         "geometry": geometry,
@@ -2634,3 +2638,68 @@ def test_v3_closed_loop_shadow_reports_goal_only_after_segment_tail(
     assert result["status"] == "V3_VIRTUAL_CLOSED_LOOP_GOAL_REACHED"
     assert result["segments_completed"] == 1
     assert "DYNAMIC_NUBS_CLOSED_LOOP_GOAL_REACHED" in result["events"]
+
+
+def test_v3_two_layer_roi_frozen_bounds_table_relative_and_fallback():
+    """The V3 two-layer ROI freezes exact planning/safety boxes.
+
+    Planning ROI X[0.10,0.70] Y[-0.50,0.50] with a tabletop-relative Z band
+    (+0.05..+0.80) and fixed fallback [0.40,0.90]; the broad safety ROI for the
+    raw hard guard is wider (X up to 0.85, table +0.00..+0.90, fallback
+    [0.30,1.10]) so a near-miss just outside the task box is still protected.
+    """
+    args = trial.build_parser().parse_args(["--repeat", "1", "--scene", "D2"])
+    planning_table = trial.resolve_planning_roi(args, 0.75, True)
+    assert planning_table["x_min"] == 0.10 and planning_table["x_max"] == 0.70
+    assert planning_table["y_min"] == -0.50 and planning_table["y_max"] == 0.50
+    assert planning_table["z_min"] == pytest.approx(0.80)
+    assert planning_table["z_max"] == pytest.approx(1.55)
+    assert planning_table["table_relative"] is True
+    assert planning_table["table_z_m"] == pytest.approx(0.75)
+
+    planning_fallback = trial.resolve_planning_roi(args, None, False)
+    assert planning_fallback["z_min"] == pytest.approx(0.40)
+    assert planning_fallback["z_max"] == pytest.approx(0.90)
+    assert planning_fallback["table_relative"] is False
+
+    safety_table = trial.resolve_safety_roi(args, 0.75, True)
+    assert safety_table["x_min"] == 0.00 and safety_table["x_max"] == 0.85
+    assert safety_table["y_min"] == -0.65 and safety_table["y_max"] == 0.65
+    assert safety_table["z_min"] == pytest.approx(0.75)
+    assert safety_table["z_max"] == pytest.approx(1.65)
+    assert safety_table["table_relative"] is True
+
+    safety_fallback = trial.resolve_safety_roi(args, None, False)
+    assert safety_fallback["z_min"] == pytest.approx(0.30)
+    assert safety_fallback["z_max"] == pytest.approx(1.10)
+    assert safety_fallback["table_relative"] is False
+
+
+def test_v3_apply_two_layer_roi_fallback_without_plane_removal():
+    """With plane removal disabled the ROI falls back to the fixed Z band and
+    still reports the audit counts (no hard gates, no RANSAC path taken)."""
+    args = trial.build_parser().parse_args(["--repeat", "1", "--scene", "D2"])
+    args.remove_planes = False
+    scene = np.array(
+        [
+            [0.30, 0.10, 0.20],  # below fallback Z -> cropped
+            [0.40, 0.00, 0.60],  # inside planning ROI
+            [0.45, 0.05, 0.80],  # inside planning ROI
+            [0.80, 0.00, 0.60],  # outside planning X, inside safety X
+            [1.20, 0.00, 0.60],  # outside safety X -> cropped
+        ],
+        dtype=np.float64,
+    )
+    rois = trial.apply_two_layer_roi(scene, args)
+    assert rois["raw_point_count"] == 5
+    assert rois["planning_roi_point_count"] == 2
+    assert rois["safety_roi_point_count"] == 3
+    assert rois["rho_retain"] == pytest.approx(2.0 / 5.0)
+    assert rois["planning_roi"]["table_relative"] is False
+    assert rois["planning_roi"]["z_min"] == pytest.approx(0.40)
+    assert rois["planning_roi"]["z_max"] == pytest.approx(0.90)
+    # planning crop keeps only the two interior points
+    kept = rois["planning_points"]
+    assert len(kept) == 2
+    assert np.all((kept[:, 0] >= 0.10) & (kept[:, 0] <= 0.70))
+    assert np.all((kept[:, 2] >= 0.40) & (kept[:, 2] <= 0.90))
