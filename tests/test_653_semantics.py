@@ -2703,3 +2703,15 @@ def test_v3_apply_two_layer_roi_fallback_without_plane_removal():
     assert len(kept) == 2
     assert np.all((kept[:, 0] >= 0.10) & (kept[:, 0] <= 0.70))
     assert np.all((kept[:, 2] >= 0.40) & (kept[:, 2] <= 0.90))
+
+
+def test_frame_csv_schema_contains_scene_roi_audit_fields():
+    required = {
+        "raw_point_count",
+        "roi_point_count",
+        "safety_roi_point_count",
+        "rho_retain",
+        "table_z_m",
+        "table_plane_valid",
+    }
+    assert required <= set(trial.FRAME_FIELDS)
