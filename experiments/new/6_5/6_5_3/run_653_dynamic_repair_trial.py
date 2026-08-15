@@ -3059,7 +3059,7 @@ def resolve_planning_roi(
     when the table plane was detected, otherwise a fixed fallback band.
     """
     x_min = float(getattr(args, "planning_roi_x_min", 0.10))
-    x_max = float(getattr(args, "planning_roi_x_max", 0.70))
+    x_max = float(getattr(args, "planning_roi_x_max", 0.85))
     y_min = float(getattr(args, "planning_roi_y_min", -0.50))
     y_max = float(getattr(args, "planning_roi_y_max", 0.50))
     if table_valid and table_z is not None:
@@ -4048,7 +4048,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "t_s": now_rel,
                             "guard_distance_m": guard_distance,
                             "threshold_m": args.guided_hard_stop_m,
-                            "guard_decision": guided_controller.last_decision,
+                            # The hard stop is decided by the independent
+                            # guard_distance <= guided_hard_stop_m check, not by
+                            # the guided speed-scale controller, so do not echo
+                            # its last (possibly "SAFE") decision as the stop
+                            # reason.
+                            "guard_decision": "HARD_STOP",
+                            "guided_controller_decision": (
+                                guided_controller.last_decision
+                            ),
                             "guard_cluster_count": len(guard_clusters),
                         }
                     )
@@ -5538,7 +5546,7 @@ def build_parser() -> argparse.ArgumentParser:
     # when the table plane is detected, with a fixed-band fallback.  The
     # retained fraction is recorded per frame as an audit, never gated.
     parser.add_argument("--planning-roi-x-min", type=float, default=0.10)
-    parser.add_argument("--planning-roi-x-max", type=float, default=0.70)
+    parser.add_argument("--planning-roi-x-max", type=float, default=0.85)
     parser.add_argument("--planning-roi-y-min", type=float, default=-0.50)
     parser.add_argument("--planning-roi-y-max", type=float, default=0.50)
     parser.add_argument("--planning-roi-z-table-offset-lo", type=float, default=0.05)

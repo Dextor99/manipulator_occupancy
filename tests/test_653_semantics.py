@@ -2643,14 +2643,17 @@ def test_v3_closed_loop_shadow_reports_goal_only_after_segment_tail(
 def test_v3_two_layer_roi_frozen_bounds_table_relative_and_fallback():
     """The V3 two-layer ROI freezes exact planning/safety boxes.
 
-    Planning ROI X[0.10,0.70] Y[-0.50,0.50] with a tabletop-relative Z band
+    Planning ROI X[0.10,0.85] Y[-0.50,0.50] with a tabletop-relative Z band
     (+0.05..+0.80) and fixed fallback [0.40,0.90]; the broad safety ROI for the
     raw hard guard is wider (X up to 0.85, table +0.00..+0.90, fallback
     [0.30,1.10]) so a near-miss just outside the task box is still protected.
+    r03 showed the old planning X max 0.70 clipped the real obstacle
+    (center_x~0.67-0.67, bbox dx~0.06), so planning X now matches the safety
+    X max and the 0.70..0.85 blind band no longer exists.
     """
     args = trial.build_parser().parse_args(["--repeat", "1", "--scene", "D2"])
     planning_table = trial.resolve_planning_roi(args, 0.75, True)
-    assert planning_table["x_min"] == 0.10 and planning_table["x_max"] == 0.70
+    assert planning_table["x_min"] == 0.10 and planning_table["x_max"] == 0.85
     assert planning_table["y_min"] == -0.50 and planning_table["y_max"] == 0.50
     assert planning_table["z_min"] == pytest.approx(0.80)
     assert planning_table["z_max"] == pytest.approx(1.55)
@@ -2682,26 +2685,28 @@ def test_v3_apply_two_layer_roi_fallback_without_plane_removal():
     args.remove_planes = False
     scene = np.array(
         [
-            [0.30, 0.10, 0.20],  # below fallback Z -> cropped
+            [0.30, 0.10, 0.20],  # below fallback Z -> cropped both
             [0.40, 0.00, 0.60],  # inside planning ROI
             [0.45, 0.05, 0.80],  # inside planning ROI
-            [0.80, 0.00, 0.60],  # outside planning X, inside safety X
-            [1.20, 0.00, 0.60],  # outside safety X -> cropped
+            [0.80, 0.00, 0.60],  # blind band X=0.80: now inside planning (x_max 0.85)
+            [0.40, 0.60, 0.60],  # outside planning Y, inside safety Y -> safety only
+            [1.20, 0.00, 0.60],  # outside safety X -> cropped both
         ],
         dtype=np.float64,
     )
     rois = trial.apply_two_layer_roi(scene, args)
-    assert rois["raw_point_count"] == 5
-    assert rois["planning_roi_point_count"] == 2
-    assert rois["safety_roi_point_count"] == 3
-    assert rois["rho_retain"] == pytest.approx(2.0 / 5.0)
+    assert rois["raw_point_count"] == 6
+    assert rois["planning_roi_point_count"] == 3
+    assert rois["safety_roi_point_count"] == 4
+    assert rois["rho_retain"] == pytest.approx(3.0 / 6.0)
     assert rois["planning_roi"]["table_relative"] is False
     assert rois["planning_roi"]["z_min"] == pytest.approx(0.40)
     assert rois["planning_roi"]["z_max"] == pytest.approx(0.90)
-    # planning crop keeps only the two interior points
+    # planning crop keeps the two interior points plus the X=0.80 blind-band
+    # point that r03 showed the old 0.70 X max was clipping away
     kept = rois["planning_points"]
-    assert len(kept) == 2
-    assert np.all((kept[:, 0] >= 0.10) & (kept[:, 0] <= 0.70))
+    assert len(kept) == 3
+    assert np.all((kept[:, 0] >= 0.10) & (kept[:, 0] <= 0.85))
     assert np.all((kept[:, 2] >= 0.40) & (kept[:, 2] <= 0.90))
 
 
