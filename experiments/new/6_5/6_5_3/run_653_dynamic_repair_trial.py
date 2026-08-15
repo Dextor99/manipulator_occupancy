@@ -3837,11 +3837,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             plane_removal = None
             if args.remove_planes:
                 plane_removal = {"enabled": True, "distance_threshold": args.plane_dist, "max_planes": args.max_planes}
+            # planning filter must NOT re-fit a "largest plane" inside the
+            # planning ROI: the planning Z band already excludes the table
+            # (z_min = table_z + 0.05), so the flat obstacle panel becomes the
+            # dominant plane there and RANSAC removes it entirely (r04: 0
+            # clusters from frame 85 while the safety ROI kept it). The safety
+            # filter keeps plane removal because the table wins that fit first.
             cluster_result = FastClusteringFilter(
                 rois["planning_points"],
                 robot_points,
                 workspace=getattr(processor, "_workspace", None),
-                plane_removal=plane_removal,
+                plane_removal=None,
                 eps=args.cluster_eps,
                 min_samples=args.cluster_min_samples,
                 min_points=args.cluster_min_points,
