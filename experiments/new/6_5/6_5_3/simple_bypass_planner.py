@@ -6,6 +6,20 @@ from typing import Any
 
 import numpy as np
 
+TABLE_UP = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+
+
+def tabletop_parallel_lateral_direction(
+    task_direction: np.ndarray,
+    preferred_direction: np.ndarray,
+) -> np.ndarray:
+    """Return a horizontal lateral direction, orthogonal to task motion."""
+    task = normalized(np.asarray(task_direction, dtype=np.float64))
+    preferred = np.asarray(preferred_direction, dtype=np.float64)
+    horizontal = preferred - TABLE_UP * float(np.dot(TABLE_UP, preferred))
+    horizontal -= task * float(np.dot(task, horizontal))
+    return normalized(horizontal)
+
 
 def normalized(values: np.ndarray, *, fallback: np.ndarray | None = None) -> np.ndarray:
     vector = np.asarray(values, dtype=np.float64)
@@ -129,6 +143,9 @@ def risk_link_bypass_goal_candidates(
     damping: float = 1.0e-3,
     task_weight: float = 1.0,
     max_joint_delta_rad: float = 0.12,
+    tabletop_parallel_side: bool = False,
+    preserve_tcp_height: bool = False,
+    tcp_height_weight: float = 1.0,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Generate three away-side goals driven by the limiting robot link.
 
@@ -141,6 +158,9 @@ def risk_link_bypass_goal_candidates(
     task, side, direction_audit = task_and_side_directions(
         tcp_position, goal_position, risk_position, predicted_obstacle_position
     )
+    original_side = side.copy()
+    if tabletop_parallel_side:
+        side = tabletop_parallel_lateral_direction(task, side)
     risk_configuration = q_values if risk_point_q is None else np.asarray(risk_point_q, dtype=np.float64)
     transforms = model.urdf.link_transforms(
         {
@@ -162,12 +182,19 @@ def risk_link_bypass_goal_candidates(
         dtype=np.float64,
     )
     task_row = task @ tcp_jacobian
-    system = np.vstack([risk_jacobian, float(task_weight) * task_row[None, :]])
+    system_rows = [risk_jacobian, float(task_weight) * task_row[None, :]]
+    tcp_z_row = TABLE_UP @ tcp_jacobian
+    if preserve_tcp_height:
+        system_rows.append(float(tcp_height_weight) * tcp_z_row[None, :])
+    system = np.vstack(system_rows)
 
     rows: list[dict[str, Any]] = []
     for side_m in side_lengths_m:
         requested_risk = float(side_m) * side
-        target = np.r_[requested_risk, float(task_weight) * float(forward_m)]
+        target_values = [requested_risk, np.array([float(task_weight) * float(forward_m)])]
+        if preserve_tcp_height:
+            target_values.append(np.array([0.0]))
+        target = np.concatenate(target_values)
         delta = system.T @ np.linalg.solve(
             system @ system.T + float(damping) * np.eye(system.shape[0]), target
         )
@@ -192,6 +219,10 @@ def risk_link_bypass_goal_candidates(
                     "linearized_risk_delta_m": achieved_risk.tolist(),
                     "requested_task_progress_m": float(forward_m),
                     "linearized_tcp_delta_m": achieved_tcp.tolist(),
+                    "linearized_tcp_vertical_delta_m": float(achieved_tcp[2]),
+                    "requested_tcp_vertical_delta_m": 0.0,
+                    "tabletop_parallel_side": bool(tabletop_parallel_side),
+                    "preserve_tcp_height": bool(preserve_tcp_height),
                     "linearized_task_progress_m": float(np.dot(task, achieved_tcp)),
                     "joint_delta_rad": delta.tolist(),
                     "raw_joint_delta_max_abs_rad": raw_peak,
@@ -207,6 +238,11 @@ def risk_link_bypass_goal_candidates(
             "risk_point_local_m": risk_local.tolist(),
             "risk_point_configuration_rad": risk_configuration.tolist(),
             "candidate_side_policy": "away_only",
+            "original_side_direction": original_side.tolist(),
+            "side_direction": side.tolist(),
+            "tabletop_parallel_side": bool(tabletop_parallel_side),
+            "preserve_tcp_height": bool(preserve_tcp_height),
+            "tcp_height_weight": float(tcp_height_weight),
         }
     )
     return rows, direction_audit
@@ -229,6 +265,9 @@ def goal_directed_side_continuation_candidates(
     damping: float = 1.0e-3,
     task_weight: float = 1.0,
     max_joint_delta_rad: float = 0.12,
+    tabletop_parallel_side: bool = False,
+    preserve_tcp_height: bool = False,
+    tcp_height_weight: float = 1.0,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Progress toward goal while preserving a previously validated bypass side.
 
@@ -242,6 +281,9 @@ def goal_directed_side_continuation_candidates(
     side_raw = np.asarray(established_side, dtype=np.float64)
     side_lateral = side_raw - task * float(np.dot(task, side_raw))
     side = normalized(side_lateral, fallback=side_raw)
+    original_side = side.copy()
+    if tabletop_parallel_side:
+        side = tabletop_parallel_lateral_direction(task, side)
     risk_configuration = np.asarray(risk_point_q, dtype=np.float64)
     transforms = model.urdf.link_transforms(
         {name: float(risk_configuration[index]) for index, name in enumerate(model.joint_names)}
@@ -255,13 +297,20 @@ def goal_directed_side_continuation_candidates(
         model.point_jacobian(q_values, tcp_link, np.zeros(3, dtype=np.float64)), dtype=np.float64
     )
     task_row = task @ tcp_jacobian
-    system = np.vstack([risk_jacobian, float(task_weight) * task_row[None, :]])
+    system_rows = [risk_jacobian, float(task_weight) * task_row[None, :]]
+    tcp_z_row = TABLE_UP @ tcp_jacobian
+    if preserve_tcp_height:
+        system_rows.append(float(tcp_height_weight) * tcp_z_row[None, :])
+    system = np.vstack(system_rows)
     rows = []
     for index, weight in enumerate(side_weights):
         if weight < 0.0 or weight > 1.0:
             raise ValueError("side continuation weights must lie in [0, 1]")
         requested_risk = float(side_m) * float(weight) * side
-        target = np.r_[requested_risk, float(task_weight) * float(forward_m)]
+        target_values = [requested_risk, np.array([float(task_weight) * float(forward_m)])]
+        if preserve_tcp_height:
+            target_values.append(np.array([0.0]))
+        target = np.concatenate(target_values)
         delta = system.T @ np.linalg.solve(
             system @ system.T + float(damping) * np.eye(system.shape[0]), target
         )
@@ -288,6 +337,10 @@ def goal_directed_side_continuation_candidates(
                     "linearized_risk_delta_m": achieved_risk.tolist(),
                     "requested_task_progress_m": float(forward_m),
                     "linearized_tcp_delta_m": achieved_tcp.tolist(),
+                    "linearized_tcp_vertical_delta_m": float(achieved_tcp[2]),
+                    "requested_tcp_vertical_delta_m": 0.0,
+                    "tabletop_parallel_side": bool(tabletop_parallel_side),
+                    "preserve_tcp_height": bool(preserve_tcp_height),
                     "linearized_task_progress_m": float(np.dot(task, achieved_tcp)),
                     "joint_delta_rad": delta.tolist(),
                     "raw_joint_delta_max_abs_rad": raw_peak,
@@ -299,7 +352,11 @@ def goal_directed_side_continuation_candidates(
     return rows, {
         "task_direction": task.tolist(),
         "established_bypass_side": side.tolist(),
+        "original_established_bypass_side": original_side.tolist(),
         "side_policy": "lock_side_not_constant_direction",
+        "tabletop_parallel_side": bool(tabletop_parallel_side),
+        "preserve_tcp_height": bool(preserve_tcp_height),
+        "tcp_height_weight": float(tcp_height_weight),
         "candidate_phases": [row["phase"] for row in rows],
         "risk_link": risk_link,
     }

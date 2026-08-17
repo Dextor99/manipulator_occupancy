@@ -57,6 +57,14 @@ SCENE_PROTOCOL = {
             "are diagnostics only"
         ),
     },
+    "tabletop_bypass_policy": {
+        "gripper_base_min_z_m": 0.46,
+        "tabletop_parallel_side": True,
+        "preserve_tcp_height_linearized": True,
+        "coarse_seed_tabletop_gate": True,
+        "fast_output_tabletop_gate": True,
+        "final_authorization_guard_remains_independent": True,
+    },
     "terminal_recovery_policy": {
         "stationary_hold_safe_is_goal_path_clear": False,
         "direct_terminal_distance_blocked_reenters_local": True,

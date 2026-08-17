@@ -162,6 +162,9 @@ def make_r06_fast_wrapper(
     coarse_gate_is_hard: bool = True,
     clearance_improvement_is_hard: bool = True,
     verified_seed_is_candidate: bool = False,
+    tabletop_parallel_bypass: bool = False,
+    preserve_tcp_height: bool = False,
+    tabletop_seed_gate_is_hard: bool = False,
 ):
     def run_r06_fast(
         runtime_args: Any,
@@ -232,6 +235,8 @@ def make_r06_fast_wrapper(
             side_lengths_m=side_lengths,
             tcp_link=tcp_link,
             max_joint_delta_rad=max_joint_delta_rad,
+            tabletop_parallel_side=tabletop_parallel_bypass,
+            preserve_tcp_height=preserve_tcp_height,
         )
         rows = []
         task_direction = np.asarray(direction["task_direction"], dtype=np.float64)
@@ -241,6 +246,9 @@ def make_r06_fast_wrapper(
                 q_values, np.zeros(6), runtime_args, reference_goal=goal_state
             )
             trajectory = trial.NUBSTrajectory6D().generate(inner, head, tail, durations)
+            tabletop_guard = trial.gripper_base_workspace_guard(
+                trajectory, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+            )
             minimum, profile = simple.trajectory_minimum(evaluator, forecast, trajectory)
             tcp_end = simple.tcp_position(
                 model, trajectory.evaluate(trajectory.total_duration), tcp_link
@@ -270,6 +278,8 @@ def make_r06_fast_wrapper(
                     "side_m": float(item["side_m"]),
                     "forward_m": float(item["forward_m"]),
                     "mapping": item["mapping"],
+                    "tabletop_workspace_guard": tabletop_guard,
+                    "tabletop_feasible": bool(tabletop_guard["passed"]),
                     "coarse_min_distance_m": min_clearance,
                     "coarse_min_tau_s": min_tau,
                     "coarse_nearest_link": minimum["nearest_link"],
@@ -291,6 +301,7 @@ def make_r06_fast_wrapper(
             rows,
             robust_target_m=robust_target_m,
             coarse_gate_is_hard=coarse_gate_is_hard,
+            tabletop_gate_is_hard=tabletop_seed_gate_is_hard,
         )
         audit = {
             "candidate_source": "generated_in_current_live_run_from_post_stop_actual_q",
@@ -307,18 +318,25 @@ def make_r06_fast_wrapper(
             "guidance_horizon_s": float(getattr(runtime_args, "guidance_horizon_s", 1.5)),
             "guidance_policy": "long_horizon_tail_clearance_soft_preference_only",
             "fast_invoked": selected is not None,
+            "tabletop_seed_gate_is_hard": bool(tabletop_seed_gate_is_hard),
+            "tabletop_safe_candidate_count": int(sum(bool(r.get("tabletop_feasible", False)) for r in rows)),
+            "gripper_base_min_z_m": float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
         }
         trial.write_json(Path(trial_dir) / "simple_live_bypass_audit.json", audit)
         if selected is None:
+            if tabletop_seed_gate_is_hard and audit["tabletop_safe_candidate_count"] == 0:
+                status = "REJECTED_NO_TABLETOP_SAFE_BYPASS_SEED"
+                reason = "no_tabletop_safe_bypass_seed"
+            else:
+                status = "REJECTED_NO_SIMPLE_LIVE_ROBUST_BYPASS"
+                reason = "no_task_progress_candidate" if not coarse_gate_is_hard else "no_coarse_candidate_at_or_above_robust_target"
             return {
-                "status": "REJECTED_NO_SIMPLE_LIVE_ROBUST_BYPASS",
-                "local_repair_status": "REJECTED_NO_SIMPLE_LIVE_ROBUST_BYPASS",
+                "status": status,
+                "local_repair_status": status,
                 "local_repair_ready": False,
                 "accepted_for_switch": False,
                 "rejection_reasons": [
-                    "no_task_progress_candidate"
-                    if not coarse_gate_is_hard
-                    else "no_coarse_candidate_at_or_above_robust_target"
+                    reason
                 ],
                 "simple_live_audit": audit,
             }
@@ -350,6 +368,18 @@ def make_r06_fast_wrapper(
             accept_verified_seed_without_fast_step=verified_seed_is_candidate,
             original_task_reference_goal=reference_goal,
         )
+        if result.get("local_repair_ready") and artifacts_out is not None:
+            candidate_trajectory = artifacts_out.get("candidate_trajectory")
+            guard = None if candidate_trajectory is None else trial.gripper_base_workspace_guard(
+                candidate_trajectory, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+            )
+            result["planning_tabletop_guard"] = guard
+            if guard is None or not guard.get("passed", False):
+                result["status"] = "FAST_CANDIDATE_TABLETOP_GUARD_FAILED"
+                result["local_repair_status"] = result["status"]
+                result["local_repair_ready"] = False
+                result["accepted_for_switch"] = False
+                result.setdefault("rejection_reasons", []).append("gripper_base_below_tabletop_guard")
         audit.update(
             {
                 "selected_candidate": int(selected["candidate"]),
@@ -385,6 +415,7 @@ def select_planning_seed(
     *,
     robust_target_m: float,
     coarse_gate_is_hard: bool,
+    tabletop_gate_is_hard: bool = False,
 ) -> dict[str, Any] | None:
     """Select the seed that is allowed to reach Fast.
 
@@ -394,11 +425,12 @@ def select_planning_seed(
     progress is preferred, but a temporarily lateral/backward seed is not
     rejected solely for that reason.
     """
+    eligible_rows = [r for r in rows if not tabletop_gate_is_hard or bool(r.get("tabletop_feasible", False))]
     if coarse_gate_is_hard:
-        return simple.select_robust_candidate(rows, robust_target_m)
+        return simple.select_robust_candidate(eligible_rows, robust_target_m)
     return (
         max(
-            rows,
+            eligible_rows,
             key=lambda row: (
                 bool(row["task_progress_ok"]),
                 bool(row.get("coarse_closest_approach_before_tail", False)),
@@ -408,7 +440,7 @@ def select_planning_seed(
                 row["task_progress_m"],
             ),
         )
-        if rows
+        if eligible_rows
         else None
     )
 
@@ -577,6 +609,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             # verifier safety governs execution eligibility.
             clearance_improvement_is_hard=False,
             verified_seed_is_candidate=True,
+            tabletop_parallel_bypass=True,
+            preserve_tcp_height=True,
+            tabletop_seed_gate_is_hard=True,
         )
         trial.select_dynamic_execution_path = lambda **kwargs: (
             "LOCAL_FIRST_DELAYED_REJOIN" if kwargs.get("local_authorized") else None

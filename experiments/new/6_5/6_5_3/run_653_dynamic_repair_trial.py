@@ -203,6 +203,7 @@ FORMAL_PROTOCOL = {
     "post_stop_recheck_min_span_s": 0.25,
     "multisphere_fit_margin_m": 0.005,
     "multisphere_max_components": 4,
+    "gripper_base_min_z_m": 0.46,
     "line_velocity_m_s": 0.020,
     "line_acc_m_s2": 0.05,
     # Frozen after three successful empty-scene executions (r02-r04). This

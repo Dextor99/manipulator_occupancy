@@ -629,6 +629,7 @@ def select_goal_directed_continuation(
     *,
     robust_target_m: float,
     diagnostic_only: bool = False,
+    tabletop_gate_is_hard: bool = False,
 ) -> dict[str, Any] | None:
     """Rank continuation seeds without weakening the final verifier.
 
@@ -636,9 +637,10 @@ def select_goal_directed_continuation(
     number only as a preference: every finite seed may enter Fast, while the
     unchanged 0.09 m complete verifier remains the execution authority.
     """
+    tabletop_eligible = [row for row in rows if not tabletop_gate_is_hard or bool(row.get("tabletop_feasible", False))]
     if diagnostic_only:
         eligible = [
-            row for row in rows if math.isfinite(row["coarse_min_distance_m"])
+            row for row in tabletop_eligible if math.isfinite(row["coarse_min_distance_m"])
         ]
         return (
             max(
@@ -655,7 +657,7 @@ def select_goal_directed_continuation(
         )
     safe = [
         row
-        for row in rows
+        for row in tabletop_eligible
         if row["coarse_min_distance_m"] >= robust_target_m
         and row["task_progress_ok"]
     ]
@@ -733,7 +735,16 @@ def plan_goal_directed_continuation(
                 "accepted_for_switch": False,
                 "rejection_reasons": ["cannot_construct_lateral_escape_side"],
             }
-        side = bypass.normalized(lateral)
+        try:
+            side = bypass.tabletop_parallel_lateral_direction(task_fallback, lateral)
+        except ValueError:
+            return {
+                "status": "REJECTED_UNESTABLISHED_TABLETOP_BYPASS_SIDE",
+                "local_repair_status": "REJECTED_UNESTABLISHED_TABLETOP_BYPASS_SIDE",
+                "local_repair_ready": False,
+                "accepted_for_switch": False,
+                "rejection_reasons": ["cannot_construct_tabletop_parallel_escape_side"],
+            }
         side_audit = {
             "tcp_escape_start_m": tcp_now_fallback.tolist(),
             "tcp_now_m": tcp_now_fallback.tolist(),
@@ -759,6 +770,8 @@ def plan_goal_directed_continuation(
         side_weights=(1.0, 0.5, 0.0),
         tcp_link=tcp_link,
         max_joint_delta_rad=float(max_joint_delta_rad),
+        tabletop_parallel_side=True,
+        preserve_tcp_height=True,
     )
     task = np.asarray(direction["task_direction"], dtype=np.float64)
     rows = []
@@ -769,6 +782,9 @@ def plan_goal_directed_continuation(
         )
         trajectory = trial.NUBSTrajectory6D().generate(inner, head, tail, durations)
         minimum, profile = live.simple.trajectory_minimum(evaluator, forecast, trajectory)
+        tabletop_guard = trial.gripper_base_workspace_guard(
+            trajectory, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+        )
         tcp_end = live.simple.tcp_position(
             model, trajectory.evaluate(trajectory.total_duration), tcp_link
         )
@@ -777,6 +793,8 @@ def plan_goal_directed_continuation(
             {
                 **{key: item[key] for key in ("candidate", "phase", "side_weight", "side_m", "forward_m")},
                 "mapping": item["mapping"],
+                "tabletop_workspace_guard": tabletop_guard,
+                "tabletop_feasible": bool(tabletop_guard["passed"]),
                 "coarse_min_distance_m": float(minimum["distance_m"]),
                 "coarse_min_tau_s": float(minimum["tau_s"]),
                 "coarse_nearest_link": minimum["nearest_link"],
@@ -790,6 +808,7 @@ def plan_goal_directed_continuation(
         rows,
         robust_target_m=float(robust_target_m),
         diagnostic_only=bool(robust_target_is_diagnostic),
+        tabletop_gate_is_hard=True,
     )
     audit = {
         "policy": "goal_directed_bypass_continuation",
@@ -809,6 +828,15 @@ def plan_goal_directed_continuation(
     trial_dir.mkdir(parents=True, exist_ok=True)
     trial.write_json(trial_dir / "goal_directed_continuation_audit.json", audit)
     if selected is None:
+        if not any(bool(row.get("tabletop_feasible", False)) for row in rows):
+            return {
+                "status": "REJECTED_NO_TABLETOP_SAFE_GOAL_DIRECTED_CONTINUATION",
+                "local_repair_status": "REJECTED_NO_TABLETOP_SAFE_GOAL_DIRECTED_CONTINUATION",
+                "local_repair_ready": False,
+                "accepted_for_switch": False,
+                "rejection_reasons": ["no_tabletop_safe_goal_directed_continuation"],
+                "goal_directed_continuation_audit": audit,
+            }
         return {
             "status": "REJECTED_NO_GOAL_DIRECTED_ROBUST_CONTINUATION",
             "local_repair_status": "REJECTED_NO_GOAL_DIRECTED_ROBUST_CONTINUATION",
@@ -849,6 +877,18 @@ def plan_goal_directed_continuation(
         accept_verified_seed_without_fast_step=True,
         original_task_reference_goal=nominal_reference_goal,
     )
+    if result.get("local_repair_ready"):
+        candidate_trajectory = artifacts_out.get("candidate_trajectory")
+        guard = None if candidate_trajectory is None else trial.gripper_base_workspace_guard(
+            candidate_trajectory, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+        )
+        result["planning_tabletop_guard"] = guard
+        if guard is None or not guard.get("passed", False):
+            result["status"] = "GOAL_DIRECTED_FAST_CANDIDATE_TABLETOP_GUARD_FAILED"
+            result["local_repair_status"] = result["status"]
+            result["local_repair_ready"] = False
+            result["accepted_for_switch"] = False
+            result.setdefault("rejection_reasons", []).append("gripper_base_below_tabletop_guard")
     result["goal_directed_continuation_audit"] = audit
     return result
 
