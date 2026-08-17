@@ -39,7 +39,6 @@ DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_event_replan_
 EVENT_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_EVENT_REPLAN_EXECUTE_APPROVED"
 ROLLING_REPLAN_MONITOR_REASONS = {
     "remaining_predicted_risk",
-    "current_distance_stop",
 }
 COMMAND_TIME_REPLAN_STATUS = "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
 COMMAND_TIME_HOLD_STATUS = "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND"
@@ -281,10 +280,12 @@ def make_mid_execution_monitor(**context: Any):
             evaluator, trajectory, forecast,
             playback_time_s=min(float(elapsed_s), float(trajectory.total_duration)),
         )
-        if current.min_distance <= float(args.moving_shadow_current_stop_m):
-            reason = "current_distance_stop"
-            replan = False
-        elif remaining["min_distance_m"] < float(args.rolling_replan_m):
+        current_near_diagnostic = bool(
+            float(current.min_distance) <= float(args.moving_shadow_current_stop_m)
+        )
+        prediction_gate_m = float(args.rolling_replan_m)
+        modeled_remaining_min_m = min(float(current.min_distance), float(remaining["min_distance_m"]))
+        if modeled_remaining_min_m < prediction_gate_m:
             reason = "remaining_predicted_risk"
             replan = True
         else:
@@ -292,7 +293,7 @@ def make_mid_execution_monitor(**context: Any):
             replan = False
         last.update({"seq": int(snapshot.get("state_seq", -1))})
         return {
-            "motion_safe": not (reason != "predictive_remaining_clear"),
+            "motion_safe": bool(reason == "predictive_remaining_clear"),
             "replan_requested": replan,
             "reason": reason,
             "current_distance_m": float(current.min_distance),
@@ -300,6 +301,9 @@ def make_mid_execution_monitor(**context: Any):
             "remaining_tau_s": remaining.get("tau_s"),
             "raw_guard_distance_m": raw_guard,
             "state_seq": int(snapshot.get("state_seq", -1)),
+            "current_near_diagnostic": current_near_diagnostic,
+            "current_near_threshold_m": float(args.moving_shadow_current_stop_m),
+            "predictive_replan_threshold_m": prediction_gate_m,
         }
 
     def command_time_revalidate(*, actual_q: np.ndarray) -> dict[str, Any]:
@@ -329,19 +333,27 @@ def make_mid_execution_monitor(**context: Any):
             np.asarray(snapshot["velocity"], dtype=np.float64),
         )
         current = evaluator.configuration(q_actual, forecast, 0.0, density="medium", with_gradient=False)
-        if current.min_distance <= float(args.moving_shadow_current_stop_m):
-            return {"ready": False, "action": "replan", "reason": "current_distance_stop", "state_seq": state_seq, "current_distance_m": float(current.min_distance), "raw_guard_distance_m": raw_guard, "start_error": start_error}
+        current_near_diagnostic = bool(
+            float(current.min_distance) <= float(args.moving_shadow_current_stop_m)
+        )
+        distance_diag = {
+            "current_distance_m": float(current.min_distance),
+            "current_near_diagnostic": current_near_diagnostic,
+            "current_near_threshold_m": float(args.moving_shadow_current_stop_m),
+        }
         q_goal = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
         verification = verifier.verify(trajectory, forecast, current_q=q_actual, current_qd=np.zeros(6), current_qdd=np.zeros(6), q_goal=q_goal, solver_success=True)
         failures = [key for key, passed in verification.checks.items() if key != "distance_ok" and not bool(passed)]
         if failures:
-            return {"ready": False, "action": "hold", "reason": "command_time_verification_failed", "failed_checks": failures, "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard}
+            return {"ready": False, "action": "hold", "reason": "command_time_verification_failed", "failed_checks": failures, "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard, **distance_diag}
         if not verification.accepted or float(verification.min_distance) < float(args.online_accept_m):
-            return {"ready": False, "action": "replan", "reason": "command_time_candidate_clearance_failed", "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard}
+            return {"ready": False, "action": "replan", "reason": "command_time_candidate_clearance_failed", "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard, **distance_diag}
         remaining = v3._remaining_clearance(evaluator, trajectory, forecast, playback_time_s=0.0)
-        if float(remaining["min_distance_m"]) < float(args.rolling_replan_m):
-            return {"ready": False, "action": "replan", "reason": "remaining_predicted_risk", "state_seq": state_seq, "current_distance_m": float(current.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "raw_guard_distance_m": raw_guard}
-        return {"ready": True, "action": "execute", "reason": "command_time_candidate_valid", "state_seq": state_seq, "current_distance_m": float(current.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "raw_guard_distance_m": raw_guard}
+        prediction_gate_m = float(args.rolling_replan_m)
+        modeled_remaining_min_m = min(float(current.min_distance), float(remaining["min_distance_m"]))
+        if modeled_remaining_min_m < prediction_gate_m:
+            return {"ready": False, "action": "replan", "reason": "remaining_predicted_risk", "state_seq": state_seq, "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "raw_guard_distance_m": raw_guard, "predictive_replan_threshold_m": prediction_gate_m, **distance_diag}
+        return {"ready": True, "action": "execute", "reason": "command_time_candidate_valid", "state_seq": state_seq, "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "raw_guard_distance_m": raw_guard, "predictive_replan_threshold_m": prediction_gate_m, **distance_diag}
 
     # ``execute_authorized_trajectory_offline_track`` uses this explicit
     # barrier before sending any waypoint command.  Keep the normal callback
@@ -383,8 +395,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rolling-replan-m",
         type=float,
-        default=0.10,
-        help="remaining-clearance threshold during an already-authorized local trajectory",
+        default=0.09,
+        help="modeled remaining-clearance threshold during local recovery; raw hard guard remains 0.10 m",
     )
     parser.add_argument(
         "--max-continuous-replan-s",

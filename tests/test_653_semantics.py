@@ -2864,7 +2864,7 @@ def test_terminal_blocked_reentry_preserves_watchdog_and_local_index():
     ("reason", "expected"),
     [
         ("remaining_predicted_risk", True),
-        ("current_distance_stop", True),
+        ("current_distance_stop", False),
         (["persistent_state_stale"], False),
         ("persistent_tracker_unavailable", False),
     ],

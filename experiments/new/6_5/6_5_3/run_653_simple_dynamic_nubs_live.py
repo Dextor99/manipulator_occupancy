@@ -585,7 +585,7 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("planning_robust_target_m", 0.11),
         ("tcp_link", "gripper_base_link"),
         ("continuation_side_m", 0.04),
-        ("rolling_replan_m", 0.10),
+        ("rolling_replan_m", 0.09),
         # Initial STRO early warning only; execution remains 0.5 s.
         ("stro_trigger_horizon_s", 1.2),
         ("max_local_replans", 3),

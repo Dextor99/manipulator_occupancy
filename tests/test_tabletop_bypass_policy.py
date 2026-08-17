@@ -105,6 +105,16 @@ def test_event_replan_has_no_bare_execution_guard_call():
     assert bare == []
 
 
+def test_event_recovery_rolling_threshold_is_candidate_threshold():
+    args = event.build_parser().parse_args(["--repeat", "1"])
+    assert args.rolling_replan_m == 0.09
+
+
+def test_local_monitor_does_not_emit_current_distance_stop_reason():
+    source = Path("experiments/new/6_5/6_5_3/run_653_simple_dynamic_nubs_event_replan_live.py").read_text(encoding="utf-8")
+    assert 'reason = "current_distance_stop"' not in source
+
+
 def test_fast_height_shape_policy_falls_back_to_verified_seed(monkeypatch, tmp_path):
     class FakeTrajectory:
         total_duration = 1.0
