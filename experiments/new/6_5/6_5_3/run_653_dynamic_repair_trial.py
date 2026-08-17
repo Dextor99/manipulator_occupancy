@@ -3900,6 +3900,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     reference_remainder_execution_summary: dict[str, Any] | None = None
     commander: RobotCommander | None = None
     guided_controller: AdaptiveSafetyController | None = None
+    # The persistent perception worker is created only after a risk trigger.
+    # Initialize it before entering the acquisition loop so the unconditional
+    # cleanup path is also valid when the trial ends (or fails) before any
+    # trigger occurs.
+    persistent_worker = None
     triggered = False
     trigger_frame = None
     guard_stopped = False
