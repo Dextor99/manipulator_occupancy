@@ -2744,5 +2744,34 @@ def test_event_replan_continuation_uses_predictive_monitor_and_latest_state():
     assert "motion_monitor_provider=make_mid_execution_monitor" in source
     assert "fresh_from_persistent_snapshot" in source
     assert "PREDICTED_RISK_CLEAR" in inspect.getsource(event_replan.monitor_measured_tail)
-    assert "STOPPED_BY_MOTION_MONITOR" in source
+    assert "STOPPED_BY_MOTION_MONITOR" in inspect.getsource(event_replan.classify_monitor_stop)
     assert "terminal_risk_replan" in source
+
+
+@pytest.mark.parametrize(
+    ("reason", "expected"),
+    [
+        ("remaining_predicted_risk", True),
+        ("current_distance_stop", True),
+        (["persistent_state_stale"], False),
+        ("persistent_tracker_unavailable", False),
+    ],
+)
+def test_monitor_stop_classification_is_fail_closed(reason, expected):
+    execution = {
+        "status": "STOPPED_BY_MOTION_MONITOR",
+        "goal_check": {
+            "monitor_stopped": True,
+            "motion_monitor": {"reason": reason, "replan_requested": False},
+        },
+    }
+    info = event_replan.classify_monitor_stop(execution)
+    assert info["monitor_stopped"] is True
+    assert info["rolling_replan_stop"] is expected
+
+
+def test_monitor_uses_supplied_terminal_trajectory():
+    sentinel = object()
+    assert event_replan.resolve_monitor_trajectory(
+        {"trajectory": sentinel, "authorized_csv": "/not/read.csv"}
+    ) is sentinel

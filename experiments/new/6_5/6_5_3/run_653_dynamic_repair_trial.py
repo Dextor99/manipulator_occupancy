@@ -1474,6 +1474,9 @@ def wait_for_candidate_goal_guarded(
                     "monitor_stop_reason": motion_monitor.get(
                         "reason", "motion_monitor_not_safe"
                     ),
+                    "replan_requested": bool(
+                        motion_monitor.get("replan_requested", False)
+                    ),
                     "motion_monitor": motion_monitor,
                     "elapsed_s": now - started,
                     "hard_guard_distance_m": guard_distance,

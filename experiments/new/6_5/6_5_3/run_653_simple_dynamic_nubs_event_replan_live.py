@@ -37,6 +37,45 @@ v3 = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
 
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_event_replan_live"
 EVENT_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_EVENT_REPLAN_EXECUTE_APPROVED"
+ROLLING_REPLAN_MONITOR_REASONS = {
+    "remaining_predicted_risk",
+    "current_distance_stop",
+}
+
+
+def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
+    """Classify a monitor stop without weakening fail-closed behavior."""
+    execution_status = execution.get("status")
+    goal_check = execution.get("goal_check") or {}
+    motion_monitor = goal_check.get("motion_monitor") or {}
+    reason = motion_monitor.get("reason", goal_check.get("monitor_stop_reason"))
+    monitor_stopped = bool(
+        execution_status == "STOPPED_BY_MOTION_MONITOR"
+        and goal_check.get("monitor_stopped", False)
+    )
+    rolling_replan_stop = bool(
+        monitor_stopped
+        and isinstance(reason, str)
+        and reason in ROLLING_REPLAN_MONITOR_REASONS
+    )
+    return {
+        "execution_status": execution_status,
+        "monitor_stopped": monitor_stopped,
+        "rolling_replan_stop": rolling_replan_stop,
+        "reason": reason,
+        "replan_requested": bool(
+            motion_monitor.get("replan_requested", goal_check.get("replan_requested", False))
+        ),
+    }
+
+
+def resolve_monitor_trajectory(context: dict[str, Any]) -> Any:
+    trajectory = context.get("trajectory")
+    if trajectory is not None:
+        return trajectory
+    return trial.reconstruct_saved_nubs_candidate(
+        Path(context["authorized_csv"]), segments=5
+    )
 
 
 def make_mid_execution_monitor(**context: Any):
@@ -46,9 +85,7 @@ def make_mid_execution_monitor(**context: Any):
     monitor interface.  The event handler then receives the measured partial
     configuration and performs the single allowed continuation replan.
     """
-    trajectory = trial.reconstruct_saved_nubs_candidate(
-        Path(context["authorized_csv"]), segments=5
-    )
+    trajectory = resolve_monitor_trajectory(context)
     worker = context.get("worker")
     evaluator, _, _ = trial.make_risk_stack(
         context["stage4_config"], context["stage4_model"], None
@@ -926,16 +963,20 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             result["local2_execution"] = execution
             result[f"local_{local_index}_execution"] = execution
             execution_status = execution.get("status")
-            if execution_status not in {
-                "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION",
-                "STOPPED_BY_MOTION_MONITOR",
-            }:
-                result["status"] = "LOCAL2_EXECUTION_FAILED_OPERATOR_INTERVENTION_REQUIRED"
+            stop_info = classify_monitor_stop(execution)
+            completed_execution = execution_status == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
+            rolling_interruption = bool(stop_info["rolling_replan_stop"])
+            result["local2_execution_interrupted_by_monitor"] = bool(stop_info["monitor_stopped"])
+            result[f"local_{local_index}_execution_interrupted_by_monitor"] = bool(
+                stop_info["monitor_stopped"]
+            )
+            result[f"local_{local_index}_monitor_stop_reason"] = stop_info["reason"]
+            result[f"local_{local_index}_rolling_replan_stop"] = rolling_interruption
+            if not completed_execution and not rolling_interruption:
+                result["status"] = "LOCAL_CONTINUATION_EXECUTION_FAILED_OPERATOR_INTERVENTION_REQUIRED"
+                result["execution_failure_reason"] = stop_info["reason"]
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
-            result["local2_execution_interrupted_by_monitor"] = (
-                execution_status == "STOPPED_BY_MOTION_MONITOR"
-            )
             q_terminal_start = np.asarray(robot.get_joint(), dtype=np.float64)
             if worker is not None:
                 fresh5, frames5, points5, geometry5 = fresh_from_persistent_snapshot(
@@ -984,7 +1025,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                             processor, denoiser, args
                         ),
                         "execution_summary": execution,
-                        "local1_interrupted": False,
+                        "local1_interrupted": bool(rolling_interruption),
                         "replan_depth": replan_depth + 1,
                         "replan_started_monotonic": replan_started,
                         "failed_replans": failed_replans,
@@ -1008,7 +1049,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         if monitor1["status"] not in {"STRICT_SCENE_CLEAR", "PREDICTED_RISK_CLEAR"} and "post_local2_monitor" not in result:
             raise RuntimeError(f"unexpected post-local decision: {monitor1['status']}")
         terminal_dir = trial_dir / "terminal_goal_authorization"
-        terminal, _ = authorize_terminal_goal(
+        terminal, terminal_trajectory = authorize_terminal_goal(
             args,
             config,
             model,
@@ -1023,6 +1064,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             result["status"] = "STRICT_SCENE_CLEAR_TERMINAL_GOAL_PATH_BLOCKED"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
+        if terminal_trajectory is None:
+            result["status"] = "TERMINAL_AUTHORIZED_TRAJECTORY_MISSING_OPERATOR_INTERVENTION_REQUIRED"
+            trial.write_json(trial_dir / "event_replan_summary.json", result)
+            return result
 
         # One last raw observation is intentionally not replaced by an old
         # candidate forecast: the guarded executor samples raw distance three
@@ -1034,6 +1079,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             return result
         terminal_monitor = make_mid_execution_monitor(
             authorized_csv=Path(terminal["authorized_trajectory_csv"]),
+            trajectory=terminal_trajectory,
             robot=robot,
             worker=terminal_worker,
             processor=processor,
@@ -1055,21 +1101,25 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             motion_monitor_provider=terminal_monitor,
         )
         result["terminal_execution"] = terminal_execution
-        if terminal_execution.get("status") == "STOPPED_BY_MOTION_MONITOR":
+        terminal_stop_info = classify_monitor_stop(terminal_execution)
+        terminal_completed = terminal_execution.get("status") == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
+        terminal_rolling_interruption = bool(terminal_stop_info["rolling_replan_stop"])
+        if terminal_rolling_interruption:
             # Terminal risk re-entry is not a terminal failure: continue from
             # the measured interrupted pose using the same rolling local loop.
             q_interrupted = np.asarray(robot.get_joint(), dtype=np.float64)
-            terminal_traj = trial.reconstruct_saved_nubs_candidate(
-                Path(terminal["authorized_trajectory_csv"]), segments=5
-            )
             latest = terminal_worker.snapshot()
             fresh_latest, frames_latest, points_latest, geometry_latest = fresh_from_persistent_snapshot(latest)
             next_context = dict(context)
             next_context.update(
                 {
                     "local_artifacts": {
-                        "candidate_trajectory": terminal_traj,
-                        "q_now": q_interrupted.copy(),
+                        "candidate_trajectory": terminal_trajectory,
+                        # Preserve the previously established bypass anchor;
+                        # q_actual is read again at the next handler entry.
+                        "q_now": np.asarray(
+                            context["local_artifacts"]["q_now"], dtype=np.float64
+                        ).copy(),
                     },
                     "fresh3": fresh_latest,
                     "fresh3_frames": frames_latest,
@@ -1089,11 +1139,12 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             result["status"] = next_result.get("status", "TERMINAL_RISK_REPLAN_CONTINUED")
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
-        if terminal_execution.get("status") == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+        if terminal_completed:
             result["status"] = "SIMPLE_DYNAMIC_NUBS_RECOVERED_AND_GOAL_REACHED"
             result["command_hold"] = False
         else:
             result["status"] = "TERMINAL_EXECUTION_FAILED_OPERATOR_INTERVENTION_REQUIRED"
+            result["terminal_failure_reason"] = terminal_stop_info["reason"]
         trial.write_json(trial_dir / "event_replan_summary.json", result)
         return result
 
