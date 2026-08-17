@@ -3404,7 +3404,12 @@ def capture_post_stop_obstacle(
             rois["planning_points"],
             robot_points,
             workspace=getattr(processor, "_workspace", None),
-            plane_removal=plane_removal,
+            # The planning Z band already excludes the tabletop.  Re-fitting
+            # a largest plane here can remove a face-on foam obstacle during
+            # the post-stop Fresh capture, leaving zero planning clusters
+            # even while the safety ROI still sees the object.  Keep plane
+            # removal only on the broad safety/guard ROI below.
+            plane_removal=None,
             eps=args.cluster_eps,
             min_samples=args.cluster_min_samples,
             min_points=args.cluster_min_points,
