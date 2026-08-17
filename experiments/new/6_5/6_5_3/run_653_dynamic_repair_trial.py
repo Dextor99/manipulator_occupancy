@@ -1136,6 +1136,71 @@ def reconstruct_saved_nubs_candidate(path: Path, *, segments: int) -> NUBSTrajec
     return NUBSTrajectory6D().generate(boundary_q[1:-1], head, tail, durations)
 
 
+def clearance_profile_summary(
+    trajectory: Any,
+    evaluator: Any,
+    forecast: Any,
+    *,
+    step_s: float = 0.04,
+    guide_horizon_s: float | None = None,
+) -> dict[str, Any]:
+    """Summarize closest approach without imposing a monotonic-distance gate.
+
+    The minimum clearance remains the only geometric acceptance quantity here.
+    End-of-segment and longer-horizon values are diagnostics/soft guidance only;
+    they describe whether a local segment has started to pass the swept obstacle
+    rather than merely postponing the closest approach to its tail.
+    """
+    duration = float(trajectory.total_duration)
+    times = np.unique(
+        np.r_[np.arange(0.0, duration + 0.5 * step_s, step_s), duration]
+    )
+    rows: list[dict[str, Any]] = []
+    for tau in times:
+        risk = evaluator.configuration(
+            trajectory.evaluate(float(tau)),
+            forecast,
+            float(tau),
+            density="medium",
+            with_gradient=False,
+        )
+        rows.append(
+            {
+                "tau_s": float(tau),
+                "distance_m": float(risk.min_distance),
+                "nearest_link": risk.nearest_link,
+            }
+        )
+    minimum = min(rows, key=lambda row: row["distance_m"])
+    end = rows[-1]
+    guide = None
+    if guide_horizon_s is not None and float(guide_horizon_s) >= duration:
+        q_end = trajectory.evaluate(duration)
+        guide_risk = evaluator.configuration(
+            q_end,
+            forecast,
+            float(guide_horizon_s),
+            density="medium",
+            with_gradient=False,
+        )
+        guide = {
+            "horizon_s": float(guide_horizon_s),
+            "clearance_m": float(guide_risk.min_distance),
+            "nearest_link": guide_risk.nearest_link,
+        }
+    return {
+        "profile": rows,
+        "min_clearance_m": float(minimum["distance_m"]),
+        "min_tau_s": float(minimum["tau_s"]),
+        "min_nearest_link": minimum["nearest_link"],
+        "end_clearance_m": float(end["distance_m"]),
+        "end_minus_min_clearance_m": float(end["distance_m"] - minimum["distance_m"]),
+        "min_tau_fraction": float(minimum["tau_s"] / max(duration, 1e-9)),
+        "closest_approach_before_tail": bool(minimum["tau_s"] < 0.8 * duration),
+        "guide": guide,
+    }
+
+
 class TimeScaledTrajectory6D:
     """Expose one geometric trajectory on an explicitly scaled physical clock."""
 
@@ -2026,6 +2091,12 @@ def run_fast_repair(
     clearance_gain = float(verification.min_distance - reference_verification.min_distance)
     candidate_samples = candidate_trajectory.dense_sample(0.02).q
     reference_samples = reference_full_trajectory.dense_sample(0.02).q
+    candidate_profile_summary = clearance_profile_summary(
+        candidate_trajectory,
+        evaluator,
+        forecast,
+        guide_horizon_s=getattr(args, "guidance_horizon_s", None),
+    )
     max_delta_q = float(np.max(np.abs(candidate_samples - reference_samples)))
     original_reference_samples = original_task_reference_trajectory.dense_sample(0.02).q
     max_delta_q_from_original_reference = float(
@@ -2156,6 +2227,19 @@ def run_fast_repair(
         "verification_min_distance_m": verification.min_distance,
         "reference_online_min_distance_m": reference_verification.min_distance,
         "candidate_online_min_distance_m": verification.min_distance,
+        "candidate_min_clearance_m": candidate_profile_summary["min_clearance_m"],
+        "candidate_min_tau_s": candidate_profile_summary["min_tau_s"],
+        "candidate_min_nearest_link": candidate_profile_summary["min_nearest_link"],
+        "candidate_end_clearance_m": candidate_profile_summary["end_clearance_m"],
+        "candidate_end_minus_min_clearance_m": candidate_profile_summary[
+            "end_minus_min_clearance_m"
+        ],
+        "candidate_min_tau_fraction": candidate_profile_summary["min_tau_fraction"],
+        "candidate_closest_approach_before_tail": candidate_profile_summary[
+            "closest_approach_before_tail"
+        ],
+        "guidance_horizon_s": getattr(args, "guidance_horizon_s", None),
+        "guidance_tail_clearance": candidate_profile_summary["guide"],
         "clearance_improvement_m": clearance_gain,
         "min_clearance_improvement_m": args.min_clearance_improvement_m,
         "max_delta_q_from_reference_rad": max_delta_q,

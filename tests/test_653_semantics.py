@@ -183,7 +183,7 @@ def test_event_replan_extension_is_default_off_and_bounded():
     assert trial.POST_LOCAL_FRESH3_HANDLER is None
     args = event_replan_live.build_parser().parse_args(["--repeat", "1"])
     assert not args.execute
-    assert args.task_geometry_id == "D2_SIMPLE_DYNAMIC_NUBS_EVENT_REPLAN_LIVE_XP10"
+    assert args.task_geometry_id == "D2_SIMPLE_DYNAMIC_NUBS_EVENT_REPLAN_LIVE_XP00"
     assert args.terminal_durations_s == "3.0,4.0,5.0,6.0"
     assert args.post_local_monitor_max_s == 3.0
     assert args.continuation_side_m == 0.04
@@ -237,7 +237,7 @@ def test_r04_offline_replay_validates_archived_hashes():
 
 def test_d2_complete_scene_is_opposing_and_freezes_planner_defaults():
     args = d2_complete.build_parser().parse_args(["--repeat", "1"])
-    assert args.task_geometry_id == "D2_COMPLETE_V2_OPPOSING_FIXED_X_XP10"
+    assert args.task_geometry_id == "D2_COMPLETE_V2_OPPOSING_FIXED_X_XP00"
     assert args.post_local_monitor_max_s == 6.0
     direction = np.asarray(
         d2_complete.SCENE_PROTOCOL["obstacle_nominal_direction_unit_base"]

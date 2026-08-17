@@ -4,10 +4,10 @@
 This wrapper intentionally reuses the mature 6.5.3 reference-motion, STRO stop,
 Fresh authorization, offline-track and raw-cloud guard implementation.  Only
 the r06-frozen planning policy is injected: fixed PCA two-sphere geometry,
-three away-side risk-link goals, a 0.11 m coarse gate, and the unchanged Fast
-CCRO-NUBS verifier.  One authorized 1 s local segment may execute; the robot
-then remains at its measured local tail.  No automatic rejoin or goal motion is
-permitted in this pilot.
+three away-side risk-link goals, a 0.11 m preferred coarse target, and the
+unchanged Fast CCRO-NUBS verifier.  One authorized 1 s local segment may
+execute; the robot then remains at its measured local tail.  No automatic
+rejoin or goal motion is permitted in this pilot.
 """
 
 from __future__ import annotations
@@ -60,6 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="physical execution duration; the scaled trajectory is re-verified before authorization",
     )
+    parser.add_argument(
+        "--guidance-horizon-s",
+        type=float,
+        default=1.5,
+        help=(
+            "longer diagnostic horizon for swept-obstacle guidance; it does not "
+            "extend the 1 s executable candidate or change any safety gate"
+        ),
+    )
     return parser
 
 
@@ -69,6 +78,8 @@ def validate_request(args: argparse.Namespace) -> tuple[float, ...]:
         raise ValueError("side-lengths-m must contain exactly three positive values")
     if args.planning_robust_target_m < 0.11:
         raise ValueError("planning-robust-target-m must remain at least 0.11 m")
+    if args.guidance_horizon_s < args.candidate_playback_duration_s:
+        raise ValueError("guidance-horizon-s must not be shorter than candidate playback")
     if args.reference_operator_phrase != REFERENCE_OPERATOR_PHRASE:
         raise RuntimeError(
             f"bad reference operator phrase; required: {REFERENCE_OPERATOR_PHRASE}"
@@ -214,6 +225,23 @@ def make_r06_fast_wrapper(
                 model, trajectory.evaluate(trajectory.total_duration), tcp_link
             )
             progress = float(np.dot(tcp_end - tcp_now, task_direction))
+            end_risk = evaluator.configuration(
+                trajectory.evaluate(trajectory.total_duration),
+                forecast,
+                float(trajectory.total_duration),
+                density="coarse",
+                with_gradient=False,
+            )
+            guide_risk = evaluator.configuration(
+                trajectory.evaluate(trajectory.total_duration),
+                forecast,
+                float(getattr(runtime_args, "guidance_horizon_s", 1.5)),
+                density="coarse",
+                with_gradient=False,
+            )
+            end_clearance = float(end_risk.min_distance)
+            min_clearance = float(minimum["distance_m"])
+            min_tau = float(minimum["tau_s"])
             rows.append(
                 {
                     "candidate": index,
@@ -221,9 +249,18 @@ def make_r06_fast_wrapper(
                     "side_m": float(item["side_m"]),
                     "forward_m": float(item["forward_m"]),
                     "mapping": item["mapping"],
-                    "coarse_min_distance_m": float(minimum["distance_m"]),
-                    "coarse_min_tau_s": float(minimum["tau_s"]),
+                    "coarse_min_distance_m": min_clearance,
+                    "coarse_min_tau_s": min_tau,
                     "coarse_nearest_link": minimum["nearest_link"],
+                    "coarse_end_clearance_m": end_clearance,
+                    "coarse_end_minus_min_clearance_m": end_clearance - min_clearance,
+                    "coarse_min_tau_fraction": min_tau / max(float(trajectory.total_duration), 1e-9),
+                    "coarse_closest_approach_before_tail": bool(
+                        min_tau < 0.8 * float(trajectory.total_duration)
+                    ),
+                    "guide_horizon_s": float(getattr(runtime_args, "guidance_horizon_s", 1.5)),
+                    "guide_clearance_m": float(guide_risk.min_distance),
+                    "guide_nearest_link": guide_risk.nearest_link,
                     "task_progress_m": progress,
                     "task_progress_ok": bool(progress > 0.0),
                     "profile": profile,
@@ -246,6 +283,8 @@ def make_r06_fast_wrapper(
             "candidates": rows,
             "planning_robust_target_m": float(robust_target_m),
             "planning_robust_target_is_hard_gate": bool(coarse_gate_is_hard),
+            "guidance_horizon_s": float(getattr(runtime_args, "guidance_horizon_s", 1.5)),
+            "guidance_policy": "long_horizon_tail_clearance_soft_preference_only",
             "fast_invoked": selected is not None,
         }
         trial.write_json(Path(trial_dir) / "simple_live_bypass_audit.json", audit)
@@ -304,6 +343,7 @@ def make_r06_fast_wrapper(
             }
         )
         result["simple_live_audit"] = audit
+        result["guidance_horizon_s"] = float(getattr(runtime_args, "guidance_horizon_s", 1.5))
         trial.write_json(Path(trial_dir) / "simple_live_bypass_audit.json", audit)
         return result
 
@@ -340,6 +380,9 @@ def select_planning_seed(
             rows,
             key=lambda row: (
                 bool(row["task_progress_ok"]),
+                bool(row.get("coarse_closest_approach_before_tail", False)),
+                bool(row.get("coarse_end_minus_min_clearance_m", 0.0) > 0.0),
+                float(row.get("guide_clearance_m", -np.inf)),
                 row["coarse_min_distance_m"],
                 row["task_progress_m"],
             ),
@@ -413,6 +456,7 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("max_local_replans", 3),
         ("max_closed_loop_segments", 12),
         ("closed_loop_goal_tolerance_rad", 0.01),
+        ("guidance_horizon_s", 1.5),
     ):
         setattr(core_args, name, getattr(wrapper_args, name, default))
 
