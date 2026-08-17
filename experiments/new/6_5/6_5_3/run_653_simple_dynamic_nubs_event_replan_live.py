@@ -45,6 +45,49 @@ COMMAND_TIME_REPLAN_STATUS = "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
 COMMAND_TIME_HOLD_STATUS = "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND"
 
 
+def classify_terminal_authorization(terminal: dict[str, Any]) -> dict[str, Any]:
+    """Classify terminal failure without weakening fail-closed behavior."""
+    if bool(terminal.get("authorized", False)):
+        return {
+            "kind": "authorized",
+            "distance_blocked": False,
+            "attempt_count": len(terminal.get("attempts") or []),
+        }
+    attempts = list(terminal.get("attempts") or [])
+    if not attempts:
+        return {"kind": "other_failure", "distance_blocked": False, "attempt_count": 0}
+    distance_blocked = all(
+        not bool((attempt.get("checks") or {}).get("distance_ok", False))
+        for attempt in attempts
+    )
+    info = {
+        "kind": "distance_blocked" if distance_blocked else "other_failure",
+        "distance_blocked": bool(distance_blocked),
+        "attempt_count": len(attempts),
+    }
+    if distance_blocked:
+        info["minimum_terminal_clearance_m"] = min(
+            float(attempt.get("min_distance_m", math.inf)) for attempt in attempts
+        )
+    return info
+
+
+def can_continue_local_after_terminal_block(
+    monitor_result: dict[str, Any], terminal: dict[str, Any]
+) -> bool:
+    """A safe stopped tail may still have a blocked path to the goal."""
+    if not classify_terminal_authorization(terminal).get("distance_blocked", False):
+        return False
+    if monitor_result.get("status") != "PREDICTED_RISK_CLEAR":
+        return False
+    fresh = monitor_result.get("fresh") or {}
+    return bool(
+        fresh.get("accepted", False)
+        and monitor_result.get("geometry") is not None
+        and monitor_result.get("forecast") is not None
+    )
+
+
 def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
     """Classify a monitor stop without weakening fail-closed behavior."""
     execution_status = execution.get("status")
@@ -521,6 +564,8 @@ def monitor_measured_tail(
             "frames": frames,
             "geometry": geometry,
             "forecast": forecast,
+            "terminal_probe_required": True,
+            "task_path_clear": None,
         }
         trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
         return result
@@ -875,6 +920,11 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         replan_depth = int(context.get("replan_depth", 0))
         replan_started = float(context.get("replan_started_monotonic", time.monotonic()))
         failed_replans = int(context.get("failed_replans", 0))
+        force_goal_directed_local = bool(context.get("force_goal_directed_local", False))
+        current_local_artifacts = context["local_artifacts"]
+        current_execution_summary = context.get("execution_summary")
+        current_local_interrupted = bool(context.get("local1_interrupted", False))
+        completed_local_index = replan_depth + 1
         if time.monotonic() - replan_started > float(event_args.max_continuous_replan_s):
             result = {
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -932,6 +982,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             output_dir=trial_dir / f"post_local{replan_depth + 1}_monitor",
             max_wall_s=float(event_args.post_local_monitor_max_s),
         )
+        tail_monitor = monitor1
         result["post_local1_monitor"] = {
             key: value for key, value in monitor1.items() if key not in {"forecast", "geometry"}
         }
@@ -948,7 +999,16 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
 
         q_terminal_start = q_actual
 
-        if monitor1["status"] == "REPLAN_REQUIRED":
+        needs_goal_directed_local = bool(
+            monitor1["status"] == "REPLAN_REQUIRED"
+            or (force_goal_directed_local and monitor1["status"] == "PREDICTED_RISK_CLEAR")
+        )
+        if needs_goal_directed_local:
+            result["local_continuation_reason"] = (
+                "terminal_direct_path_blocked"
+                if force_goal_directed_local
+                else "stationary_hold_not_safe"
+            )
             local_index = replan_depth + 2
             local2_dir = trial_dir / f"event_local_{local_index:02d}"
             local2_dir.mkdir(parents=True, exist_ok=True)
@@ -1067,6 +1127,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             stop_info = classify_monitor_stop(execution)
             completed_execution = execution_status == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
             rolling_interruption = bool(stop_info["rolling_replan_stop"])
+            current_local_artifacts = artifacts
+            current_execution_summary = execution
+            current_local_interrupted = bool(rolling_interruption)
+            completed_local_index = local_index
             result["local2_execution_interrupted_by_monitor"] = bool(stop_info["monitor_stopped"])
             result[f"local_{local_index}_execution_interrupted_by_monitor"] = bool(
                 stop_info["monitor_stopped"]
@@ -1106,6 +1170,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 output_dir=trial_dir / f"post_local{local_index}_monitor",
                 max_wall_s=float(event_args.post_local_monitor_max_s),
             )
+            tail_monitor = monitor2
             result["post_local2_monitor"] = {
                 key: value for key, value in monitor2.items() if key not in {"forecast", "geometry"}
             }
@@ -1161,8 +1226,57 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             terminal_dir,
         )
         result["terminal_authorization"] = terminal
+        terminal_classification = classify_terminal_authorization(terminal)
+        result["terminal_authorization_classification"] = terminal_classification
         if not terminal.get("authorized", False):
-            result["status"] = "STRICT_SCENE_CLEAR_TERMINAL_GOAL_PATH_BLOCKED"
+            if can_continue_local_after_terminal_block(tail_monitor, terminal):
+                worker = context.get("persistent_worker")
+                if worker is None:
+                    result["status"] = "TERMINAL_PATH_BLOCKED_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                latest = worker.snapshot()
+                aligned_latest = v3.time_aligned_snapshot(latest, execution_timestamp=time.time())
+                persistent_reasons = v3._persistent_state_reasons(
+                    latest, aligned_latest, args, raw_guard_reason="raw_hard_guard_not_safe"
+                )
+                raw_guard_latest = float(latest.get("raw_guard_distance_m", float("-inf")))
+                if persistent_reasons or raw_guard_latest <= float(args.guided_hard_stop_m):
+                    result["status"] = "TERMINAL_PATH_BLOCKED_LATEST_STATE_UNSAFE_OR_UNCERTAIN_OPERATOR_INTERVENTION_REQUIRED"
+                    result["terminal_blocked_latest_state_reasons"] = persistent_reasons
+                    result["terminal_blocked_latest_raw_guard_m"] = raw_guard_latest
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                fresh_latest, frames_latest, _points_latest, geometry_latest = fresh_from_persistent_snapshot(latest)
+                if not fresh_latest.get("accepted", False) or geometry_latest is None:
+                    result["status"] = "TERMINAL_PATH_BLOCKED_LATEST_GEOMETRY_NOT_READY_OPERATOR_INTERVENTION_REQUIRED"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                result["terminal_path_blocked_replan_requested"] = True
+                result["terminal_path_blocked_from_local_index"] = int(completed_local_index)
+                result["terminal_blocked_latest_raw_guard_m"] = raw_guard_latest
+                next_context = dict(context)
+                next_context.update(
+                    {
+                        "local_artifacts": current_local_artifacts,
+                        "fresh3": fresh_latest,
+                        "fresh3_frames": frames_latest,
+                        "fresh3_geometry": geometry_latest,
+                        "fresh3_guard_distance": raw_guard_latest,
+                        "execution_summary": current_execution_summary,
+                        "local1_interrupted": current_local_interrupted,
+                        "replan_depth": int(completed_local_index - 1),
+                        "replan_started_monotonic": replan_started,
+                        "failed_replans": failed_replans,
+                        "force_goal_directed_local": True,
+                    }
+                )
+                next_result = handler(**next_context)
+                result["terminal_path_blocked_replan"] = next_result
+                result["status"] = next_result.get("status", "TERMINAL_PATH_BLOCKED_LOCAL_CONTINUATION")
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
+            result["status"] = "TERMINAL_AUTHORIZATION_FAILED_OPERATOR_INTERVENTION_REQUIRED"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
         if terminal_trajectory is None:

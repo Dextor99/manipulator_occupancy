@@ -57,6 +57,12 @@ SCENE_PROTOCOL = {
             "are diagnostics only"
         ),
     },
+    "terminal_recovery_policy": {
+        "stationary_hold_safe_is_goal_path_clear": False,
+        "direct_terminal_distance_blocked_reenters_local": True,
+        "terminal_non_distance_failure_is_fail_closed": True,
+        "continuous_replan_watchdog_s": 10.0,
+    },
     "nominal_speed_m_s": 0.10,
     "fixed_x_lane_m": 0.7749155588,
     "fixed_x_lane_tolerance_m": 0.025,

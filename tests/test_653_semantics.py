@@ -2797,6 +2797,64 @@ def test_event_replan_continuation_uses_predictive_monitor_and_latest_state():
     assert "PREDICTED_RISK_CLEAR" in inspect.getsource(event_replan.monitor_measured_tail)
     assert "STOPPED_BY_MOTION_MONITOR" in inspect.getsource(event_replan.classify_monitor_stop)
     assert "terminal_risk_replan" in source
+    assert "terminal_path_blocked_replan" in source
+
+
+def test_terminal_all_distance_failures_are_path_blocked():
+    info = event_replan.classify_terminal_authorization(
+        {
+            "authorized": False,
+            "attempts": [
+                {"checks": {"distance_ok": False}, "min_distance_m": -0.10},
+                {"checks": {"distance_ok": False}, "min_distance_m": -0.11},
+            ],
+        }
+    )
+    assert info["kind"] == "distance_blocked"
+    assert info["distance_blocked"] is True
+
+
+def test_terminal_dynamics_only_failure_is_not_path_blocked():
+    info = event_replan.classify_terminal_authorization(
+        {
+            "authorized": False,
+            "attempts": [{"checks": {"distance_ok": True, "acceleration_ok": False}}],
+        }
+    )
+    assert info["kind"] == "other_failure"
+    assert info["distance_blocked"] is False
+
+
+def test_terminal_blocked_tracked_obstacle_requests_local_continuation():
+    assert event_replan.can_continue_local_after_terminal_block(
+        {
+            "status": "PREDICTED_RISK_CLEAR",
+            "fresh": {"accepted": True},
+            "geometry": {"covered": True},
+            "forecast": object(),
+        },
+        {"authorized": False, "attempts": [{"checks": {"distance_ok": False}}]},
+    )
+
+
+def test_strict_scene_clear_terminal_failure_does_not_use_dynamic_local():
+    assert not event_replan.can_continue_local_after_terminal_block(
+        {
+            "status": "STRICT_SCENE_CLEAR",
+            "fresh": {"accepted": True},
+            "geometry": {"covered": True},
+            "forecast": object(),
+        },
+        {"authorized": False, "attempts": [{"checks": {"distance_ok": False}}]},
+    )
+
+
+def test_terminal_blocked_reentry_preserves_watchdog_and_local_index():
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "force_goal_directed_local" in source
+    assert "completed_local_index - 1" in source
+    assert "replan_started_monotonic" in source
+    assert "fresh_from_persistent_snapshot" in source
     assert "accept_verified_seed_without_fast_step=True" in inspect.getsource(
         event_replan.plan_goal_directed_continuation
     )
