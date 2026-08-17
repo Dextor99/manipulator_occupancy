@@ -1,0 +1,53 @@
+{
+  "created_at": "2026-08-17T11:32:25.615363+00:00",
+  "status": "SIMPLE_DYNAMIC_NUBS_LIVE_PLAN_AUTHORIZED_HOLD",
+  "robot_commanded": true,
+  "candidate_source_policy": "current_live_run_only",
+  "local_only": true,
+  "automatic_rejoin": false,
+  "execute_requested": false,
+  "required_reference_operator_phrase": "CCRO_653_DYNAMIC_SHADOW_APPROVED",
+  "required_local_execute_phrase": "CCRO_653_SIMPLE_DYNAMIC_LOCAL_EXECUTE_APPROVED",
+  "output": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/simple_dynamic_nubs_complete_live/r28",
+  "core_status": "TRIGGERED",
+  "core_trial_dir": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/simple_dynamic_nubs_complete_live/r28/core_live/trials/D2_opposing_approach_r28",
+  "core_summary": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/simple_dynamic_nubs_complete_live/r28/core_live/trials/D2_opposing_approach_r28/summary.json",
+  "event_types": [
+    "REFERENCE_ARMED",
+    "TRIGGER",
+    "IMMEDIATE_STOP_BEFORE_LIVE_REPLAN",
+    "PERSISTENT_TRACKER_SEED_READY",
+    "POST_STOP_WAIT_FOR_STATIC",
+    "LOCAL_REPAIR_READY",
+    "POST_PLAN_FRESH_RECHECK_READY",
+    "POST_PLAN_RECHECK_FAILED",
+    "LOCAL_EXECUTION_AUTHORIZED_SHADOW",
+    "LIVE_CANDIDATE_EXECUTION_BLOCKED_BY_DEFAULT"
+  ],
+  "scene_protocol": {
+    "scene_id": "D2_COMPLETE_V2_OPPOSING_FIXED_X_XP00",
+    "classification": "opposing_approach",
+    "robot_task_direction": "approximately base -Y",
+    "obstacle_nominal_direction_unit_base": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "opposing_condition": "obstacle velocity dot robot task velocity < 0",
+    "direction_is_diagnostic_not_a_planning_gate": true,
+    "nominal_speed_m_s": 0.1,
+    "fixed_x_lane_m": 0.7749155588,
+    "fixed_x_lane_tolerance_m": 0.025,
+    "fixed_x_lane_source": "d2_fixed_x_opposing_search_r02",
+    "offline_expected": {
+      "speed_y_m_s": 0.08,
+      "trigger_current_m": 0.176015184,
+      "trigger_predicted_m": 0.133111606,
+      "coarse_m": 0.1250675599,
+      "fast_m": 0.1338093914,
+      "fast_ms": 48.082694
+    },
+    "operator_rule": "keep X approximately constant; move mainly from base -Y toward +Y and continue past the encounter; never steer toward robot avoidance"
+  },
+  "scene_operator_phrase": "CCRO_653_D2_COMPLETE_V2_FIXED_X_OPPOSING_CONFIRMED"
+}
