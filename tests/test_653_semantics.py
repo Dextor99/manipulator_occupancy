@@ -2906,6 +2906,7 @@ def test_command_time_and_first_local_fallback_hooks_are_present():
     event_source = inspect.getsource(event_replan.make_mid_execution_monitor)
     handler_source = inspect.getsource(event_replan.make_event_handler)
     trial_source = inspect.getsource(trial.execute_authorized_trajectory_offline_track)
+    trial_module_source = inspect.getsource(trial)
     assert "command_time_revalidate" in event_source
     assert "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED" in trial_source
     assert "allow_unestablished_side_fallback" in handler_source
@@ -2914,12 +2915,16 @@ def test_command_time_and_first_local_fallback_hooks_are_present():
 def test_final_precommand_barrier_and_boundary_audit_are_installed():
     event_source = inspect.getsource(event_replan.make_mid_execution_monitor)
     trial_source = inspect.getsource(trial.execute_authorized_trajectory_offline_track)
+    trial_module_source = inspect.getsource(trial)
     assert "final_precommand_barrier" in event_source
     assert "wait_for_final_fresh_snapshot" in event_source
     assert "boundary_dynamics_audit" in event_source
     assert "ROBOT_NOT_SETTLED_PRECOMMAND" in trial_source
     assert "FINAL_PRECOMMAND_REVALIDATION_REPLAN_REQUIRED" in trial_source
     assert "final_precommand_barrier" in trial_source
+    assert "audit_execution_waypoints" in trial_source
+    assert "OFFLINE_TRACK_STARTUP_FAILED" in trial_source
+    assert "PRECOMMAND_REPLAN_STATUSES" in trial_module_source
 
 
 def test_final_precommand_defaults_are_conservative():

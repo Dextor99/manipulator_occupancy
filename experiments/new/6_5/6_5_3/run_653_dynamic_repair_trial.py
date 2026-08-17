@@ -83,6 +83,18 @@ from perception.occupancy_tracker import OccupancyTracker  # noqa: E402
 from planning.nubs_trajectory import CompositeTrajectory6D, NUBSTrajectory6D, TrajectorySamples  # noqa: E402
 from planning.robot_surface_model import RobotSurfaceModel  # noqa: E402
 from risk.prediction import RiskSphere, predict_risk_spheres  # noqa: E402
+
+PRECOMMAND_HOLD_STATUSES = {
+    "PERSISTENT_TRACKER_NOT_READY_PRECOMMAND",
+    "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND",
+    "FINAL_PRECOMMAND_HOLD_PRECOMMAND",
+}
+PRECOMMAND_REPLAN_STATUSES = {
+    "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED",
+    "FINAL_PRECOMMAND_REVALIDATION_REPLAN_REQUIRED",
+    "ROBOT_NOT_SETTLED_PRECOMMAND",
+    "EXECUTION_WAYPOINT_BOUNDARY_REPLAN_REQUIRED",
+}
 from risk.safety_policy import SafetyPolicy  # noqa: E402
 from robot.robot_commander import RobotCommander  # noqa: E402
 from robot.safety_guided_motion import (  # noqa: E402
@@ -1771,6 +1783,50 @@ def trajectory_workspace_deviation(
     }
 
 
+def audit_execution_waypoints(
+    times_exec: np.ndarray,
+    qs_exec: np.ndarray,
+    actual_q: np.ndarray,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Audit the exact resampled/downsampled sequence sent to the controller."""
+    times_exec = np.asarray(times_exec, dtype=np.float64)
+    qs_exec = np.asarray(qs_exec, dtype=np.float64)
+    if len(times_exec) < 4 or qs_exec.shape[0] < 4:
+        return {"passed": False, "reason": "too_few_execution_waypoints"}
+    dt = np.diff(times_exec)
+    if not np.all(np.isfinite(dt)) or np.any(dt <= 0.0):
+        return {"passed": False, "reason": "invalid_execution_time_axis"}
+    dq = np.diff(qs_exec, axis=0)
+    qd = dq / dt[:, None]
+    qdd = np.diff(qd, axis=0) / (0.5 * (dt[:-1] + dt[1:]))[:, None]
+    start_error = float(np.max(np.abs(qs_exec[0] - np.asarray(actual_q, dtype=np.float64))))
+    checks = {
+        "start_position_ok": start_error <= float(getattr(args, "candidate_start_sync_rad", 0.002)),
+        "first_step_ok": float(np.max(np.abs(dq[0]))) <= float(getattr(args, "candidate_start_sync_rad", 0.002)),
+        "final_step_ok": float(np.max(np.abs(dq[-1]))) <= float(getattr(args, "candidate_start_sync_rad", 0.002)),
+        "start_velocity_ok": float(np.max(np.abs(qd[0]))) <= float(getattr(args, "boundary_qd_tol_rad_s", 0.03)),
+        "end_velocity_ok": float(np.max(np.abs(qd[-1]))) <= float(getattr(args, "boundary_qd_tol_rad_s", 0.03)),
+        "start_acceleration_ok": float(np.max(np.abs(qdd[0]))) <= float(getattr(args, "boundary_qdd_tol_rad_s2", 0.30)),
+        "end_acceleration_ok": float(np.max(np.abs(qdd[-1]))) <= float(getattr(args, "boundary_qdd_tol_rad_s2", 0.30)),
+    }
+    return {
+        "passed": all(checks.values()), "checks": checks,
+        "failed_checks": [k for k, v in checks.items() if not v],
+        "start_error_rad": start_error,
+        "first_step_rad": float(np.max(np.abs(dq[0]))),
+        "final_step_rad": float(np.max(np.abs(dq[-1]))),
+        "start_qd_rad_s": float(np.max(np.abs(qd[0]))),
+        "end_qd_rad_s": float(np.max(np.abs(qd[-1]))),
+        "start_qdd_rad_s2": float(np.max(np.abs(qdd[0]))),
+        "end_qdd_rad_s2": float(np.max(np.abs(qdd[-1]))),
+        "global_max_adjacent_step_rad": float(np.max(np.abs(dq))),
+        "global_max_qd_rad_s": float(np.max(np.abs(qd))),
+        "global_max_qdd_rad_s2": float(np.max(np.abs(qdd))),
+        "waypoint_count": int(len(qs_exec)),
+    }
+
+
 def execute_authorized_trajectory_offline_track(
     robot: Any,
     trajectory_csv: Path,
@@ -1804,6 +1860,11 @@ def execute_authorized_trajectory_offline_track(
         controller_period_s=waypoint_period,
     )
     times_exec, qs_exec = maybe_downsample(times_exec, qs_exec, args.candidate_max_waypoints)
+    if not hasattr(robot, "offline_track_execute_joints") and not (
+        hasattr(robot, "offline_track_prepare_joints") and hasattr(robot, "offline_track_start")
+    ):
+        raise RuntimeError("current robot .so does not expose offline_track_execute_joints")
+    actual_q_for_waypoint_audit = np.asarray(robot.get_joint(), dtype=np.float64)
     min_wait = args.candidate_min_execution_wait_s
     if min_wait <= 0.0:
         min_wait = 0.90 * requested_duration
@@ -1820,10 +1881,18 @@ def execute_authorized_trajectory_offline_track(
         "joint_acc": args.candidate_joint_acc,
         "min_execution_wait_s": min_wait,
     }
+    execution_waypoint_audit = audit_execution_waypoints(
+        times_exec, qs_exec, actual_q_for_waypoint_audit, args
+    )
+    log["execution_waypoint_boundary_audit"] = execution_waypoint_audit
+    if not bool(execution_waypoint_audit.get("passed", False)):
+        log["status"] = "EXECUTION_WAYPOINT_BOUNDARY_REPLAN_REQUIRED"
+        log["robot_commanded"] = False
+        return log
 
     if not hasattr(robot, "offline_track_execute_joints"):
         raise RuntimeError("current robot .so does not expose offline_track_execute_joints")
-    actual_start = np.asarray(robot.get_joint(), dtype=np.float64)
+    actual_start = actual_q_for_waypoint_audit
     start_err = joint_error(actual_start, qs_exec[0])
     log["actual_start_joint_rad"] = actual_start.tolist()
     log["candidate_start_joint_rad"] = qs_exec[0].tolist()
@@ -1883,13 +1952,19 @@ def execute_authorized_trajectory_offline_track(
             time.sleep(0.02)
         settle_stack = np.stack(settle_qs, axis=0)
         settle_span = float(np.max(np.ptp(settle_stack, axis=0)))
+        settle_dt = np.diff(np.asarray(settle_ts, dtype=np.float64))
+        settle_qd = np.diff(settle_stack, axis=0) / settle_dt[:, None]
+        settle_qd_max = float(np.max(np.abs(settle_qd[-2:])))
         settle_limit = min(0.001, 0.5 * float(getattr(args, "candidate_start_sync_rad", 0.002)))
+        settle_qd_limit = 0.02
         settle_audit = {
-            "passed": settle_span <= settle_limit,
+            "passed": settle_span <= settle_limit and settle_qd_max <= settle_qd_limit,
             "sample_count": len(settle_qs),
             "duration_s": settle_ts[-1] - settle_ts[0],
             "max_span_rad": settle_span,
             "span_limit_rad": settle_limit,
+            "last_qd_max_rad_s": settle_qd_max,
+            "qd_limit_rad_s": settle_qd_limit,
             "q_latest": settle_qs[-1].tolist(),
         }
         log["robot_settle_audit"] = settle_audit
@@ -1918,18 +1993,40 @@ def execute_authorized_trajectory_offline_track(
             return log
 
     started = time.perf_counter()
-    ret_info = robot.offline_track_execute_joints(
-        qs_exec.tolist(),
-        args.candidate_joint_velc,
-        args.candidate_joint_acc,
-        False,
-        True,
-        True,
-    )
-    log["robot_commanded"] = True
+    # Prefer a split prepare/start API when the robot wrapper exposes it.  It
+    # places the final barrier after waypoint upload and immediately before
+    # MoveStartup.  Older SDKs expose only the combined call; for those the
+    # barrier above remains the last Python-level gate available.
+    if hasattr(robot, "offline_track_prepare_joints") and hasattr(robot, "offline_track_start"):
+        prep_info = robot.offline_track_prepare_joints(
+            qs_exec.tolist(), args.candidate_joint_velc, args.candidate_joint_acc
+        )
+        log["offline_track_prepare_return"] = dict(prep_info)
+        if int(prep_info.get("prepare_ret", 0)) != 0:
+            log["status"] = "OFFLINE_TRACK_PREPARE_FAILED"
+            return log
+        final_barrier_after_prepare = getattr(motion_monitor_provider, "final_precommand_barrier", None)
+        if callable(final_barrier_after_prepare):
+            final_result = final_barrier_after_prepare(actual_q=np.asarray(robot.get_joint(), dtype=np.float64))
+            log["final_precommand_barrier_after_prepare"] = final_result
+            if not bool(final_result.get("ready", False)):
+                action = final_result.get("action", "hold")
+                log["status"] = "FINAL_PRECOMMAND_REVALIDATION_REPLAN_REQUIRED" if action == "replan" else "FINAL_PRECOMMAND_HOLD_PRECOMMAND"
+                log["robot_commanded"] = False
+                return log
+        ret_info = robot.offline_track_start(nonblocking=True)
+    else:
+        ret_info = robot.offline_track_execute_joints(
+            qs_exec.tolist(), args.candidate_joint_velc, args.candidate_joint_acc, False, True, True
+        )
+    log["command_attempted"] = True
     log["offline_track_return"] = dict(ret_info)
-    if int(ret_info.get("startup_ret", -9999)) != 0:
-        raise RuntimeError(f"offline track startup failed: {ret_info}")
+    startup_ret = int(ret_info.get("startup_ret", -9999))
+    log["startup_ret"] = startup_ret
+    log["robot_commanded"] = bool(startup_ret == 0)
+    if startup_ret != 0:
+        log["status"] = "OFFLINE_TRACK_STARTUP_FAILED"
+        return log
     goal_check, feedback_samples = wait_for_candidate_goal_guarded(
         robot,
         qs_exec[-1],
@@ -5406,7 +5503,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         # Persist the executor result before classifying it;
                         # precommand holds have no timing_check by design.
                         write_json(candidate_dir / first_log_name, first_execution_summary)
-                        if first_execution_summary["status"] == "PERSISTENT_TRACKER_NOT_READY_PRECOMMAND":
+                        execution_status = first_execution_summary.get("status")
+                        if execution_status in PRECOMMAND_HOLD_STATUSES:
                             log["events"].append(
                                 {
                                     "type": "LOCAL_EXECUTION_PRECOMMAND_HOLD",
@@ -5418,20 +5516,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             )
                             full_execution_summary = first_execution_summary
                             break
-                        if first_execution_summary["status"] == "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND":
-                            log["events"].append(
-                                {
-                                    "type": "LOCAL_EXECUTION_COMMAND_TIME_HOLD",
-                                    "execution_path": execution_path,
-                                    "execution": first_execution_summary,
-                                }
-                            )
-                            full_execution_summary = first_execution_summary
-                            break
-                        precommand_replan = bool(
-                            first_execution_summary.get("status")
-                            == "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
-                        )
+                        precommand_replan = execution_status in PRECOMMAND_REPLAN_STATUSES
                         early_monitor_stop = bool(
                             precommand_replan
                             or (
@@ -5449,7 +5534,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             )
                         full_execution_summary = first_execution_summary
                         first_event_type = (
-                            "LOCAL_EXECUTION_COMMAND_TIME_REPLAN_REQUIRED"
+                            "LOCAL_EXECUTION_PRECOMMAND_REPLAN_REQUIRED"
                             if precommand_replan
                             else (
                                 "LIVE_REPAIR_REJOIN_EXECUTED"
