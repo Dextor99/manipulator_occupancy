@@ -893,6 +893,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 result["status"] = "LOCAL2_FRESH_REJECTED_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
+            if worker is None:
+                result["status"] = "LOCAL_CONTINUATION_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
             execution = trial.execute_authorized_trajectory_offline_track(
                 # Continuation segments use the same prearm and predictive
                 # monitor as local #1; no local segment is exempt from the
@@ -915,7 +919,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     stage4_config=config,
                     stage4_model=model,
                     trial_dir=local2_dir,
-                ) if worker is not None else None,
+                ),
             )
             result["local2_execution"] = execution
             if execution.get("status") != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
