@@ -5099,6 +5099,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             mid_execution_monitor = MID_EXECUTION_MONITOR_FACTORY(
                                 authorized_csv=authorized_csv,
                                 robot=robot,
+                                # Pass the live worker explicitly.  The
+                                # factory's monitor closes over this object for
+                                # both prearm readiness and in-motion checks;
+                                # omitting it silently converted every monitor
+                                # call into persistent_tracker_unavailable.
+                                worker=persistent_worker,
                                 processor=processor,
                                 state_reader=state_reader,
                                 denoiser=denoiser,
