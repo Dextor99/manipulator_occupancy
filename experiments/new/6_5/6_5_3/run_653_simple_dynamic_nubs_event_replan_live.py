@@ -236,7 +236,7 @@ def forecast_from_fresh(
         )
     if strict_empty_scene(args, frames):
         return (
-            trial.constant_multisphere_forecast(
+            v3.v3_execution_multisphere_forecast(
                 np.asarray([[100.0, 100.0, 100.0]], dtype=np.float64),
                 np.asarray([1.0e-6], dtype=np.float64),
                 np.zeros(3, dtype=np.float64),

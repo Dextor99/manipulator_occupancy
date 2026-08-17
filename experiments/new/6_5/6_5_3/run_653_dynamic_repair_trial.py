@@ -2846,7 +2846,9 @@ def authorize_delayed_rejoin_after_fresh3(
                 centers = np.asarray([[100.0, 100.0, 100.0]], dtype=np.float64)
                 radii = np.asarray([1.0e-6], dtype=np.float64)
                 forecast_basis = "FRESH3_SCENE_CLEAR_EMPTY_ROI"
-            forecast = constant_multisphere_forecast(centers, radii, np.zeros(3, dtype=np.float64))
+            forecast = v3_execution_multisphere_forecast(
+                centers, radii, np.zeros(3, dtype=np.float64)
+            )
             if forecast_basis is None:
                 forecast_basis = "FRESH3_SCENE_CLEAR_ALL_CLUSTERS_STATIC"
 
