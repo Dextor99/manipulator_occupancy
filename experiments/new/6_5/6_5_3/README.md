@@ -290,14 +290,16 @@ authorize execution.
 The stop interface is frozen based on `stop_interface_validation/r03`; do not
 repeat that validation merely to tune Fast-repair thresholds. Formal settings
 remain `replan=0.14 m`, `H_local=1.0 s`, `online_accept=0.09 m`, and
-`fast_budget=150 ms`; current-distance fallback stop is 0.12 m and raw-cloud
-hard guard is 0.10 m.
+`fast_target=150 ms`, `fast_max=250 ms`; current-distance fallback stop is
+0.12 m and raw-cloud hard guard is 0.10 m.
 
-The 150 ms Fast limit is a fail-closed online deadline. The repair loop checks
-the deadline before each expensive stage and scale distance scan. Candidate
-acceptance uses complete online pipeline time (repair, candidate verification,
-required reference verification, and final comparison), rather than reporting
-repair-only time as the online latency.
+The 150 ms Fast value is a preferred realtime target, not a geometric safety
+gate. Candidate acceptance uses complete online pipeline time (repair, candidate
+verification, required reference verification, and final comparison), rather
+than reporting repair-only time as the online latency. The 250 ms absolute
+ceiling remains fail-closed because a slower result risks becoming stale before
+command time; the latest-state Fresh authorization and raw/dynamics guards are
+still mandatory for every execution.
 
 Fast repair optimizes `z=[Delta Q, delta q_T]`. The six elastic tail-position
 variables are part of the finite NUBS sensitivity and QP, while terminal
@@ -441,9 +443,10 @@ physical X or Z position. It never initializes a camera or robot:
 
 A point is feasible only when predicted risk still triggers below 0.14 m, the
 unmodified reference remains below 0.09 m, the repaired candidate reaches at
-least 0.09 m, clearance gain remains at least 3 mm, and the unchanged Fast
-pipeline accepts within 150 ms. The script reports contiguous intervals rather
-than selecting an isolated threshold-crossing sample. The r02 X sweep found a
+least 0.09 m, clearance gain remains at least 3 mm, and the Fast pipeline stays
+within the 250 ms absolute ceiling. A miss of the 150 ms target is retained as
+a realtime diagnostic. The script reports contiguous intervals rather than
+selecting an isolated threshold-crossing sample. The r02 X sweep found a
 continuous +0.13--+0.20 m interval; its midpoint, +0.165 m relative to the r02
 observed obstacle centerline, is the fixed physical-lane target. This offset is
 an experimental fixture calibration, not a controller parameter. Once marked

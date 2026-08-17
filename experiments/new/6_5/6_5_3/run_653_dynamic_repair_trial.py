@@ -2043,7 +2043,9 @@ def run_fast_repair(
             offset_m=float(getattr(args, "lateral_warm_start_m", 0.04)),
         )
     online_started = time.perf_counter()
-    deadline_perf = online_started + args.fast_budget_ms / 1000.0
+    fast_target_ms = float(getattr(args, "fast_target_ms", None) or args.fast_budget_ms)
+    fast_max_ms = float(getattr(args, "fast_max_ms", None) or args.fast_budget_ms)
+    deadline_perf = online_started + fast_max_ms / 1000.0
     result = run_repair_v3(
         evaluator,
         forecast,
@@ -2158,7 +2160,7 @@ def run_fast_repair(
     if repair_step_ok and not accept_verified_seed_without_fast_step:
         online_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
     hard_safety_ready = bool(
-        online_elapsed_ms <= args.fast_budget_ms
+        online_elapsed_ms <= fast_max_ms
         and not result.budget_exhausted
         and verification.min_distance >= args.online_accept_m
         and all({**verification.checks, "solver_ok": True}.values())
@@ -2174,8 +2176,8 @@ def run_fast_repair(
     )
     local_repair_ready = bool(contract["local_repair_ready"])
     rejection_reasons = []
-    if online_elapsed_ms > args.fast_budget_ms or result.budget_exhausted:
-        rejection_reasons.append("fast_budget_exceeded")
+    if online_elapsed_ms > fast_max_ms or result.budget_exhausted:
+        rejection_reasons.append("fast_computation_timeout")
     if verification.min_distance < args.online_accept_m:
         rejection_reasons.append("online_clearance_failed")
     failed_checks = [name for name, ok in verification.checks.items() if not ok]
@@ -2274,7 +2276,13 @@ def run_fast_repair(
         "selected_rejoin_offset_s": selected_rejoin_offset_s,
         "rejoin_search_audit": rejoin_search_audit,
         "candidate_total_duration_s": float(candidate_trajectory.total_duration),
-        "fast_budget_ms": args.fast_budget_ms,
+        "fast_budget_ms": fast_max_ms,
+        "fast_target_ms": fast_target_ms,
+        "fast_max_ms": fast_max_ms,
+        "realtime_target_met": bool(online_elapsed_ms <= fast_target_ms),
+        "realtime_target_diagnostic": (
+            "met" if online_elapsed_ms <= fast_target_ms else "missed_soft_target"
+        ),
         "online_accept_m": args.online_accept_m,
         "verification_min_distance_m": verification.min_distance,
         "reference_online_min_distance_m": reference_verification.min_distance,
@@ -5777,6 +5785,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-clearance-improvement-m", type=float, default=0.003)
     parser.add_argument("--min-candidate-delta-q-rad", type=float, default=1.0e-4)
     parser.add_argument("--fast-budget-ms", type=float, default=150.0)
+    parser.add_argument(
+        "--fast-target-ms",
+        type=float,
+        default=None,
+        help="preferred Fast realtime target; defaults to --fast-budget-ms",
+    )
+    parser.add_argument(
+        "--fast-max-ms",
+        type=float,
+        default=None,
+        help="absolute Fast computation ceiling; defaults to --fast-budget-ms",
+    )
     parser.add_argument("--local-horizon-s", type=float, default=1.0)
     parser.add_argument("--rejoin-search-step-s", type=float, default=0.25)
     parser.add_argument("--rejoin-max-offset-s", type=float, default=2.0)

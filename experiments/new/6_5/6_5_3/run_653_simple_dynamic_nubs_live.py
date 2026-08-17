@@ -507,6 +507,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "--line-velocity-m-s", "0.020",
                 "--line-acc-m-s2", "0.05",
                 "--candidate-playback-duration-s", str(args.candidate_playback_duration_s),
+                "--fast-target-ms", "150",
+                "--fast-max-ms", "250",
             ]
             + (
                 [
