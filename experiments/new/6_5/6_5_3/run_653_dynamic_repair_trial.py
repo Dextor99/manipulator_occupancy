@@ -127,6 +127,9 @@ POST_AUTHORIZATION_PLAYBACK_SHADOW = None
 # persistent worker and all subsequent robot commands, then returns one
 # terminal closed-loop result so the legacy single-segment path is skipped.
 POST_AUTHORIZATION_CLOSED_LOOP_HANDLER = None
+# Optional mid-trajectory predictive monitor.  A rolling wrapper installs this
+# only for its live event-replan path; the default pilot remains one-shot.
+MID_EXECUTION_MONITOR_FACTORY = None
 
 SCENARIOS = {
     "D1": {
@@ -5076,6 +5079,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             reference_repair_start_time_s,
                         )
                         write_json(candidate_dir / "workspace_deviation_metrics.json", workspace_deviation)
+                        mid_execution_monitor = None
+                        if callable(MID_EXECUTION_MONITOR_FACTORY):
+                            mid_execution_monitor = MID_EXECUTION_MONITOR_FACTORY(
+                                authorized_csv=authorized_csv,
+                                robot=robot,
+                                processor=processor,
+                                state_reader=state_reader,
+                                denoiser=denoiser,
+                                args=args,
+                                stage4_config=stage4_config,
+                                stage4_model=stage4_model,
+                                trial_dir=trial_dir,
+                            )
                         first_execution_summary = execute_authorized_trajectory_offline_track(
                             robot,
                             authorized_csv,
@@ -5088,8 +5104,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 if execution_path == "FULL_FIRST"
                                 else "Fresh #2-authorized local repair"
                             ),
+                            motion_monitor_provider=mid_execution_monitor,
                         )
-                        if first_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+                        early_monitor_stop = bool(
+                            first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
+                            and first_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
+                        )
+                        if (
+                            first_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
+                            and not early_monitor_stop
+                        ):
                             raise RuntimeError(
                                 "authorized first segment did not follow its time axis: "
                                 f"{first_execution_summary.get('timing_check')}"
@@ -5149,6 +5173,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 processor=processor,
                                 state_reader=state_reader,
                                 denoiser=denoiser,
+                                execution_summary=first_execution_summary,
+                                local1_interrupted=early_monitor_stop,
                                 local_artifacts=local_artifacts,
                                 fresh3=fresh3,
                                 fresh3_geometry=fresh3_geometry,

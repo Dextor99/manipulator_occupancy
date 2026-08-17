@@ -33,9 +33,82 @@ if str(ROOT) not in sys.path:
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
 live = importlib.import_module("experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_live")
 bypass = importlib.import_module("experiments.new.6_5.6_5_3.simple_bypass_planner")
+v3 = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
 
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_event_replan_live"
 EVENT_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_EVENT_REPLAN_EXECUTE_APPROVED"
+
+
+def make_mid_execution_monitor(**context: Any):
+    """Monitor the remaining local trajectory using the persistent tracker.
+
+    A predictive stop is deliberately reported through the existing motion
+    monitor interface.  The event handler then receives the measured partial
+    configuration and performs the single allowed continuation replan.
+    """
+    trajectory = trial.reconstruct_saved_nubs_candidate(
+        Path(context["authorized_csv"]), segments=5
+    )
+    worker = context.get("worker")
+    evaluator, _, _ = trial.make_risk_stack(
+        context["stage4_config"], context["stage4_model"], None
+    )
+    args = context["args"]
+    last = {"seq": -1}
+
+    def monitor(*, elapsed_s: float, actual_q: np.ndarray, obstacle_snapshot: Any = None) -> dict[str, Any]:
+        del obstacle_snapshot
+        if worker is None:
+            return {"motion_safe": False, "reason": "persistent_tracker_unavailable"}
+        snapshot = worker.snapshot()
+        aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+        state_reasons = v3._persistent_state_reasons(
+            snapshot, aligned, args, raw_guard_reason="raw_hard_guard_not_safe"
+        )
+        raw_guard = float(snapshot.get("raw_guard_distance_m", float("-inf")))
+        if state_reasons or raw_guard <= float(args.guided_hard_stop_m):
+            return {
+                "motion_safe": False,
+                "replan_requested": False,
+                "reason": state_reasons or ["raw_hard_guard_not_safe"],
+                "raw_guard_distance_m": raw_guard,
+                "state_seq": int(snapshot.get("state_seq", -1)),
+            }
+        forecast = v3.v3_execution_multisphere_forecast(
+            np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(snapshot["velocity"], dtype=np.float64),
+        )
+        current = evaluator.configuration(
+            np.asarray(actual_q, dtype=np.float64), forecast, 0.0,
+            density="medium", with_gradient=False,
+        )
+        remaining = v3._remaining_clearance(
+            evaluator, trajectory, forecast,
+            playback_time_s=min(float(elapsed_s), float(trajectory.total_duration)),
+        )
+        if current.min_distance <= float(args.moving_shadow_current_stop_m):
+            reason = "current_distance_stop"
+            replan = False
+        elif remaining["min_distance_m"] < float(args.replan_in_m):
+            reason = "remaining_predicted_risk"
+            replan = True
+        else:
+            reason = "predictive_remaining_clear"
+            replan = False
+        last.update({"seq": int(snapshot.get("state_seq", -1))})
+        return {
+            "motion_safe": not (reason != "predictive_remaining_clear"),
+            "replan_requested": replan,
+            "reason": reason,
+            "current_distance_m": float(current.min_distance),
+            "remaining_clearance_m": float(remaining["min_distance_m"]),
+            "remaining_tau_s": remaining.get("tau_s"),
+            "raw_guard_distance_m": raw_guard,
+            "state_seq": int(snapshot.get("state_seq", -1)),
+        }
+
+    return monitor
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -591,6 +664,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         denoiser = context["denoiser"]
         trial_dir = Path(context["trial_dir"])
         q_actual = np.asarray(robot.get_joint(), dtype=np.float64)
+        early_execution = bool(context.get("local1_interrupted", False))
         q_expected = np.asarray(
             context["local_artifacts"]["candidate_trajectory"].evaluate(
                 context["local_artifacts"]["candidate_trajectory"].total_duration
@@ -607,12 +681,14 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             "local1_tail_error": start_error,
             "max_local_executions": 2,
         }
-        if start_error["max_abs_rad"] > args.candidate_start_tolerance_rad:
+        if start_error["max_abs_rad"] > args.candidate_start_tolerance_rad and not early_execution:
             result["status"] = "EVENT_REPLAN_BLOCKED_LOCAL1_TAIL_MISMATCH"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
 
         result["fresh3_raw_guard_distance_m"] = float(context["fresh3_guard_distance"])
+        result["local1_interrupted"] = early_execution
+        result["local1_execution"] = context.get("execution_summary")
         if context["fresh3_guard_distance"] <= args.guided_hard_stop_m:
             result["status"] = "HOLD_UNCERTAIN_OPERATOR_INTERVENTION_REQUIRED"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
@@ -676,6 +752,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 robust_target_m=float(event_args.planning_robust_target_m),
                 max_joint_delta_rad=float(event_args.max_joint_delta_rad),
                 tcp_link=event_args.tcp_link,
+                robust_target_is_diagnostic=True,
             )
             result["local2_candidate"] = candidate
             if not candidate.get("local_repair_ready", False):
@@ -823,11 +900,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     live_args = copy.copy(args)
     live_args.operator_phrase = live.LOCAL_EXECUTE_PHRASE if args.execute else ""
     old_handler = trial.POST_LOCAL_FRESH3_HANDLER
+    old_worker_factory = trial.PERSISTENT_OBSTACLE_WORKER_FACTORY
+    old_mid_monitor = trial.MID_EXECUTION_MONITOR_FACTORY
     try:
         trial.POST_LOCAL_FRESH3_HANDLER = make_event_handler(args, durations)
+        trial.PERSISTENT_OBSTACLE_WORKER_FACTORY = v3.make_persistent_perception_worker
+        trial.MID_EXECUTION_MONITOR_FACTORY = make_mid_execution_monitor
         result = live.run(live_args)
     finally:
         trial.POST_LOCAL_FRESH3_HANDLER = old_handler
+        trial.PERSISTENT_OBSTACLE_WORKER_FACTORY = old_worker_factory
+        trial.MID_EXECUTION_MONITOR_FACTORY = old_mid_monitor
 
     core_path = Path(result.get("core_summary", ""))
     if core_path.exists():
