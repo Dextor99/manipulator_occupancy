@@ -54,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-joint-delta-rad", type=float, default=0.12)
     parser.add_argument("--planning-robust-target-m", type=float, default=0.11)
     parser.add_argument("--tcp-link", default="gripper_base_link")
+    parser.add_argument(
+        "--candidate-playback-duration-s",
+        type=float,
+        default=1.0,
+        help="physical execution duration; the scaled trajectory is re-verified before authorization",
+    )
     return parser
 
 
@@ -455,7 +461,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "--y-goal", "-0.40",
                 "--line-velocity-m-s", "0.020",
                 "--line-acc-m-s2", "0.05",
-                "--candidate-playback-duration-s", "1.0",
+                "--candidate-playback-duration-s", str(args.candidate_playback_duration_s),
             ]
             + (
                 [

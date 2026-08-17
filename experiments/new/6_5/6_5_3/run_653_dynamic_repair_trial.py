@@ -1167,6 +1167,41 @@ class TimeScaledTrajectory6D:
         return self.sample(np.linspace(0.0, self.total_duration, count))
 
 
+def gripper_base_workspace_guard(
+    trajectory: Any,
+    stage4_model: RobotSurfaceModel,
+    *,
+    min_z_m: float,
+) -> dict[str, Any]:
+    """Fail closed if the gripper base descends into the tabletop margin.
+
+    This is an independent workspace guard.  The tabletop is deliberately
+    removed from obstacle clustering, so CCRO clearance alone cannot protect
+    against a downward arm excursion.
+    """
+    samples = trajectory.dense_sample(0.02)
+    z_values: list[float] = []
+    for q in np.asarray(samples.q, dtype=np.float64):
+        joints = {name: float(q[i]) for i, name in enumerate(stage4_model.joint_names)}
+        transforms = stage4_model.urdf.link_transforms(joints)
+        if "gripper_base_link" not in transforms:
+            return {
+                "passed": False,
+                "reason": "gripper_base_link_missing",
+                "min_gripper_base_z_m": None,
+                "threshold_m": float(min_z_m),
+            }
+        z_values.append(float(transforms["gripper_base_link"][2, 3]))
+    minimum = min(z_values) if z_values else float("-inf")
+    return {
+        "passed": bool(minimum >= float(min_z_m)),
+        "reason": "ok" if minimum >= float(min_z_m) else "gripper_base_below_tabletop_guard",
+        "min_gripper_base_z_m": float(minimum),
+        "threshold_m": float(min_z_m),
+        "sample_count": len(z_values),
+    }
+
+
 def execution_hard_guard_distance(processor: Any, denoiser: Any, args: argparse.Namespace) -> float:
     """Measure the existing all-link raw-cloud guard during candidate playback."""
     frame = processor.process_frame()
@@ -2197,6 +2232,25 @@ def authorize_local_repair_execution(
         else (args.candidate_playback_duration_s if args.candidate_playback_duration_s > 0.0 else native_duration)
     )
     execution_trajectory = TimeScaledTrajectory6D(repair, requested_duration)
+    tabletop_guard = gripper_base_workspace_guard(
+        execution_trajectory,
+        stage4_model,
+        min_z_m=float(args.gripper_base_min_z_m),
+    )
+    if not tabletop_guard["passed"]:
+        payload = {
+            "status": "TABLE_CLEARANCE_GUARD_FAILED",
+            "authorization_mode": "LOCAL_ONLY",
+            "local_execution_authorized": False,
+            "authorized_execution_duration_s": requested_duration,
+            "tabletop_workspace_guard": tabletop_guard,
+            "verification_reasons": [tabletop_guard["reason"]],
+            "authorized_trajectory_csv": None,
+            "authorization_compute_ms": (time.perf_counter() - started) * 1000.0,
+            "robot_executed": False,
+        }
+        write_json(output_dir / "authorization_summary.json", payload)
+        return payload, None
     evaluator, verifier, _ = make_risk_stack(stage4_config, stage4_model, None)
     forecast = constant_multisphere_forecast(
         np.asarray(fresh_geometry["component_centers"], dtype=np.float64),
@@ -2239,6 +2293,7 @@ def authorize_local_repair_execution(
         "verification_min_distance_m": float(verification.min_distance),
         "verification_checks": verification.checks,
         "verification_reasons": verification.reasons,
+        "tabletop_workspace_guard": tabletop_guard,
         "verification_ms": float(verification.validation_ms),
         "forecast_builder": getattr(
             constant_multisphere_forecast,
@@ -2495,6 +2550,16 @@ def authorize_candidate_execution(
             and np.all(np.abs(samples.qdd) <= limits.qdd_max[None, :])
         )
         if not audit["motion_feasible"]:
+            continue
+        tabletop_guard = gripper_base_workspace_guard(
+            full_candidate,
+            stage4_model,
+            min_z_m=float(args.gripper_base_min_z_m),
+        )
+        audit["tabletop_workspace_guard"] = tabletop_guard
+        if not tabletop_guard["passed"]:
+            audit["full_candidate_valid"] = False
+            audit["rejection_reason"] = tabletop_guard["reason"]
             continue
         verification = verifier.verify(
             full_candidate,
@@ -5586,6 +5651,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-y", type=float, default=0.55)
     parser.add_argument("--min-z", type=float, default=0.25)
     parser.add_argument("--max-z", type=float, default=0.9)
+    parser.add_argument(
+        "--gripper-base-min-z-m",
+        type=float,
+        default=0.46,
+        help="independent tabletop workspace guard for gripper_base_link",
+    )
     parser.add_argument("--allow-live-candidate-execution", action="store_true")
     parser.add_argument("--live-execute-candidate-phrase", default="")
     parser.add_argument(
