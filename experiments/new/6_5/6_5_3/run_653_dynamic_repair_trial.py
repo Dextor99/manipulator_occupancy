@@ -54,6 +54,12 @@ make_risk_stack = common64.make_risk_stack
 git_commit_hash = common64.git_commit_hash
 git_is_dirty = common64.git_is_dirty
 run_repair_v3 = repair_v3_mod.run_repair_v3
+
+
+def v3_execution_multisphere_forecast(*args: Any, **kwargs: Any) -> Any:
+    """Lazy-load V3 execution geometry to avoid the trial/V3 import cycle."""
+    module = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
+    return module.v3_execution_multisphere_forecast(*args, **kwargs)
 from execute_652_planar_y_guarded import (  # noqa: E402
     call_cartesian_motion,
     check_pose_limits,
@@ -2017,18 +2023,14 @@ def run_fast_repair(
             constant_forecast, "__name__", type(constant_forecast).__name__
         )
     else:
-        forecast = constant_multisphere_forecast(
+        forecast = v3_execution_multisphere_forecast(
             np.asarray(multisphere_geometry["component_centers"], dtype=np.float64),
             np.asarray(multisphere_geometry["component_base_radii"], dtype=np.float64),
             velocity,
             object_id=int(obstacle_audit.get("track_id") or 1),
         )
         geometry_mode = "fresh_pca_multisphere"
-        forecast_builder = getattr(
-            constant_multisphere_forecast,
-            "__name__",
-            type(constant_multisphere_forecast).__name__,
-        )
+        forecast_builder = "v3_execution_multisphere_forecast"
     head, tail, durations, p_inner, q_goal = make_local_reference(
         q_now, qd_now, args, reference_goal=reference_goal
     )
@@ -2423,7 +2425,7 @@ def authorize_local_repair_execution(
         write_json(output_dir / "authorization_summary.json", payload)
         return payload, None
     evaluator, verifier, _ = make_risk_stack(stage4_config, stage4_model, None)
-    forecast = constant_multisphere_forecast(
+    forecast = v3_execution_multisphere_forecast(
         np.asarray(fresh_geometry["component_centers"], dtype=np.float64),
         np.asarray(fresh_geometry["component_base_radii"], dtype=np.float64),
         np.asarray(fresh_velocity, dtype=np.float64),
@@ -2466,11 +2468,7 @@ def authorize_local_repair_execution(
         "verification_reasons": verification.reasons,
         "tabletop_workspace_guard": tabletop_guard,
         "verification_ms": float(verification.validation_ms),
-        "forecast_builder": getattr(
-            constant_multisphere_forecast,
-            "__name__",
-            type(constant_multisphere_forecast).__name__,
-        ),
+        "forecast_builder": "v3_execution_multisphere_forecast",
         "forecast_component_radii_at_0s_m": [
             float(sphere.radius) for sphere in forecast.occupancy_at(0.0).spheres
         ],
@@ -2552,7 +2550,7 @@ def rolling_fast_until_authorized(
         geometry = translated_multisphere_geometry(
             initial_geometry, geometry_center, np.asarray(fresh["center"], dtype=np.float64)
         )
-        current_forecast = constant_multisphere_forecast(
+        current_forecast = v3_execution_multisphere_forecast(
             np.asarray(geometry["component_centers"]),
             np.asarray(geometry["component_base_radii"]),
             np.asarray(fresh["velocity"]),
@@ -2681,7 +2679,7 @@ def authorize_candidate_execution(
         write_json(output_dir / "authorization_summary.json", payload)
         return payload
     evaluator, verifier, limits = make_risk_stack(stage4_config, stage4_model, None)
-    forecast = constant_multisphere_forecast(
+    forecast = v3_execution_multisphere_forecast(
         np.asarray(fresh_geometry["component_centers"], dtype=np.float64),
         np.asarray(fresh_geometry["component_base_radii"], dtype=np.float64),
         np.asarray(fresh_velocity, dtype=np.float64),
@@ -2811,7 +2809,7 @@ def authorize_delayed_rejoin_after_fresh3(
     forecast_basis = None
     forecast = None
     if fresh3.get("accepted", False) and fresh3_geometry is not None:
-        forecast = constant_multisphere_forecast(
+        forecast = v3_execution_multisphere_forecast(
             np.asarray(fresh3_geometry["component_centers"], dtype=np.float64),
             np.asarray(fresh3_geometry["component_base_radii"], dtype=np.float64),
             np.asarray(fresh3["velocity"], dtype=np.float64),
@@ -3052,7 +3050,7 @@ def authorize_reference_resume_after_fresh3(
             "scene_clear_audit": scene_clear,
         }
     evaluator, _, _ = make_risk_stack(stage4_config, stage4_model, None)
-    forecast = constant_multisphere_forecast(
+    forecast = v3_execution_multisphere_forecast(
         np.asarray(fresh3_geometry["component_centers"], dtype=np.float64),
         np.asarray(fresh3_geometry["component_base_radii"], dtype=np.float64),
         np.asarray(fresh3["velocity"], dtype=np.float64),

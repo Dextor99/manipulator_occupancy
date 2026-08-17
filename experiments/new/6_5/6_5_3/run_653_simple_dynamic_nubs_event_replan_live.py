@@ -227,7 +227,7 @@ def forecast_from_fresh(
 ) -> tuple[Any | None, str]:
     if fresh.get("accepted", False) and geometry is not None and geometry.get("covered", False):
         return (
-            trial.constant_multisphere_forecast(
+            v3.v3_execution_multisphere_forecast(
                 np.asarray(geometry["component_centers"], dtype=np.float64),
                 np.asarray(geometry["component_base_radii"], dtype=np.float64),
                 np.asarray(fresh["velocity"], dtype=np.float64),
@@ -538,7 +538,7 @@ def plan_goal_directed_continuation(
     robust_target_is_diagnostic: bool = False,
 ) -> dict[str, Any]:
     """Select strong/weak/release goal progress, then invoke unchanged Fast."""
-    forecast = trial.constant_multisphere_forecast(
+    forecast = v3.v3_execution_multisphere_forecast(
         np.asarray(geometry["component_centers"], dtype=np.float64),
         np.asarray(geometry["component_base_radii"], dtype=np.float64),
         np.asarray(fresh["velocity"], dtype=np.float64),

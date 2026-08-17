@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
 simple = importlib.import_module("experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_avoidance")
 bypass = importlib.import_module("experiments.new.6_5.6_5_3.simple_bypass_planner")
+v3 = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
 
 DEFAULT_REFERENCE = ROOT / "results/new/6_5/6_5_3/reference_xp00_line/reference_feedback.csv"
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_live"
@@ -186,7 +187,7 @@ def make_r06_fast_wrapper(
                 "rejection_reasons": ["current_live_fresh_multisphere_requirement_failed"],
                 "simple_live_audit": {"fast_invoked": False},
             }
-        forecast = trial.constant_multisphere_forecast(
+        forecast = v3.v3_execution_multisphere_forecast(
             np.asarray(multisphere_geometry["component_centers"], dtype=np.float64),
             np.asarray(multisphere_geometry["component_base_radii"], dtype=np.float64),
             np.asarray(velocity, dtype=np.float64),
