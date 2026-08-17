@@ -409,6 +409,7 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("planning_robust_target_m", 0.11),
         ("tcp_link", "gripper_base_link"),
         ("continuation_side_m", 0.04),
+        ("rolling_replan_m", 0.10),
         ("max_local_replans", 3),
         ("max_closed_loop_segments", 12),
         ("closed_loop_goal_tolerance_rad", 0.01),

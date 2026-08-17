@@ -5410,6 +5410,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 if execution_path == "FULL_FIRST"
                 else "TRIGGERED_AND_LOCAL_REPAIR_EXECUTED_HOLD"
             )
+        elif (
+            full_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
+            and full_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
+            and full_execution_summary.get("goal_check", {}).get("replan_requested", False)
+        ):
+            final_status = "LOCAL_EXECUTION_INTERRUPTED_FOR_REPLAN"
         else:
             final_status = "TRIGGERED_AND_REPAIR_REJOIN_EXECUTION_FAILED"
     if reference_remainder_execution_summary is not None:

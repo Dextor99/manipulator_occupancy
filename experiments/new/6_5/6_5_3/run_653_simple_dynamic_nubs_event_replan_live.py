@@ -141,7 +141,7 @@ def make_mid_execution_monitor(**context: Any):
         if current.min_distance <= float(args.moving_shadow_current_stop_m):
             reason = "current_distance_stop"
             replan = False
-        elif remaining["min_distance_m"] < float(args.replan_in_m):
+        elif remaining["min_distance_m"] < float(args.rolling_replan_m):
             reason = "remaining_predicted_risk"
             replan = True
         else:
@@ -194,6 +194,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.04,
         help="strong retained-side displacement for local #2; weak uses half and release uses zero",
+    )
+    parser.add_argument(
+        "--rolling-replan-m",
+        type=float,
+        default=0.10,
+        help="remaining-clearance threshold during an already-authorized local trajectory",
     )
     return parser
 
