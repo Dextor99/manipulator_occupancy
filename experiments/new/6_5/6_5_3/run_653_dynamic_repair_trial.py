@@ -5121,6 +5121,28 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             ),
                             motion_monitor_provider=mid_execution_monitor,
                         )
+                        first_execution_summary["workspace_deviation_metrics"] = workspace_deviation
+                        first_execution_summary["execution_path"] = execution_path
+                        first_log_name = (
+                            "live_full_candidate_execution_log.json"
+                            if execution_path == "FULL_FIRST"
+                            else "live_local_candidate_execution_log.json"
+                        )
+                        # Persist the executor result before classifying it;
+                        # precommand holds have no timing_check by design.
+                        write_json(candidate_dir / first_log_name, first_execution_summary)
+                        if first_execution_summary["status"] == "PERSISTENT_TRACKER_NOT_READY_PRECOMMAND":
+                            log["events"].append(
+                                {
+                                    "type": "LOCAL_EXECUTION_PRECOMMAND_HOLD",
+                                    "execution_path": execution_path,
+                                    "execution": first_execution_summary,
+                                    "reason": first_execution_summary.get("motion_monitor_stop_reason"),
+                                    "prearm": first_execution_summary.get("motion_monitor_prearm"),
+                                }
+                            )
+                            full_execution_summary = first_execution_summary
+                            break
                         early_monitor_stop = bool(
                             first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
                             and first_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
@@ -5133,15 +5155,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 "authorized first segment did not follow its time axis: "
                                 f"{first_execution_summary.get('timing_check')}"
                             )
-                        first_execution_summary["workspace_deviation_metrics"] = workspace_deviation
-                        first_execution_summary["execution_path"] = execution_path
                         full_execution_summary = first_execution_summary
-                        first_log_name = (
-                            "live_full_candidate_execution_log.json"
-                            if execution_path == "FULL_FIRST"
-                            else "live_local_candidate_execution_log.json"
-                        )
-                        write_json(candidate_dir / first_log_name, first_execution_summary)
                         log["events"].append(
                             {
                                 "type": (

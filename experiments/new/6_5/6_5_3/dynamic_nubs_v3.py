@@ -452,7 +452,11 @@ class PersistentPerceptionWorker:
             rois["planning_points"],
             robot_points,
             workspace=getattr(self.processor, "_workspace", None),
-            plane_removal=plane_removal,
+            # Planning ROI is already above the tabletop.  Removing the
+            # dominant plane here can classify a large planar foam obstacle
+            # as that plane and delete it before association.  Keep plane
+            # removal for the independent safety ROI below.
+            plane_removal=None,
             eps=self.args.cluster_eps,
             min_samples=self.args.cluster_min_samples,
             min_points=self.args.cluster_min_points,
