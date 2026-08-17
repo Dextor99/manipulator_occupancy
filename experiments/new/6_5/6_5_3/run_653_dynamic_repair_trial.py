@@ -1871,6 +1871,52 @@ def execute_authorized_trajectory_offline_track(
             log["robot_commanded"] = False
             return log
 
+    # The arm must be demonstrably settled before the final perception and
+    # trajectory barrier.  This prevents a STOP->START race from becoming a
+    # visible twitch; it never clips or alters an already verified trajectory.
+    if motion_monitor_provider is not None:
+        settle_qs = []
+        settle_ts = []
+        for _ in range(5):
+            settle_ts.append(time.monotonic())
+            settle_qs.append(np.asarray(robot.get_joint(), dtype=np.float64))
+            time.sleep(0.02)
+        settle_stack = np.stack(settle_qs, axis=0)
+        settle_span = float(np.max(np.ptp(settle_stack, axis=0)))
+        settle_limit = min(0.001, 0.5 * float(getattr(args, "candidate_start_sync_rad", 0.002)))
+        settle_audit = {
+            "passed": settle_span <= settle_limit,
+            "sample_count": len(settle_qs),
+            "duration_s": settle_ts[-1] - settle_ts[0],
+            "max_span_rad": settle_span,
+            "span_limit_rad": settle_limit,
+            "q_latest": settle_qs[-1].tolist(),
+        }
+        log["robot_settle_audit"] = settle_audit
+        if not settle_audit["passed"]:
+            log["status"] = "ROBOT_NOT_SETTLED_PRECOMMAND"
+            log["robot_commanded"] = False
+            return log
+
+    # Final barrier: require a state newer than command-time authorization,
+    # fresh enough for startup, and a boundary-continuous trajectory.  This is
+    # intentionally the last gate before the SDK startup call.
+    final_barrier = getattr(motion_monitor_provider, "final_precommand_barrier", None)
+    if callable(final_barrier):
+        final_result = final_barrier(actual_q=np.asarray(robot.get_joint(), dtype=np.float64))
+        log["final_precommand_barrier"] = final_result
+        if not bool(final_result.get("ready", False)):
+            action = final_result.get("action", "hold")
+            log["motion_monitor_stop_reason"] = final_result.get("reason")
+            log["replan_requested"] = bool(action == "replan")
+            log["status"] = (
+                "FINAL_PRECOMMAND_REVALIDATION_REPLAN_REQUIRED"
+                if action == "replan"
+                else "FINAL_PRECOMMAND_HOLD_PRECOMMAND"
+            )
+            log["robot_commanded"] = False
+            return log
+
     started = time.perf_counter()
     ret_info = robot.offline_track_execute_joints(
         qs_exec.tolist(),

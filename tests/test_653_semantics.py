@@ -2911,6 +2911,25 @@ def test_command_time_and_first_local_fallback_hooks_are_present():
     assert "allow_unestablished_side_fallback" in handler_source
 
 
+def test_final_precommand_barrier_and_boundary_audit_are_installed():
+    event_source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    trial_source = inspect.getsource(trial.execute_authorized_trajectory_offline_track)
+    assert "final_precommand_barrier" in event_source
+    assert "wait_for_final_fresh_snapshot" in event_source
+    assert "boundary_dynamics_audit" in event_source
+    assert "ROBOT_NOT_SETTLED_PRECOMMAND" in trial_source
+    assert "FINAL_PRECOMMAND_REVALIDATION_REPLAN_REQUIRED" in trial_source
+    assert "final_precommand_barrier" in trial_source
+
+
+def test_final_precommand_defaults_are_conservative():
+    args = event_replan.build_parser().parse_args(["--repeat", "1"])
+    assert args.final_precommand_fresh_timeout_s == pytest.approx(0.35)
+    assert args.final_precommand_max_state_age_s == pytest.approx(0.25)
+    assert args.boundary_qd_tol_rad_s == pytest.approx(0.03)
+    assert args.boundary_qdd_tol_rad_s2 == pytest.approx(0.30)
+
+
 def test_command_time_revalidation_uses_strict_start_sync_threshold():
     args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
     assert args.candidate_start_sync_rad == pytest.approx(0.002)

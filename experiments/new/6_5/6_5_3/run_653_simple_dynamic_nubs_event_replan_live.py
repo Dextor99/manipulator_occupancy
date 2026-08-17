@@ -242,6 +242,8 @@ def make_mid_execution_monitor(**context: Any):
                     "samples": samples,
                 }
         ready = len(samples) >= int(required_updates)
+        if ready and samples:
+            last["prearm_seq"] = int(samples[-1]["state_seq"])
         return {
             "ready": ready,
             "reason": None if ready else "persistent_tracker_no_fresh_updates",
@@ -249,10 +251,102 @@ def make_mid_execution_monitor(**context: Any):
             "samples": samples,
         }
 
+    def wait_for_final_fresh_snapshot(*, after_seq: int) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Require a newer persistent state immediately before startup."""
+        if worker is None:
+            return {"ready": False, "reason": "persistent_tracker_unavailable", "after_seq": int(after_seq)}, None
+        started = time.monotonic()
+        deadline = started + max(0.0, float(args.final_precommand_fresh_timeout_s))
+        latest = worker.snapshot()
+        while time.monotonic() < deadline:
+            seq = int(v3._state_seq(latest))
+            if seq <= int(after_seq):
+                remaining = max(0.0, deadline - time.monotonic())
+                newer = worker.wait_for_newer_state(after_seq=seq, timeout_s=min(0.10, remaining))
+                if newer is None:
+                    continue
+                latest = newer
+                continue
+            aligned = v3.time_aligned_snapshot(latest, execution_timestamp=time.time())
+            age = float(aligned["propagation_dt_s"])
+            reasons = list(v3._persistent_state_reasons(latest, aligned, args, raw_guard_reason="raw_hard_guard_not_safe"))
+            raw = float(latest.get("raw_guard_distance_m", float("-inf")))
+            if age > float(args.final_precommand_max_state_age_s):
+                reasons.append("final_precommand_state_too_old")
+            if raw <= float(args.guided_hard_stop_m) and "raw_hard_guard_not_safe" not in reasons:
+                reasons.append("raw_hard_guard_not_safe")
+            audit = {"ready": not reasons, "reason": reasons or None, "after_seq": int(after_seq), "state_seq": seq, "state_age_s": age, "raw_guard_distance_m": raw, "wait_elapsed_s": time.monotonic() - started}
+            return (audit, None) if reasons else (audit, latest)
+        return {"ready": False, "reason": "final_precommand_freshness_timeout", "after_seq": int(after_seq), "wait_elapsed_s": time.monotonic() - started}, None
+
+    def boundary_dynamics_audit(trajectory_obj: Any, q_actual: np.ndarray) -> dict[str, Any]:
+        """Reject startup/stop discontinuities; never clip a verified trajectory."""
+        total = float(trajectory_obj.total_duration)
+        if total <= 0.03:
+            return {"passed": False, "reason": "trajectory_too_short"}
+        dt = min(0.005, total / 50.0)
+        ts = [0.0, dt, 2.0 * dt, 3.0 * dt]
+        te = [total, total - dt, total - 2.0 * dt, total - 3.0 * dt]
+        q0, q1, q2, q3 = [np.asarray(trajectory_obj.evaluate(t), dtype=np.float64) for t in ts]
+        qe, qe1, qe2, qe3 = [np.asarray(trajectory_obj.evaluate(t), dtype=np.float64) for t in te]
+        qd0 = (-3*q0 + 4*q1 - q2) / (2*dt)
+        qdd0 = (2*q0 - 5*q1 + 4*q2 - q3) / (dt*dt)
+        qde = (3*qe - 4*qe1 + qe2) / (2*dt)
+        qdde = (2*qe - 5*qe1 + 4*qe2 - qe3) / (dt*dt)
+        start_error = float(np.max(np.abs(q0 - np.asarray(q_actual, dtype=np.float64))))
+        checks = {
+            "start_position_ok": start_error <= float(args.candidate_start_sync_rad),
+            "first_step_ok": float(np.max(np.abs(q1-q0))) <= float(args.candidate_start_sync_rad),
+            "final_step_ok": float(np.max(np.abs(qe-qe1))) <= float(args.candidate_start_sync_rad),
+            "start_velocity_ok": float(np.max(np.abs(qd0))) <= float(args.boundary_qd_tol_rad_s),
+            "end_velocity_ok": float(np.max(np.abs(qde))) <= float(args.boundary_qd_tol_rad_s),
+            "start_acceleration_ok": float(np.max(np.abs(qdd0))) <= float(args.boundary_qdd_tol_rad_s2),
+            "end_acceleration_ok": float(np.max(np.abs(qdde))) <= float(args.boundary_qdd_tol_rad_s2),
+        }
+        return {"passed": all(checks.values()), "checks": checks, "failed_checks": [k for k, v in checks.items() if not v], "sample_dt_s": dt, "start_position_error_rad": start_error, "start_qd_max_rad_s": float(np.max(np.abs(qd0))), "end_qd_max_rad_s": float(np.max(np.abs(qde))), "start_qdd_max_rad_s2": float(np.max(np.abs(qdd0))), "end_qdd_max_rad_s2": float(np.max(np.abs(qdde)))}
+
+    def final_precommand_barrier(*, actual_q: np.ndarray) -> dict[str, Any]:
+        after_seq = int(last.get("command_time_seq", last.get("prearm_seq", -1)))
+        freshness, snapshot = wait_for_final_fresh_snapshot(after_seq=after_seq)
+        if not freshness.get("ready", False) or snapshot is None:
+            return {"ready": False, "action": "hold", "reason": "final_precommand_freshness_not_ready", "freshness": freshness}
+        raw = float(snapshot.get("raw_guard_distance_m", float("-inf")))
+        if raw <= float(args.guided_hard_stop_m):
+            return {"ready": False, "action": "hold", "reason": "final_precommand_raw_guard_not_safe", "freshness": freshness, "raw_guard_distance_m": raw}
+        aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+        forecast = v3.v3_execution_multisphere_forecast(
+            np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(snapshot["velocity"], dtype=np.float64),
+        )
+        q_actual = np.asarray(actual_q, dtype=np.float64)
+        q_goal = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
+        verification = verifier.verify(
+            trajectory, forecast, current_q=q_actual,
+            current_qd=np.zeros(6), current_qdd=np.zeros(6),
+            q_goal=q_goal, solver_success=True,
+        )
+        non_distance_failures = [
+            key for key, passed in verification.checks.items()
+            if key != "distance_ok" and not bool(passed)
+        ]
+        if non_distance_failures:
+            return {"ready": False, "action": "hold", "reason": "final_precommand_verification_failed", "failed_checks": non_distance_failures, "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "freshness": freshness}
+        if not verification.accepted or float(verification.min_distance) < float(args.online_accept_m):
+            return {"ready": False, "action": "replan", "reason": "final_precommand_candidate_clearance_failed", "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "freshness": freshness}
+        remaining = v3._remaining_clearance(evaluator, trajectory, forecast, playback_time_s=0.0)
+        if float(remaining["min_distance_m"]) < float(args.rolling_replan_m):
+            return {"ready": False, "action": "replan", "reason": "final_precommand_remaining_predicted_risk", "remaining_clearance_m": float(remaining["min_distance_m"]), "freshness": freshness}
+        dynamics = boundary_dynamics_audit(trajectory, np.asarray(actual_q, dtype=np.float64))
+        if not dynamics.get("passed", False):
+            return {"ready": False, "action": "replan", "reason": "final_precommand_boundary_dynamics_failed", "freshness": freshness, "boundary_dynamics": dynamics}
+        last["final_precommand_seq"] = int(v3._state_seq(snapshot))
+        return {"ready": True, "action": "execute", "reason": "final_precommand_candidate_valid", "freshness": freshness, "raw_guard_distance_m": raw, "verification_min_distance_m": float(verification.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "boundary_dynamics": dynamics, "state_seq": int(v3._state_seq(snapshot))}
+
     def monitor(*, elapsed_s: float, actual_q: np.ndarray, obstacle_snapshot: Any = None) -> dict[str, Any]:
         del obstacle_snapshot
         if worker is None:
-            return {"motion_safe": False, "reason": "persistent_tracker_unavailable"}
+            return {"motion_safe": False, "reason": "persistent_tracker_unavailable", "state_age_s": None, "final_precommand_state_seq": int(last.get("final_precommand_seq", -1))}
         snapshot = worker.snapshot()
         aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
         state_reasons = v3._persistent_state_reasons(
@@ -266,6 +360,9 @@ def make_mid_execution_monitor(**context: Any):
                 "reason": state_reasons or ["raw_hard_guard_not_safe"],
                 "raw_guard_distance_m": raw_guard,
                 "state_seq": int(snapshot.get("state_seq", -1)),
+                "state_age_s": float(aligned["propagation_dt_s"]),
+                "final_precommand_state_seq": int(last.get("final_precommand_seq", -1)),
+                "state_seq_delta_from_final": int(v3._state_seq(snapshot)) - int(last.get("final_precommand_seq", -1)),
             }
         forecast = v3.v3_execution_multisphere_forecast(
             np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
@@ -301,6 +398,9 @@ def make_mid_execution_monitor(**context: Any):
             "remaining_tau_s": remaining.get("tau_s"),
             "raw_guard_distance_m": raw_guard,
             "state_seq": int(snapshot.get("state_seq", -1)),
+            "state_age_s": float(aligned["propagation_dt_s"]),
+            "final_precommand_state_seq": int(last.get("final_precommand_seq", -1)),
+            "state_seq_delta_from_final": int(v3._state_seq(snapshot)) - int(last.get("final_precommand_seq", -1)),
             "current_near_diagnostic": current_near_diagnostic,
             "current_near_threshold_m": float(args.moving_shadow_current_stop_m),
             "predictive_replan_threshold_m": prediction_gate_m,
@@ -353,6 +453,7 @@ def make_mid_execution_monitor(**context: Any):
         modeled_remaining_min_m = min(float(current.min_distance), float(remaining["min_distance_m"]))
         if modeled_remaining_min_m < prediction_gate_m:
             return {"ready": False, "action": "replan", "reason": "remaining_predicted_risk", "state_seq": state_seq, "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "raw_guard_distance_m": raw_guard, "predictive_replan_threshold_m": prediction_gate_m, **distance_diag}
+        last["command_time_seq"] = state_seq
         return {"ready": True, "action": "execute", "reason": "command_time_candidate_valid", "state_seq": state_seq, "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "raw_guard_distance_m": raw_guard, "predictive_replan_threshold_m": prediction_gate_m, **distance_diag}
 
     # ``execute_authorized_trajectory_offline_track`` uses this explicit
@@ -360,6 +461,7 @@ def make_mid_execution_monitor(**context: Any):
     # fail-closed as well for failures that occur after motion has started.
     monitor.prearm = prearm
     monitor.command_time_revalidate = command_time_revalidate
+    monitor.final_precommand_barrier = final_precommand_barrier
     return monitor
 
 
@@ -404,6 +506,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=10.0,
         help="fail-safe watchdog for one continuous dynamic-replan episode; not a local-segment limit",
     )
+    parser.add_argument("--final-precommand-fresh-timeout-s", type=float, default=0.35)
+    parser.add_argument("--final-precommand-max-state-age-s", type=float, default=0.25)
+    parser.add_argument("--boundary-qd-tol-rad-s", type=float, default=0.03)
+    parser.add_argument("--boundary-qdd-tol-rad-s2", type=float, default=0.30)
     return parser
 
 
