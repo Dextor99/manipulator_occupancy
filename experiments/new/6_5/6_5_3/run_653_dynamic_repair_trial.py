@@ -378,6 +378,12 @@ FRAME_FIELDS = [
     "predicted_object_velocity_x_m_s",
     "predicted_object_velocity_y_m_s",
     "predicted_object_velocity_z_m_s",
+    "predicted_object_raw_speed_m_s",
+    "predicted_object_filtered_speed_m_s",
+    "predicted_object_raw_velocity_x_m_s",
+    "predicted_object_raw_velocity_y_m_s",
+    "predicted_object_raw_velocity_z_m_s",
+    "predicted_object_velocity_ema_alpha",
     "predicted_object_radius_m",
     "predicted_object_age",
     "predicted_object_association_error_m",
@@ -411,6 +417,9 @@ TRACK_FIELDS = [
     "frame", "t_s", "track_id", "age", "center_x", "center_y", "center_z",
     "instant_speed_m_s", "window_speed_m_s", "median_speed_m_s", "raw_cluster_speed_m_s",
     "window_velocity_x_m_s", "window_velocity_y_m_s", "window_velocity_z_m_s",
+    "raw_window_speed_m_s", "filtered_speed_m_s",
+    "raw_window_velocity_x_m_s", "raw_window_velocity_y_m_s", "raw_window_velocity_z_m_s",
+    "velocity_ema_alpha",
     "cluster_radius_raw_m", "tracked_radius_m", "risk_radius_m", "raw_radius_m",
     "association_error_m", "valid_streak", "dynamic_state", "prediction_ready", "dynamic_valid",
     "block_reason",
@@ -660,10 +669,19 @@ def update_dynamic_track_validity(
     dynamic_state: dict[int, bool] | None = None,
     low_speed_streak: dict[int, int] | None = None,
     timestamp: float | None = None,
+    filtered_velocity_state: dict[int, np.ndarray] | None = None,
 ) -> tuple[list[Any], dict[int, dict[str, Any]]]:
-    """Gate dynamic tracks using a timestamped net-motion window and hysteresis."""
+    """Gate tracks using 5-sample least-squares velocity and asymmetric EMA.
+
+    Position/geometry remains the newest RGB-D measurement.  Only velocity is
+    filtered: acceleration follows quickly (alpha=0.65), while deceleration
+    decays conservatively (alpha=0.25).  The filtered velocity is used by the
+    dynamic gate and copied into prediction-ready objects so STRO, Fresh and
+    Fast share one velocity semantic.
+    """
     dynamic_state = {} if dynamic_state is None else dynamic_state
     low_speed_streak = {} if low_speed_streak is None else low_speed_streak
+    filtered_velocity_state = {} if filtered_velocity_state is None else filtered_velocity_state
     valid: list[Any] = []
     audits: dict[int, dict[str, Any]] = {}
     active_ids: set[int] = set()
@@ -678,14 +696,42 @@ def update_dynamic_track_validity(
         history.append((sample_time, np.asarray(geometry["center"], dtype=np.float64).copy()))
         del history[:-args.dynamic_speed_window]
         elapsed = history[-1][0] - history[0][0] if len(history) >= 2 else 0.0
-        window_speed = (
-            float(np.linalg.norm(history[-1][1] - history[0][1]) / elapsed)
-            if elapsed > 1.0e-6 else 0.0
-        )
-        window_velocity = (
+        raw_window_velocity = (
             (history[-1][1] - history[0][1]) / elapsed
             if elapsed > 1.0e-6 else np.zeros(3, dtype=np.float64)
         )
+        raw_window_speed = (
+            float(np.linalg.norm(history[-1][1] - history[0][1]) / elapsed)
+            if elapsed > 1.0e-6 else 0.0
+        )
+        if len(history) >= 3 and elapsed > 1.0e-6:
+            times = np.asarray([item[0] for item in history], dtype=np.float64)
+            positions = np.asarray([item[1] for item in history], dtype=np.float64)
+            centered = times - float(np.mean(times))
+            denominator = float(np.dot(centered, centered))
+            ls_velocity = (
+                np.sum(centered[:, None] * (positions - np.mean(positions, axis=0)), axis=0)
+                / denominator
+                if denominator > 1.0e-12
+                else raw_window_velocity
+            )
+        else:
+            ls_velocity = raw_window_velocity
+        previous_filtered = filtered_velocity_state.get(track_id)
+        if previous_filtered is None or not np.all(np.isfinite(previous_filtered)):
+            filtered_velocity = np.asarray(ls_velocity, dtype=np.float64)
+            ema_alpha = 1.0
+        else:
+            alpha_up = 0.65
+            alpha_down = 0.25
+            ema_alpha = alpha_up if np.linalg.norm(ls_velocity) >= np.linalg.norm(previous_filtered) else alpha_down
+            filtered_velocity = (
+                ema_alpha * np.asarray(ls_velocity, dtype=np.float64)
+                + (1.0 - ema_alpha) * np.asarray(previous_filtered, dtype=np.float64)
+            )
+        filtered_velocity_state[track_id] = filtered_velocity.copy()
+        window_velocity = filtered_velocity
+        window_speed = float(np.linalg.norm(window_velocity))
         exit_speed = float(getattr(args, "dynamic_exit_speed_m_s", 0.04))
         exit_frames = int(getattr(args, "dynamic_exit_streak_frames", 3))
         if dynamic_state.get(track_id, False):
@@ -712,6 +758,12 @@ def update_dynamic_track_validity(
             "age": int(getattr(obj, "age", 0)),
             "window_speed_m_s": window_speed,
             "window_velocity": np.asarray(window_velocity, dtype=np.float64),
+            "raw_window_speed_m_s": raw_window_speed,
+            "raw_window_velocity": np.asarray(raw_window_velocity, dtype=np.float64),
+            "ls_velocity": np.asarray(ls_velocity, dtype=np.float64),
+            "velocity_ema_alpha": float(ema_alpha),
+            "filtered_velocity": np.asarray(filtered_velocity, dtype=np.float64),
+            "filtered_speed_m_s": window_speed,
             # Kept as a compatibility alias for existing result readers.
             "median_speed_m_s": window_speed,
             "speed_samples": len(history),
@@ -3908,6 +3960,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         dynamic_valid_streak: dict[int, int] = {}
         dynamic_state: dict[int, bool] = {}
         dynamic_low_speed_streak: dict[int, int] = {}
+        dynamic_filtered_velocity: dict[int, np.ndarray] = {}
         frame_index = 0
         while True:
             frame_started = time.perf_counter()
@@ -3953,6 +4006,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     dynamic_valid_streak.clear()
                     dynamic_state.clear()
                     dynamic_low_speed_streak.clear()
+                    dynamic_filtered_velocity.clear()
                     previous_dynamic_cluster_by_track.clear()
                     safety_tracker = OccupancyTracker(
                         association_distance=float(safety.get("association_distance", 0.20)),
@@ -4083,7 +4137,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 args,
                 dynamic_state,
                 dynamic_low_speed_streak,
-                timestamp,
+                timestamp=timestamp,
+                filtered_velocity_state=dynamic_filtered_velocity,
             )
             prediction_tracks = make_prediction_ready_objects(dynamic_tracked, dynamic_audits)
             for track_id, audit in dynamic_audits.items():
@@ -4106,6 +4161,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         "window_velocity_x_m_s": f"{audit['window_velocity'][0]:.6f}",
                         "window_velocity_y_m_s": f"{audit['window_velocity'][1]:.6f}",
                         "window_velocity_z_m_s": f"{audit['window_velocity'][2]:.6f}",
+                        "raw_window_speed_m_s": f"{audit['raw_window_speed_m_s']:.6f}",
+                        "filtered_speed_m_s": f"{audit['filtered_speed_m_s']:.6f}",
+                        "raw_window_velocity_x_m_s": f"{audit['raw_window_velocity'][0]:.6f}",
+                        "raw_window_velocity_y_m_s": f"{audit['raw_window_velocity'][1]:.6f}",
+                        "raw_window_velocity_z_m_s": f"{audit['raw_window_velocity'][2]:.6f}",
+                        "velocity_ema_alpha": f"{audit['velocity_ema_alpha']:.3f}",
                         "cluster_radius_raw_m": f"{audit['raw_radius']:.6f}",
                         "tracked_radius_m": f"{audit['track_radius']:.6f}",
                         "risk_radius_m": f"{audit['risk_radius_m']:.6f}",
@@ -4300,6 +4361,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "predicted_object_velocity_x_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['window_velocity'][0]):.6f}",
                 "predicted_object_velocity_y_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['window_velocity'][1]):.6f}",
                 "predicted_object_velocity_z_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['window_velocity'][2]):.6f}",
+                "predicted_object_raw_speed_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['raw_window_speed_m_s']):.6f}",
+                "predicted_object_filtered_speed_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['filtered_speed_m_s']):.6f}",
+                "predicted_object_raw_velocity_x_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['raw_window_velocity'][0]):.6f}",
+                "predicted_object_raw_velocity_y_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['raw_window_velocity'][1]):.6f}",
+                "predicted_object_raw_velocity_z_m_s": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['raw_window_velocity'][2]):.6f}",
+                "predicted_object_velocity_ema_alpha": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['velocity_ema_alpha']):.3f}",
                 "predicted_object_radius_m": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['raw_radius']):.6f}",
                 "predicted_object_age": "" if row_dynamic_audit is None else int(row_dynamic_audit["age"]),
                 "predicted_object_association_error_m": "" if row_dynamic_audit is None else f"{float(row_dynamic_audit['association_error_m']):.6f}",
