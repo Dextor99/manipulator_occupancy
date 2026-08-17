@@ -61,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="physical execution duration; the scaled trajectory is re-verified before authorization",
     )
     parser.add_argument(
+        "--allow-experimental-playback-duration",
+        action="store_true",
+        help="forward an explicitly bounded 0.80-1.00 s time-scale experiment",
+    )
+    parser.add_argument(
         "--guidance-horizon-s",
         type=float,
         default=1.5,
@@ -80,6 +85,12 @@ def validate_request(args: argparse.Namespace) -> tuple[float, ...]:
         raise ValueError("planning-robust-target-m must remain at least 0.11 m")
     if args.guidance_horizon_s < args.candidate_playback_duration_s:
         raise ValueError("guidance-horizon-s must not be shorter than candidate playback")
+    if args.allow_experimental_playback_duration and not 0.80 <= args.candidate_playback_duration_s <= 1.00:
+        raise ValueError("experimental candidate playback must be within 0.80-1.00 s")
+    if not args.allow_experimental_playback_duration and not np.isclose(
+        args.candidate_playback_duration_s, 1.0, atol=1.0e-12
+    ):
+        raise ValueError("non-default playback requires --allow-experimental-playback-duration")
     if args.reference_operator_phrase != REFERENCE_OPERATOR_PHRASE:
         raise RuntimeError(
             f"bad reference operator phrase; required: {REFERENCE_OPERATOR_PHRASE}"
@@ -510,6 +521,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "--fast-target-ms", "150",
                 "--fast-max-ms", "250",
             ]
+            + (
+                ["--allow-experimental-playback-duration"]
+                if args.allow_experimental_playback_duration
+                else []
+            )
             + (
                 [
                     "--allow-live-candidate-execution",

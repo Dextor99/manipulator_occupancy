@@ -216,6 +216,18 @@ ROBOT_MOTION_MODES = {"moving-shadow-stop", "live-stop-replan-execute"}
 def formal_protocol_violations(args: argparse.Namespace) -> list[str]:
     violations: list[str] = []
     for name, expected in FORMAL_PROTOCOL.items():
+        # The default formal protocol remains 1.0 s.  A separately explicit
+        # experimental authorization may test only a bounded shorter playback;
+        # all trajectory and latest-state safety gates remain mandatory.
+        if name == "candidate_playback_duration_s" and getattr(
+            args, "allow_experimental_playback_duration", False
+        ):
+            duration = float(getattr(args, name))
+            if not 0.80 <= duration <= 1.00:
+                violations.append(
+                    f"{name}={duration!r} outside experimental range [0.80, 1.00]"
+                )
+            continue
         actual = getattr(args, name)
         if isinstance(expected, bool):
             matches = actual is expected
@@ -5907,6 +5919,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="0 uses the authorized candidate's native time axis; formal live pilots still pass the frozen duration explicitly",
+    )
+    parser.add_argument(
+        "--allow-experimental-playback-duration",
+        action="store_true",
+        help=(
+            "explicitly authorize bounded 0.80-1.00 s time-scaled playback "
+            "for non-default experiments; all safety verification remains required"
+        ),
     )
     parser.add_argument("--candidate-controller-waypoint-period-s", type=float, default=0.005)
     parser.add_argument("--candidate-max-waypoints", type=int, default=0)

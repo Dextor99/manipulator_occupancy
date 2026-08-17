@@ -92,6 +92,10 @@ nonzero motion, tracking RMSE, and maximum tracking error. Run 1.00 s three
 times; test the separately authorized 1.25 s version only if 1.00 s is unstable.
 The generic candidate playback default is `0`, meaning the authorized CSV's
 native time axis, while formal commands still state the frozen duration.
+The default D1/D2 formal duration remains 1.0 s. A shorter playback is never
+implicit: use `--allow-experimental-playback-duration` with a duration in the
+bounded 0.80--1.00 s range, and require the same latest-state, dynamics,
+tabletop, and raw-guard authorization before execution.
 
 If calibration reports `BLOCKED_START_MISMATCH`, do not relax the tolerance or
 use a free-space movej. `align_653_authorized_start.py` matches the current and
