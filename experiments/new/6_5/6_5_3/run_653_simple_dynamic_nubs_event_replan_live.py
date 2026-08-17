@@ -848,6 +848,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 robust_target_is_diagnostic=True,
             )
             result["local2_candidate"] = candidate
+            result[f"local_{local_index}_candidate"] = candidate
             if not candidate.get("local_repair_ready", False):
                 failed_replans += 1
                 result["failed_replans"] = failed_replans
@@ -887,6 +888,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 execution_duration_s=1.0,
             )
             result["local2_authorization"] = authorization
+            result[f"local_{local_index}_authorization"] = authorization
             if not authorization.get("local_execution_authorized", False):
                 failed_replans += 1
                 result["failed_replans"] = failed_replans
@@ -922,10 +924,18 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 ),
             )
             result["local2_execution"] = execution
-            if execution.get("status") != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
+            result[f"local_{local_index}_execution"] = execution
+            execution_status = execution.get("status")
+            if execution_status not in {
+                "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION",
+                "STOPPED_BY_MOTION_MONITOR",
+            }:
                 result["status"] = "LOCAL2_EXECUTION_FAILED_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
+            result["local2_execution_interrupted_by_monitor"] = (
+                execution_status == "STOPPED_BY_MOTION_MONITOR"
+            )
             q_terminal_start = np.asarray(robot.get_joint(), dtype=np.float64)
             if worker is not None:
                 fresh5, frames5, points5, geometry5 = fresh_from_persistent_snapshot(
@@ -957,6 +967,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             result["post_local2_monitor"] = {
                 key: value for key, value in monitor2.items() if key not in {"forecast", "geometry"}
             }
+            result[f"post_local{local_index}_monitor"] = result["post_local2_monitor"]
             if monitor2["status"] == "REPLAN_REQUIRED":
                 # A second (or later) local segment is not a terminal state.
                 # Re-enter the same event handler with the measured tail and
@@ -1016,6 +1027,23 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         # One last raw observation is intentionally not replaced by an old
         # candidate forecast: the guarded executor samples raw distance three
         # times immediately before commanding this current-run terminal CSV.
+        terminal_worker = context.get("persistent_worker")
+        if terminal_worker is None:
+            result["status"] = "TERMINAL_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
+            trial.write_json(trial_dir / "event_replan_summary.json", result)
+            return result
+        terminal_monitor = make_mid_execution_monitor(
+            authorized_csv=Path(terminal["authorized_trajectory_csv"]),
+            robot=robot,
+            worker=terminal_worker,
+            processor=processor,
+            state_reader=state_reader,
+            denoiser=denoiser,
+            args=args,
+            stage4_config=config,
+            stage4_model=model,
+            trial_dir=terminal_dir,
+        )
         terminal_execution = trial.execute_authorized_trajectory_offline_track(
             robot,
             Path(terminal["authorized_trajectory_csv"]),
@@ -1024,8 +1052,43 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             denoiser=denoiser,
             playback_duration_s=None,
             execution_label="event-replan terminal NUBS to preset goal",
+            motion_monitor_provider=terminal_monitor,
         )
         result["terminal_execution"] = terminal_execution
+        if terminal_execution.get("status") == "STOPPED_BY_MOTION_MONITOR":
+            # Terminal risk re-entry is not a terminal failure: continue from
+            # the measured interrupted pose using the same rolling local loop.
+            q_interrupted = np.asarray(robot.get_joint(), dtype=np.float64)
+            terminal_traj = trial.reconstruct_saved_nubs_candidate(
+                Path(terminal["authorized_trajectory_csv"]), segments=5
+            )
+            latest = terminal_worker.snapshot()
+            fresh_latest, frames_latest, points_latest, geometry_latest = fresh_from_persistent_snapshot(latest)
+            next_context = dict(context)
+            next_context.update(
+                {
+                    "local_artifacts": {
+                        "candidate_trajectory": terminal_traj,
+                        "q_now": q_interrupted.copy(),
+                    },
+                    "fresh3": fresh_latest,
+                    "fresh3_frames": frames_latest,
+                    "fresh3_geometry": geometry_latest,
+                    "fresh3_guard_distance": execution_hard_guard_distance(
+                        processor, denoiser, args
+                    ),
+                    "execution_summary": terminal_execution,
+                    "local1_interrupted": True,
+                    "replan_depth": replan_depth + 1,
+                    "replan_started_monotonic": replan_started,
+                    "failed_replans": failed_replans,
+                }
+            )
+            next_result = handler(**next_context)
+            result["terminal_risk_replan"] = next_result
+            result["status"] = next_result.get("status", "TERMINAL_RISK_REPLAN_CONTINUED")
+            trial.write_json(trial_dir / "event_replan_summary.json", result)
+            return result
         if terminal_execution.get("status") == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
             result["status"] = "SIMPLE_DYNAMIC_NUBS_RECOVERED_AND_GOAL_REACHED"
             result["command_hold"] = False

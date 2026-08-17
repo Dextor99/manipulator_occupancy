@@ -2744,3 +2744,5 @@ def test_event_replan_continuation_uses_predictive_monitor_and_latest_state():
     assert "motion_monitor_provider=make_mid_execution_monitor" in source
     assert "fresh_from_persistent_snapshot" in source
     assert "PREDICTED_RISK_CLEAR" in inspect.getsource(event_replan.monitor_measured_tail)
+    assert "STOPPED_BY_MOTION_MONITOR" in source
+    assert "terminal_risk_replan" in source
