@@ -573,6 +573,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             # unchanged Fast/online verifier must get a chance to repair a
             # lower-clearance seed (r03 best seed was 0.0817 m).
             coarse_gate_is_hard=False,
+            # V3: optimizer-quality improvement is diagnostic only; absolute
+            # verifier safety governs execution eligibility.
+            clearance_improvement_is_hard=False,
+            verified_seed_is_candidate=True,
         )
         trial.select_dynamic_execution_path = lambda **kwargs: (
             "LOCAL_FIRST_DELAYED_REJOIN" if kwargs.get("local_authorized") else None

@@ -46,6 +46,17 @@ SCENE_PROTOCOL = {
         ),
     },
     "offline_expected_source_trigger_horizon_s": 0.5,
+    "candidate_acceptance_policy": {
+        "online_clearance_m": 0.09,
+        "clearance_improvement_preference_m": 0.003,
+        "clearance_improvement_is_hard_gate": False,
+        "accepted_steps_is_hard_gate": False,
+        "candidate_delta_is_hard_gate": False,
+        "semantic": (
+            "absolute verifier governs execution; Fast improvement metrics "
+            "are diagnostics only"
+        ),
+    },
     "nominal_speed_m_s": 0.10,
     "fixed_x_lane_m": 0.7749155588,
     "fixed_x_lane_tolerance_m": 0.025,

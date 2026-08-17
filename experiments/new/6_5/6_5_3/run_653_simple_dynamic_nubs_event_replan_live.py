@@ -773,6 +773,12 @@ def plan_goal_directed_continuation(
             "goal_directed_continuation_audit": audit,
         }
     selected_goal = goals[int(selected["candidate"]) - 1]
+    event_local_index = None
+    if trial_dir.name.startswith("event_local_"):
+        try:
+            event_local_index = int(trial_dir.name.rsplit("_", 1)[-1])
+        except ValueError:
+            event_local_index = None
     result = base_fast(
         runtime_args,
         config,
@@ -786,9 +792,17 @@ def plan_goal_directed_continuation(
         trial_dir=trial_dir,
         reference_goal=(np.asarray(selected_goal["q_goal"]), np.zeros(6), np.zeros(6)),
         rejoin_goals=None,
-        obstacle_audit={"track_id": 1, "event_local_index": 2, "phase": "bypass_progression"},
+        obstacle_audit={
+            "track_id": int(fresh.get("track_id", 1)),
+            "event_local_index": event_local_index,
+            "phase": "bypass_progression",
+        },
         multisphere_geometry=geometry,
         artifacts_out=artifacts_out,
+        # V3: improvement and motion metrics remain diagnostics; the complete
+        # absolute verifier decides whether this continuation may proceed.
+        accept_verified_seed_without_fast_step=True,
+        original_task_reference_goal=nominal_reference_goal,
     )
     result["goal_directed_continuation_audit"] = audit
     return result

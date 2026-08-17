@@ -2127,6 +2127,35 @@ def test_v3_verified_safe_seed_does_not_require_fast_extra_step():
     assert legacy["candidate_source"] == "NO_SAFE_CANDIDATE"
 
 
+def test_v3_safe_candidate_with_negative_gain_still_passes_absolute_contract():
+    result = trial.candidate_acceptance_contract(
+        hard_safety_ready=True,
+        repair_step_ok=True,
+        clearance_gain_m=-0.0001,
+        minimum_clearance_gain_m=0.003,
+        delta_from_fast_seed_rad=0.02,
+        minimum_candidate_delta_rad=0.0001,
+        accept_verified_seed_without_fast_step=True,
+    )
+    assert result["local_repair_ready"] is True
+    assert result["candidate_source"] == "FAST_REPAIRED_BYPASS"
+    assert not result["optimizer_diagnostics"]["clearance_gain_meets_preference"]
+
+
+def test_v3_absolute_safety_can_never_be_bypassed():
+    result = trial.candidate_acceptance_contract(
+        hard_safety_ready=False,
+        repair_step_ok=True,
+        clearance_gain_m=0.10,
+        minimum_clearance_gain_m=0.003,
+        delta_from_fast_seed_rad=0.10,
+        minimum_candidate_delta_rad=0.0001,
+        accept_verified_seed_without_fast_step=True,
+    )
+    assert result["local_repair_ready"] is False
+    assert result["candidate_source"] == "NO_SAFE_CANDIDATE"
+
+
 def test_v3_runner_installs_and_calls_core_predictor_hook_then_restores(
     monkeypatch, tmp_path
 ):
@@ -2768,6 +2797,9 @@ def test_event_replan_continuation_uses_predictive_monitor_and_latest_state():
     assert "PREDICTED_RISK_CLEAR" in inspect.getsource(event_replan.monitor_measured_tail)
     assert "STOPPED_BY_MOTION_MONITOR" in inspect.getsource(event_replan.classify_monitor_stop)
     assert "terminal_risk_replan" in source
+    assert "accept_verified_seed_without_fast_step=True" in inspect.getsource(
+        event_replan.plan_goal_directed_continuation
+    )
 
 
 @pytest.mark.parametrize(

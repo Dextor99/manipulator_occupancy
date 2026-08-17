@@ -2325,6 +2325,9 @@ def run_fast_repair(
         "online_accept_m": args.online_accept_m,
         "verification_min_distance_m": verification.min_distance,
         "reference_online_min_distance_m": reference_verification.min_distance,
+        # Backward-compatible legacy field above is the Fast input seed, not
+        # the original task reference.  Keep explicit V3 aliases for audits.
+        "fast_seed_online_min_distance_m": reference_verification.min_distance,
         "candidate_online_min_distance_m": verification.min_distance,
         "candidate_min_clearance_m": candidate_profile_summary["min_clearance_m"],
         "candidate_min_tau_s": candidate_profile_summary["min_tau_s"],
@@ -2340,7 +2343,12 @@ def run_fast_repair(
         "guidance_horizon_s": getattr(args, "guidance_horizon_s", None),
         "guidance_tail_clearance": candidate_profile_summary["guide"],
         "clearance_improvement_m": clearance_gain,
+        "clearance_improvement_vs_fast_seed_m": clearance_gain,
         "min_clearance_improvement_m": args.min_clearance_improvement_m,
+        "min_clearance_improvement_preference_m": args.min_clearance_improvement_m,
+        "clearance_improvement_is_hard_gate": bool(
+            not accept_verified_seed_without_fast_step
+        ),
         "max_delta_q_from_reference_rad": max_delta_q,
         "delta_candidate_from_bypass_seed_max_abs_rad": max_delta_q,
         "delta_candidate_from_original_reference_max_abs_rad": (
