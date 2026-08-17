@@ -529,6 +529,11 @@ def fresh_from_persistent_snapshot(snapshot: dict[str, Any]) -> tuple[dict[str, 
     return fresh, [], None, geometry if fresh["accepted"] else None
 
 
+def raw_guard_from_persistent_snapshot(snapshot: dict[str, Any]) -> float:
+    value = float(snapshot.get("raw_guard_distance_m", float("-inf")))
+    return value if math.isfinite(value) else float("-inf")
+
+
 def monitor_measured_tail(
     args: argparse.Namespace,
     config: dict[str, Any],
@@ -1306,9 +1311,11 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             q_terminal_start = np.asarray(robot.get_joint(), dtype=np.float64)
+            latest5_snapshot = None
             if worker is not None:
+                latest5_snapshot = worker.snapshot()
                 fresh5, frames5, points5, geometry5 = fresh_from_persistent_snapshot(
-                    worker.snapshot()
+                    latest5_snapshot
                 )
             else:
                 fresh5, frames5, points5, geometry5 = capture_next_fresh(
@@ -1343,6 +1350,23 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 # Re-enter the same event handler with the measured tail and
                 # latest persistent state.  Only the watchdogs above can stop
                 # this rolling loop; local numbering is diagnostic metadata.
+                if worker is None or latest5_snapshot is None:
+                    result["status"] = "ROLLING_REPLAN_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                raw_guard5 = raw_guard_from_persistent_snapshot(latest5_snapshot)
+                if raw_guard5 <= float(args.guided_hard_stop_m):
+                    result["status"] = "ROLLING_REPLAN_RAW_GUARD_NOT_SAFE_OPERATOR_INTERVENTION_REQUIRED"
+                    result["rolling_replan_raw_guard_distance_m"] = raw_guard5
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                result[f"post_local{local_index}_rolling_snapshot"] = {
+                    "state_seq": int(v3._state_seq(latest5_snapshot)),
+                    "raw_guard_distance_m": raw_guard5,
+                    "fresh_state_seq": int(fresh5.get("state_seq", -1)),
+                    "fresh_accepted": bool(fresh5.get("accepted", False)),
+                    "geometry_ready": geometry5 is not None,
+                }
                 next_context = dict(context)
                 next_context.update(
                     {
@@ -1350,9 +1374,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                         "fresh3": fresh5,
                         "fresh3_frames": frames5,
                         "fresh3_geometry": geometry5,
-                        "fresh3_guard_distance": execution_hard_guard_distance(
-                            processor, denoiser, args
-                        ),
+                        "fresh3_guard_distance": raw_guard5,
                         "execution_summary": execution,
                         "local1_interrupted": bool(rolling_interruption),
                         "replan_depth": replan_depth + 1,
@@ -1484,6 +1506,12 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             # the measured interrupted pose using the same rolling local loop.
             q_interrupted = np.asarray(robot.get_joint(), dtype=np.float64)
             latest = terminal_worker.snapshot()
+            raw_guard_latest = raw_guard_from_persistent_snapshot(latest)
+            if raw_guard_latest <= float(args.guided_hard_stop_m):
+                result["status"] = "TERMINAL_RISK_REENTRY_RAW_GUARD_NOT_SAFE_OPERATOR_INTERVENTION_REQUIRED"
+                result["terminal_risk_reentry_raw_guard_distance_m"] = raw_guard_latest
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
             fresh_latest, frames_latest, points_latest, geometry_latest = fresh_from_persistent_snapshot(latest)
             next_context = dict(context)
             next_context.update(
@@ -1499,9 +1527,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     "fresh3": fresh_latest,
                     "fresh3_frames": frames_latest,
                     "fresh3_geometry": geometry_latest,
-                    "fresh3_guard_distance": execution_hard_guard_distance(
-                        processor, denoiser, args
-                    ),
+                    "fresh3_guard_distance": raw_guard_latest,
                     "execution_summary": terminal_execution,
                     "local1_interrupted": True,
                     "replan_depth": replan_depth + 1,

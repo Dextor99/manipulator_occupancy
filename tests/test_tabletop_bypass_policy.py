@@ -1,4 +1,6 @@
 import importlib
+import ast
+from pathlib import Path
 
 import numpy as np
 from types import SimpleNamespace
@@ -89,6 +91,18 @@ def test_local_authorization_non_distance_failure_is_not_recoverable():
     })
     assert classified["distance_only"] is False
     assert classified["kind"] == "other_failure"
+
+
+def test_event_replan_has_no_bare_execution_guard_call():
+    path = Path("experiments/new/6_5/6_5_3/run_653_simple_dynamic_nubs_event_replan_live.py")
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    bare = [
+        node.lineno for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "execution_hard_guard_distance"
+    ]
+    assert bare == []
 
 
 def test_fast_height_shape_policy_falls_back_to_verified_seed(monkeypatch, tmp_path):
