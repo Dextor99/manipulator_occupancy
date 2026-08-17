@@ -2730,6 +2730,15 @@ def test_frame_csv_schema_contains_scene_roi_audit_fields():
     assert required <= set(trial.FRAME_FIELDS)
 
 
+def test_stro_trigger_horizon_is_separate_from_execution_prediction_horizon():
+    args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
+    assert args.stro_trigger_horizon_s == pytest.approx(0.8)
+    assert args.prediction_horizon_s == pytest.approx(0.5)
+    assert trial.FORMAL_PROTOCOL["stro_trigger_horizon_s"] == pytest.approx(0.8)
+    source = inspect.getsource(trial.run)
+    assert '"prediction_horizon_s": float(args.stro_trigger_horizon_s)' in source
+
+
 def test_event_replan_has_watchdog_without_fixed_local_count():
     args = event_replan.build_parser().parse_args(["--repeat", "1"])
     assert args.max_continuous_replan_s == pytest.approx(10.0)

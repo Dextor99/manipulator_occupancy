@@ -175,6 +175,10 @@ FORMAL_PROTOCOL = {
     "dynamic_tracker_max_miss": 2,
     "max_track_cluster_association_m": 0.08,
     "prediction_horizon_s": 0.5,
+    # The initial STRO trigger deliberately looks farther ahead than the
+    # short execution/revalidation horizon.  Keep this separate so changing
+    # trigger timing does not silently change Fast, rolling, or Fresh checks.
+    "stro_trigger_horizon_s": 0.8,
     "prediction_step_s": 0.1,
     "prediction_margin_m": 0.035,
     "prediction_uncertainty_m": 0.02,
@@ -378,6 +382,7 @@ FRAME_FIELDS = [
     "predicted_distance_m",
     "predicted_nearest_link",
     "predicted_tau_s",
+    "trigger_horizon_s",
     "predicted_object_id",
     "trigger_block_reason",
     "reference_state",
@@ -3835,6 +3840,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "task_geometry_id": args.task_geometry_id,
         "reference_x_offset_m": float(args.x_offset),
         "parameters": vars(args),
+        "stro_trigger_horizon_s": float(args.stro_trigger_horizon_s),
+        "execution_prediction_horizon_s": float(args.prediction_horizon_s),
         "formal_protocol": formal_protocol_signature(args),
         "formal_protocol_id": FORMAL_PROTOCOL_ID,
         "protocol_scene_independent": True,
@@ -4243,7 +4250,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 prediction_tracks=prediction_tracks,
                 dynamic_audits=dynamic_audits,
                 clusters=eval_clusters,
-                args=args,
+                # Initial STRO only: use the dedicated early-lookahead
+                # horizon.  The normal prediction_horizon_s remains 0.5 s
+                # for downstream planning, Fresh authorization, and monitors.
+                args=argparse.Namespace(
+                    **{
+                        **vars(args),
+                        "prediction_horizon_s": float(args.stro_trigger_horizon_s),
+                    }
+                ),
                 safety=safety,
             )
             current_best = nearest_cluster_to_links(live_model, q, eval_clusters, density=args.surface_density)
@@ -4389,6 +4404,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "predicted_distance_m": "" if math.isinf(predicted_best["distance"]) else f"{predicted_best['distance']:.6f}",
                 "predicted_nearest_link": predicted_best["link"] or "",
                 "predicted_tau_s": "" if predicted_best["tau"] is None else f"{predicted_best['tau']:.3f}",
+                "trigger_horizon_s": f"{float(args.stro_trigger_horizon_s):.3f}",
                 "predicted_object_id": "" if predicted_best["object_id"] is None else int(predicted_best["object_id"]),
                 "trigger_block_reason": "",
                 "reference_state": reference_state,
@@ -4518,6 +4534,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         "track_id": predicted_best.get("object_id"),
                         "predicted_distance_m": trigger_distance,
                         "predicted_tau_s": predicted_best.get("tau"),
+                        "trigger_horizon_s": float(args.stro_trigger_horizon_s),
                         "predicted_link": predicted_best.get("link"),
                         "current_distance_m": current_distance,
                         "current_link": current_link,
@@ -4549,6 +4566,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             "t_s": time.perf_counter() - started,
                             "predicted_distance_m": trigger_distance,
                             "threshold_m": trigger_threshold,
+                            "trigger_horizon_s": float(args.stro_trigger_horizon_s),
                             "return": stop_ret,
                         }
                     )
@@ -5869,6 +5887,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--denoise-decay", type=float, default=0.4)
     parser.add_argument("--min-track-age", type=int, default=3)
     parser.add_argument("--prediction-horizon-s", type=float, default=0.5)
+    parser.add_argument(
+        "--stro-trigger-horizon-s",
+        type=float,
+        default=0.8,
+        help=(
+            "initial STRO lookahead only; downstream Fast/Fresh/rolling "
+            "checks continue using --prediction-horizon-s"
+        ),
+    )
     parser.add_argument("--prediction-step-s", type=float, default=0.1)
     parser.add_argument("--prediction-margin-m", type=float, default=0.035)
     parser.add_argument("--prediction-uncertainty-m", type=float, default=0.02)
