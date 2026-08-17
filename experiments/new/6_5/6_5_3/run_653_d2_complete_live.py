@@ -38,6 +38,14 @@ SCENE_PROTOCOL = {
     "obstacle_nominal_direction_unit_base": [0.0, 1.0, 0.0],
     "opposing_condition": "obstacle velocity dot robot task velocity < 0",
     "direction_is_diagnostic_not_a_planning_gate": True,
+    "stro_trigger_policy": {
+        "horizon_s": 1.2,
+        "risk_distance_m": 0.14,
+        "semantic": (
+            "early-warning trigger only; execution prediction remains 0.5 s"
+        ),
+    },
+    "offline_expected_source_trigger_horizon_s": 0.5,
     "nominal_speed_m_s": 0.10,
     "fixed_x_lane_m": 0.7749155588,
     "fixed_x_lane_tolerance_m": 0.025,
@@ -64,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
         output=DEFAULT_OUTPUT,
         task_geometry_id=SCENE_PROTOCOL["scene_id"],
         post_local_monitor_max_s=6.0,
+        stro_trigger_horizon_s=1.2,
     )
     parser.add_argument("--scene-operator-phrase", default="")
     return parser
@@ -78,6 +87,7 @@ def validate_frozen_request(args: argparse.Namespace) -> None:
         "planning_robust_target_m": 0.11,
         "max_joint_delta_rad": 0.12,
         "continuation_side_m": 0.04,
+        "stro_trigger_horizon_s": 1.2,
     }
     changed = {
         name: {"actual": getattr(args, name), "required": value}

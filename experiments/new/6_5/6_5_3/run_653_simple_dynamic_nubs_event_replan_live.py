@@ -227,7 +227,7 @@ def make_mid_execution_monitor(**context: Any):
             }
         q_actual = np.asarray(actual_q, dtype=np.float64)
         start_error = trial.joint_error(q_actual, np.asarray(trajectory.evaluate(0.0), dtype=np.float64))
-        if start_error["max_abs_rad"] > float(args.candidate_start_tolerance_rad):
+        if start_error["max_abs_rad"] > float(args.candidate_start_sync_rad):
             return {"ready": False, "action": "replan", "reason": "command_time_start_mismatch", "state_seq": state_seq, "start_error": start_error, "raw_guard_distance_m": raw_guard}
         forecast = v3.v3_execution_multisphere_forecast(
             np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),

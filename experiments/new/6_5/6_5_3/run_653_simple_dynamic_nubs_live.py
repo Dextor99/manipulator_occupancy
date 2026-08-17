@@ -67,6 +67,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="forward an explicitly bounded 0.80-1.00 s time-scale experiment",
     )
     parser.add_argument(
+        "--stro-trigger-horizon-s",
+        type=float,
+        default=1.2,
+        help=(
+            "initial STRO early-warning horizon only; "
+            "Fast/Fresh/rolling execution horizon remains 0.5 s"
+        ),
+    )
+    parser.add_argument(
         "--guidance-horizon-s",
         type=float,
         default=1.5,
@@ -465,6 +474,8 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("tcp_link", "gripper_base_link"),
         ("continuation_side_m", 0.04),
         ("rolling_replan_m", 0.10),
+        # Initial STRO early warning only; execution remains 0.5 s.
+        ("stro_trigger_horizon_s", 1.2),
         ("max_local_replans", 3),
         ("max_closed_loop_segments", 12),
         ("closed_loop_goal_tolerance_rad", 0.01),
@@ -519,6 +530,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "--line-velocity-m-s", "0.020",
                 "--line-acc-m-s2", "0.05",
                 "--candidate-playback-duration-s", str(args.candidate_playback_duration_s),
+                "--stro-trigger-horizon-s", str(args.stro_trigger_horizon_s),
                 "--fast-target-ms", "150",
                 "--fast-max-ms", "250",
             ]

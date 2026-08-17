@@ -249,6 +249,8 @@ def test_d2_complete_scene_is_opposing_and_freezes_planner_defaults():
     assert float(np.dot(direction, robot_task)) < 0.0
     assert d2_complete.SCENE_PROTOCOL["direction_is_diagnostic_not_a_planning_gate"]
     assert np.isclose(d2_complete.SCENE_PROTOCOL["fixed_x_lane_m"], 0.7749155588)
+    assert args.stro_trigger_horizon_s == pytest.approx(1.2)
+    assert d2_complete.SCENE_PROTOCOL["stro_trigger_policy"]["horizon_s"] == pytest.approx(1.2)
     assert args.forward_m == 0.05
     assert args.planning_robust_target_m == 0.11
 
@@ -2732,11 +2734,22 @@ def test_frame_csv_schema_contains_scene_roi_audit_fields():
 
 def test_stro_trigger_horizon_is_separate_from_execution_prediction_horizon():
     args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
-    assert args.stro_trigger_horizon_s == pytest.approx(0.8)
+    assert args.stro_trigger_horizon_s == pytest.approx(1.2)
     assert args.prediction_horizon_s == pytest.approx(0.5)
-    assert trial.FORMAL_PROTOCOL["stro_trigger_horizon_s"] == pytest.approx(0.8)
+    assert trial.FORMAL_PROTOCOL["stro_trigger_horizon_s"] == pytest.approx(1.2)
     source = inspect.getsource(trial.run)
     assert '"prediction_horizon_s": float(args.stro_trigger_horizon_s)' in source
+
+
+def test_simple_live_exposes_and_forwards_stro_trigger_horizon():
+    wrapper_args = simple_live.build_parser().parse_args(
+        ["--repeat", "1", "--stro-trigger-horizon-s", "1.2"]
+    )
+    assert wrapper_args.stro_trigger_horizon_s == pytest.approx(1.2)
+    core_args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
+    simple_live.copy_wrapper_runtime_parameters(wrapper_args, core_args)
+    assert core_args.stro_trigger_horizon_s == pytest.approx(1.2)
+    assert core_args.prediction_horizon_s == pytest.approx(0.5)
 
 
 def test_event_replan_has_watchdog_without_fixed_local_count():
@@ -2806,3 +2819,15 @@ def test_command_time_and_first_local_fallback_hooks_are_present():
     assert "command_time_revalidate" in event_source
     assert "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED" in trial_source
     assert "allow_unestablished_side_fallback" in handler_source
+
+
+def test_command_time_revalidation_uses_strict_start_sync_threshold():
+    args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
+    assert args.candidate_start_sync_rad == pytest.approx(0.002)
+    assert args.candidate_start_tolerance_rad == pytest.approx(0.035)
+    source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    assert "args.candidate_start_sync_rad" in source
+    assert (
+        'start_error["max_abs_rad"] > float(args.candidate_start_tolerance_rad)'
+        not in source
+    )

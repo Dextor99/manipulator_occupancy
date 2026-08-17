@@ -175,10 +175,9 @@ FORMAL_PROTOCOL = {
     "dynamic_tracker_max_miss": 2,
     "max_track_cluster_association_m": 0.08,
     "prediction_horizon_s": 0.5,
-    # The initial STRO trigger deliberately looks farther ahead than the
-    # short execution/revalidation horizon.  Keep this separate so changing
-    # trigger timing does not silently change Fast, rolling, or Fresh checks.
-    "stro_trigger_horizon_s": 0.8,
+    # Initial STRO early-warning horizon only. Fast/Fresh/rolling execution
+    # prediction remains the separate 0.5 s horizon below.
+    "stro_trigger_horizon_s": 1.2,
     "prediction_step_s": 0.1,
     "prediction_margin_m": 0.035,
     "prediction_uncertainty_m": 0.02,
@@ -5890,10 +5889,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stro-trigger-horizon-s",
         type=float,
-        default=0.8,
+        default=1.2,
         help=(
-            "initial STRO lookahead only; downstream Fast/Fresh/rolling "
-            "checks continue using --prediction-horizon-s"
+            "initial STRO early-warning lookahead only; "
+            "Fast/Fresh/rolling prediction remains 0.5 s"
         ),
     )
     parser.add_argument("--prediction-step-s", type=float, default=0.1)
