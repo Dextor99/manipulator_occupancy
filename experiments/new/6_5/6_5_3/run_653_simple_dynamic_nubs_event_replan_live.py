@@ -56,6 +56,57 @@ def make_mid_execution_monitor(**context: Any):
     args = context["args"]
     last = {"seq": -1}
 
+    def prearm(*, timeout_s: float = 1.5, required_updates: int = 2) -> dict[str, Any]:
+        """Require fresh persistent perception before arming robot motion.
+
+        The monitor is fail-closed during playback, but that first callback is
+        too late to protect the command barrier: a missing worker would allow
+        the controller to start and then stop a fraction of a second later.
+        Synchronize here, before ``offline_track_execute_joints`` is called.
+        """
+        if worker is None:
+            return {"ready": False, "reason": "persistent_tracker_unavailable"}
+        baseline = worker.snapshot()
+        baseline_seq = v3._state_seq(baseline)
+        latest = baseline
+        samples = []
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        while len(samples) < int(required_updates) and time.monotonic() < deadline:
+            remaining = max(0.0, deadline - time.monotonic())
+            latest = worker.wait_for_newer_state(
+                after_seq=v3._state_seq(latest),
+                timeout_s=min(0.25, remaining),
+            )
+            seq = v3._state_seq(latest)
+            if seq <= baseline_seq or any(item["state_seq"] == seq for item in samples):
+                continue
+            aligned = v3.time_aligned_snapshot(latest, execution_timestamp=time.time())
+            reasons = v3._persistent_state_reasons(
+                latest, aligned, args, raw_guard_reason="raw_hard_guard_not_safe"
+            )
+            samples.append(
+                {
+                    "state_seq": seq,
+                    "state_age_s": float(aligned["propagation_dt_s"]),
+                    "raw_guard_distance_m": float(latest.get("raw_guard_distance_m", float("-inf"))),
+                    "reasons": reasons,
+                }
+            )
+            if reasons:
+                return {
+                    "ready": False,
+                    "reason": reasons,
+                    "baseline_state_seq": baseline_seq,
+                    "samples": samples,
+                }
+        ready = len(samples) >= int(required_updates)
+        return {
+            "ready": ready,
+            "reason": None if ready else "persistent_tracker_no_fresh_updates",
+            "baseline_state_seq": baseline_seq,
+            "samples": samples,
+        }
+
     def monitor(*, elapsed_s: float, actual_q: np.ndarray, obstacle_snapshot: Any = None) -> dict[str, Any]:
         del obstacle_snapshot
         if worker is None:
@@ -108,6 +159,10 @@ def make_mid_execution_monitor(**context: Any):
             "state_seq": int(snapshot.get("state_seq", -1)),
         }
 
+    # ``execute_authorized_trajectory_offline_track`` uses this explicit
+    # barrier before sending any waypoint command.  Keep the normal callback
+    # fail-closed as well for failures that occur after motion has started.
+    monitor.prearm = prearm
     return monitor
 
 

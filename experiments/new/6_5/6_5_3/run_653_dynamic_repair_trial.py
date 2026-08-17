@@ -1698,6 +1698,18 @@ def execute_authorized_trajectory_offline_track(
             "Confirm obstacle state and emergency stop, then press Enter to execute.",
         )
 
+    # A mid-execution monitor must be live before the command barrier.  Without
+    # this check, a missing/stale persistent worker is only discovered by the
+    # first feedback callback, after the controller has already moved the arm.
+    prearm = getattr(motion_monitor_provider, "prearm", None)
+    if callable(prearm):
+        prearm_result = prearm()
+        log["motion_monitor_prearm"] = prearm_result
+        if not bool(prearm_result.get("ready", False)):
+            log["status"] = "PERSISTENT_TRACKER_NOT_READY_PRECOMMAND"
+            log["motion_monitor_stop_reason"] = prearm_result.get("reason")
+            return log
+
     started = time.perf_counter()
     ret_info = robot.offline_track_execute_joints(
         qs_exec.tolist(),
@@ -4975,7 +4987,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         trial_dir / "candidate" / "candidate_summary.json",
                         candidate_summary,
                     )
-                if persistent_worker is not None:
+                if (
+                    persistent_worker is not None
+                    and not callable(MID_EXECUTION_MONITOR_FACTORY)
+                ):
                     persistent_worker.stop()
                     persistent_worker = None
                 if args.mode == "moving-shadow-stop":
@@ -5331,6 +5346,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         }
         log["events"].append({"type": "ERROR", "error": caught_error})
     finally:
+        if persistent_worker is not None:
+            try:
+                persistent_worker.stop()
+            except Exception:
+                pass
         if commander is not None:
             try:
                 commander.stop()
