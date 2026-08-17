@@ -88,6 +88,42 @@ def can_continue_local_after_terminal_block(
     )
 
 
+def wait_for_stationary_safe_recovery_state(
+    worker: Any,
+    args: argparse.Namespace,
+    *,
+    timeout_s: float | None = None,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Wait for a fresh safe state while the robot is already stationary."""
+    if worker is None:
+        return {"ready": False, "reason": "persistent_tracker_unavailable", "samples": []}, None
+    started = time.monotonic()
+    deadline = started + float(getattr(args, "prediction_horizon_s", 0.5) if timeout_s is None else timeout_s)
+    latest = worker.snapshot()
+    samples: list[dict[str, Any]] = []
+    while True:
+        aligned = v3.time_aligned_snapshot(latest, execution_timestamp=time.time())
+        reasons = v3._persistent_state_reasons(latest, aligned, args, raw_guard_reason="raw_hard_guard_not_safe")
+        raw_guard = float(latest.get("raw_guard_distance_m", float("-inf")))
+        non_guard_reasons = [r for r in reasons if r != "raw_hard_guard_not_safe"]
+        samples.append({
+            "state_seq": int(v3._state_seq(latest)),
+            "raw_guard_distance_m": raw_guard,
+            "state_age_s": float(aligned["propagation_dt_s"]),
+            "reasons": list(reasons),
+        })
+        if non_guard_reasons:
+            return {"ready": False, "reason": "stationary_recovery_state_invalid", "failure_reasons": non_guard_reasons, "samples": samples, "elapsed_s": time.monotonic() - started}, None
+        if not reasons and raw_guard > float(args.guided_hard_stop_m):
+            return {"ready": True, "reason": "stationary_guard_recovered", "samples": samples, "elapsed_s": time.monotonic() - started}, latest
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            return {"ready": False, "reason": "stationary_raw_guard_not_recovered", "samples": samples, "elapsed_s": time.monotonic() - started}, None
+        current_seq = v3._state_seq(latest)
+        newer = worker.wait_for_newer_state(after_seq=current_seq, timeout_s=min(0.25, remaining))
+        latest = newer
+
+
 def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
     """Classify a monitor stop without weakening fail-closed behavior."""
     execution_status = execution.get("status")
@@ -877,6 +913,18 @@ def plan_goal_directed_continuation(
         accept_verified_seed_without_fast_step=True,
         original_task_reference_goal=nominal_reference_goal,
     )
+    result = live.apply_tabletop_height_shape_policy(
+        result=result,
+        artifacts_out=artifacts_out,
+        runtime_args=runtime_args,
+        config=config,
+        model=model,
+        forecast=forecast,
+        q_now=np.asarray(q_now),
+        qd_now=np.zeros(6),
+        trial_dir=trial_dir,
+        max_drop_m=0.005,
+    )
     if result.get("local_repair_ready"):
         candidate_trajectory = artifacts_out.get("candidate_trajectory")
         guard = None if candidate_trajectory is None else trial.gripper_base_workspace_guard(
@@ -1286,18 +1334,15 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     result["status"] = "TERMINAL_PATH_BLOCKED_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
                     trial.write_json(trial_dir / "event_replan_summary.json", result)
                     return result
-                latest = worker.snapshot()
-                aligned_latest = v3.time_aligned_snapshot(latest, execution_timestamp=time.time())
-                persistent_reasons = v3._persistent_state_reasons(
-                    latest, aligned_latest, args, raw_guard_reason="raw_hard_guard_not_safe"
+                stationary_recovery, latest = wait_for_stationary_safe_recovery_state(
+                    worker, args, timeout_s=float(args.prediction_horizon_s)
                 )
-                raw_guard_latest = float(latest.get("raw_guard_distance_m", float("-inf")))
-                if persistent_reasons or raw_guard_latest <= float(args.guided_hard_stop_m):
-                    result["status"] = "TERMINAL_PATH_BLOCKED_LATEST_STATE_UNSAFE_OR_UNCERTAIN_OPERATOR_INTERVENTION_REQUIRED"
-                    result["terminal_blocked_latest_state_reasons"] = persistent_reasons
-                    result["terminal_blocked_latest_raw_guard_m"] = raw_guard_latest
+                result["terminal_blocked_stationary_guard_recovery"] = stationary_recovery
+                if not stationary_recovery.get("ready", False) or latest is None:
+                    result["status"] = "TERMINAL_PATH_BLOCKED_STATIONARY_GUARD_NOT_RECOVERED_OPERATOR_INTERVENTION_REQUIRED"
                     trial.write_json(trial_dir / "event_replan_summary.json", result)
                     return result
+                raw_guard_latest = float(latest.get("raw_guard_distance_m", float("-inf")))
                 fresh_latest, frames_latest, _points_latest, geometry_latest = fresh_from_persistent_snapshot(latest)
                 if not fresh_latest.get("accepted", False) or geometry_latest is None:
                     result["status"] = "TERMINAL_PATH_BLOCKED_LATEST_GEOMETRY_NOT_READY_OPERATOR_INTERVENTION_REQUIRED"

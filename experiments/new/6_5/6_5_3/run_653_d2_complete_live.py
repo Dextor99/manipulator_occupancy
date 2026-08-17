@@ -64,6 +64,11 @@ SCENE_PROTOCOL = {
         "coarse_seed_tabletop_gate": True,
         "fast_output_tabletop_gate": True,
         "terminal_goal_tabletop_gate": True,
+        "max_fast_height_drop_vs_seed_m": 0.005,
+        "height_corridor_is_task_shape_gate": True,
+        "safe_seed_fallback_on_height_violation": True,
+        "active_motion_raw_guard_debounce": False,
+        "stationary_recovery_raw_guard_wait_s": 0.5,
         "final_authorization_guard_remains_independent": True,
     },
     "terminal_recovery_policy": {

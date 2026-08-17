@@ -479,6 +479,32 @@ class PersistentPerceptionWorker:
         guard, _, _, _, _ = trial._find_nearest_cluster_distance_detail(
             robot_points, guard_clusters, []
         )
+        guard_cluster_audit: list[dict[str, Any]] = []
+        guard_distances: list[float] = []
+        for guard_index, cluster in enumerate(guard_clusters):
+            points = np.asarray(cluster.points, dtype=np.float64)
+            center = np.asarray(cluster.center, dtype=np.float64)
+            if len(points):
+                bbox = np.max(points, axis=0) - np.min(points, axis=0)
+                cluster_radius = float(np.max(np.linalg.norm(points - center[None, :], axis=1)))
+            else:
+                bbox = np.zeros(3, dtype=np.float64)
+                cluster_radius = 0.0
+            cluster_guard, _, _, _, _ = trial._find_nearest_cluster_distance_detail(
+                robot_points, [cluster], []
+            )
+            guard_distances.append(float(cluster_guard))
+            guard_cluster_audit.append({
+                "guard_cluster_index": int(guard_index),
+                "center_m": center.tolist(),
+                "point_count": int(len(points)),
+                "bbox_m": bbox.tolist(),
+                "radius_m": cluster_radius,
+                "nearest_robot_distance_m": float(cluster_guard),
+            })
+        nearest_guard_cluster_index = (
+            None if not guard_distances else int(np.argmin(np.asarray(guard_distances)))
+        )
         audit: dict[str, Any] = {
             "timestamp": timestamp,
             "raw_point_count": rois["raw_point_count"],
@@ -493,8 +519,19 @@ class PersistentPerceptionWorker:
             "cluster_count": len(clusters),
             "guard_cluster_count": len(guard_clusters),
             "raw_guard_distance_m": float(guard),
+            "guard_clusters": guard_cluster_audit,
+            "raw_guard_nearest_cluster_index": nearest_guard_cluster_index,
+            "guard_anomaly": bool(len(guard_clusters) > 1 or float(guard) <= float(self.args.guided_hard_stop_m)),
             "associated": False,
         }
+        if audit["guard_anomaly"]:
+            anomaly_dir = self.output_dir / "guard_anomalies"
+            anomaly_dir.mkdir(parents=True, exist_ok=True)
+            for guard_index, cluster in enumerate(guard_clusters):
+                np.save(
+                    anomaly_dir / f"{timestamp:.6f}_guard_{guard_index:02d}.npy",
+                    np.asarray(cluster.points, dtype=np.float64),
+                )
         with self._updated:
             self._latest_frame_timestamp = timestamp
             self._latest_raw_guard_distance_m = float(guard)

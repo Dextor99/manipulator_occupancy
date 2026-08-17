@@ -165,6 +165,7 @@ def make_r06_fast_wrapper(
     tabletop_parallel_bypass: bool = False,
     preserve_tcp_height: bool = False,
     tabletop_seed_gate_is_hard: bool = False,
+    max_fast_height_drop_vs_seed_m: float | None = None,
 ):
     def run_r06_fast(
         runtime_args: Any,
@@ -380,6 +381,18 @@ def make_r06_fast_wrapper(
                 result["local_repair_ready"] = False
                 result["accepted_for_switch"] = False
                 result.setdefault("rejection_reasons", []).append("gripper_base_below_tabletop_guard")
+        result = apply_tabletop_height_shape_policy(
+            result=result,
+            artifacts_out=artifacts_out,
+            runtime_args=runtime_args,
+            config=config,
+            model=model,
+            forecast=forecast,
+            q_now=q_values,
+            qd_now=np.asarray(qd_now),
+            trial_dir=Path(trial_dir),
+            max_drop_m=max_fast_height_drop_vs_seed_m,
+        )
         audit.update(
             {
                 "selected_candidate": int(selected["candidate"]),
@@ -408,6 +421,63 @@ def multisphere_component_count_allowed(
     return component_count >= 1 and (
         required_component_count is None or component_count == required_component_count
     )
+
+
+def apply_tabletop_height_shape_policy(
+    *,
+    result: dict[str, Any],
+    artifacts_out: dict[str, Any] | None,
+    runtime_args: Any,
+    config: dict[str, Any],
+    model: Any,
+    forecast: Any,
+    q_now: np.ndarray,
+    qd_now: np.ndarray,
+    trial_dir: Path,
+    max_drop_m: float | None,
+) -> dict[str, Any]:
+    """Prefer a verified tabletop-safe seed when Fast creates a deep dip."""
+    if not result.get("local_repair_ready") or artifacts_out is None or max_drop_m is None:
+        return result
+    candidate = artifacts_out.get("candidate_trajectory")
+    seed = artifacts_out.get("reference_trajectory")
+    if candidate is None or seed is None:
+        return result
+    threshold = float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+    candidate_guard = trial.gripper_base_workspace_guard(candidate, model, min_z_m=threshold)
+    seed_guard = trial.gripper_base_workspace_guard(seed, model, min_z_m=threshold)
+    result["planning_tabletop_guard"] = candidate_guard
+    result["fast_seed_tabletop_guard"] = seed_guard
+    drop = max(0.0, float(seed_guard.get("min_gripper_base_z_m", float("-inf"))) - float(candidate_guard.get("min_gripper_base_z_m", float("inf"))))
+    result["fast_height_drop_vs_seed_m"] = drop
+    result["max_fast_height_drop_vs_seed_m"] = float(max_drop_m)
+    if drop <= float(max_drop_m):
+        return result
+    _, verifier, _ = trial.make_risk_stack(config, model, forecast)
+    seed_goal = np.asarray(seed.evaluate(seed.total_duration), dtype=np.float64)
+    verification = verifier.verify(seed, forecast, current_q=np.asarray(q_now), current_qd=np.asarray(qd_now), current_qdd=np.zeros(6), q_goal=seed_goal, solver_success=True)
+    result["height_fallback_seed_verification"] = {
+        "accepted": bool(verification.accepted),
+        "min_distance_m": float(verification.min_distance),
+        "checks": verification.checks,
+        "reasons": verification.reasons,
+    }
+    if seed_guard.get("passed") and verification.accepted and float(verification.min_distance) >= float(getattr(runtime_args, "online_accept_m", 0.09)):
+        artifacts_out["candidate_trajectory"] = seed
+        fallback_csv = Path(trial_dir) / "candidate" / "height_preserving_seed_fallback.csv"
+        fallback_csv.parent.mkdir(parents=True, exist_ok=True)
+        trial.save_trajectory_csv(fallback_csv, seed, dt=0.01)
+        result["height_preserving_seed_fallback"] = True
+        result["selected_execution_candidate_source"] = "VERIFIED_TABLETOP_BYPASS_SEED"
+        result["selected_execution_candidate_csv"] = str(fallback_csv)
+        result["fast_extra_correction_used_for_execution"] = False
+        return result
+    result["local_repair_ready"] = False
+    result["accepted_for_switch"] = False
+    result["status"] = "HEIGHT_CORRIDOR_VIOLATION_WITHOUT_SAFE_SEED_FALLBACK"
+    result["local_repair_status"] = result["status"]
+    result.setdefault("rejection_reasons", []).append("fast_height_shape_violation")
+    return result
 
 
 def select_planning_seed(
@@ -612,6 +682,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             tabletop_parallel_bypass=True,
             preserve_tcp_height=True,
             tabletop_seed_gate_is_hard=True,
+            max_fast_height_drop_vs_seed_m=0.005,
         )
         trial.select_dynamic_execution_path = lambda **kwargs: (
             "LOCAL_FIRST_DELAYED_REJOIN" if kwargs.get("local_authorized") else None

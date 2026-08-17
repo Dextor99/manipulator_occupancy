@@ -1,6 +1,7 @@
 import importlib
 
 import numpy as np
+from types import SimpleNamespace
 
 
 bypass = importlib.import_module(
@@ -69,3 +70,35 @@ def test_tabletop_gate_filters_unsafe_continuation_even_diagnostic():
 
 def test_formal_protocol_freezes_tabletop_floor():
     assert trial.FORMAL_PROTOCOL["gripper_base_min_z_m"] == 0.46
+
+
+def test_fast_height_shape_policy_falls_back_to_verified_seed(monkeypatch, tmp_path):
+    class FakeTrajectory:
+        total_duration = 1.0
+
+        def evaluate(self, _tau):
+            return np.zeros(6)
+
+    candidate = FakeTrajectory()
+    seed = FakeTrajectory()
+    guards = iter([
+        {"passed": True, "min_gripper_base_z_m": 0.526},
+        {"passed": True, "min_gripper_base_z_m": 0.539},
+    ])
+    monkeypatch.setattr(trial, "gripper_base_workspace_guard", lambda *a, **k: next(guards))
+
+    class Verifier:
+        def verify(self, *args, **kwargs):
+            return SimpleNamespace(accepted=True, min_distance=0.12, checks={}, reasons=[])
+
+    monkeypatch.setattr(trial, "make_risk_stack", lambda *a, **k: (None, Verifier(), None))
+    monkeypatch.setattr(trial, "save_trajectory_csv", lambda *a, **k: None)
+    result = live.apply_tabletop_height_shape_policy(
+        result={"local_repair_ready": True},
+        artifacts_out={"candidate_trajectory": candidate, "reference_trajectory": seed},
+        runtime_args=SimpleNamespace(gripper_base_min_z_m=0.46, online_accept_m=0.09),
+        config={}, model=object(), forecast=object(), q_now=np.zeros(6), qd_now=np.zeros(6),
+        trial_dir=tmp_path, max_drop_m=0.005,
+    )
+    assert result["height_preserving_seed_fallback"] is True
+    assert result["selected_execution_candidate_source"] == "VERIFIED_TABLETOP_BYPASS_SEED"
