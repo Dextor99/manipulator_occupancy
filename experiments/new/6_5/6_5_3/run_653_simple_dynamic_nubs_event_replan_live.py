@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Protected two-event continuation for the validated simple dynamic NUBS pilot.
 
-The first local segment is exactly the r04-frozen implementation.  At its
-measured tail, Fresh #3 first evaluates whether remaining stationary is
-physically safe over the 0.5 s prediction horizon.  If not, one additional
-Fresh-authorized local segment may execute from the measured joints.  A direct
-terminal NUBS to the recorded preset goal is allowed only after a new complete
-verification.  No third local replan is permitted; unresolved approaching risk
-is reported as requiring operator intervention, not as a "safe hold".
+The first local segment is exactly the r04-frozen implementation.  At each
+measured tail, the latest persistent state evaluates whether remaining
+stationary is physically safe over the 0.5 s prediction horizon.  If not, a
+new Fresh-authorized local segment is generated from the measured joints and
+the loop continues until risk clears or a fail-safe watchdog intervenes.  A
+direct terminal NUBS to the recorded preset goal is allowed only after a new
+complete verification.
 """
 
 from __future__ import annotations
@@ -193,13 +193,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--continuation-side-m",
         type=float,
         default=0.04,
-        help="strong retained-side displacement for local #2; weak uses half and release uses zero",
+        help="strong retained-side displacement for each continuation local segment; weak uses half and release uses zero",
     )
     parser.add_argument(
         "--rolling-replan-m",
         type=float,
         default=0.10,
         help="remaining-clearance threshold during an already-authorized local trajectory",
+    )
+    parser.add_argument(
+        "--max-continuous-replan-s",
+        type=float,
+        default=10.0,
+        help="fail-safe watchdog for one continuous dynamic-replan episode; not a local-segment limit",
+    )
+    parser.add_argument(
+        "--max-failed-replans",
+        type=int,
+        default=3,
+        help="fail-closed watchdog for consecutive infeasible replans",
     )
     return parser
 
@@ -743,6 +755,31 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         state_reader = context["state_reader"]
         denoiser = context["denoiser"]
         trial_dir = Path(context["trial_dir"])
+        replan_depth = int(context.get("replan_depth", 0))
+        replan_started = float(context.get("replan_started_monotonic", time.monotonic()))
+        failed_replans = int(context.get("failed_replans", 0))
+        if failed_replans >= int(event_args.max_failed_replans):
+            result = {
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "handled": True,
+                "status": "FAILED_REPLAN_WATCHDOG_OPERATOR_INTERVENTION_REQUIRED",
+                "command_hold": True,
+                "replan_depth": replan_depth,
+                "failed_replans": failed_replans,
+            }
+            trial.write_json(trial_dir / "event_replan_summary.json", result)
+            return result
+        if time.monotonic() - replan_started > float(event_args.max_continuous_replan_s):
+            result = {
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "handled": True,
+                "status": "CONTINUOUS_REPLAN_WATCHDOG_TIMEOUT_OPERATOR_INTERVENTION_REQUIRED",
+                "command_hold": True,
+                "replan_depth": replan_depth,
+                "watchdog_elapsed_s": time.monotonic() - replan_started,
+            }
+            trial.write_json(trial_dir / "event_replan_summary.json", result)
+            return result
         q_actual = np.asarray(robot.get_joint(), dtype=np.float64)
         early_execution = bool(context.get("local1_interrupted", False))
         q_expected = np.asarray(
@@ -759,7 +796,9 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             "command_hold": True,
             "q_actual_local1_tail_rad": q_actual.tolist(),
             "local1_tail_error": start_error,
-            "max_local_executions": 2,
+            "local_segment_index": replan_depth + 1,
+            "continuous_replan_watchdog_s": float(event_args.max_continuous_replan_s),
+            "failed_replans": failed_replans,
         }
         if start_error["max_abs_rad"] > args.candidate_start_tolerance_rad and not early_execution:
             result["status"] = "EVENT_REPLAN_BLOCKED_LOCAL1_TAIL_MISMATCH"
@@ -784,7 +823,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             initial_fresh=context["fresh3"],
             initial_frames=context["fresh3_frames"],
             initial_geometry=context["fresh3_geometry"],
-            output_dir=trial_dir / "post_local1_monitor",
+            output_dir=trial_dir / f"post_local{replan_depth + 1}_monitor",
             max_wall_s=float(event_args.post_local_monitor_max_s),
         )
         result["post_local1_monitor"] = {
@@ -804,7 +843,8 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         q_terminal_start = q_actual
 
         if monitor1["status"] == "REPLAN_REQUIRED":
-            local2_dir = trial_dir / "event_local_02"
+            local_index = replan_depth + 2
+            local2_dir = trial_dir / f"event_local_{local_index:02d}"
             local2_dir.mkdir(parents=True, exist_ok=True)
             artifacts: dict[str, Any] = {}
             local2_reference_goal, local2_reference_audit = next_recorded_reference_goal(
@@ -836,6 +876,8 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             )
             result["local2_candidate"] = candidate
             if not candidate.get("local_repair_ready", False):
+                failed_replans += 1
+                result["failed_replans"] = failed_replans
                 result["status"] = "HOLD_UNSAFE_APPROACHING_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
@@ -855,6 +897,8 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             if geometry4 is not None:
                 trial.write_json(local2_dir / "fresh4_multisphere.json", geometry4)
             if geometry4 is None:
+                failed_replans += 1
+                result["failed_replans"] = failed_replans
                 result["status"] = "LOCAL2_FRESH_AUTHORIZATION_NOT_READY_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
@@ -871,6 +915,8 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             )
             result["local2_authorization"] = authorization
             if not authorization.get("local_execution_authorized", False):
+                failed_replans += 1
+                result["failed_replans"] = failed_replans
                 result["status"] = "LOCAL2_FRESH_REJECTED_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
@@ -881,7 +927,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 processor=processor,
                 denoiser=denoiser,
                 playback_duration_s=None,
-                execution_label="Fresh #4-authorized event local repair #2",
+                execution_label=f"Fresh-authorized event local repair #{local_index}",
             )
             result["local2_execution"] = execution
             if execution.get("status") != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
@@ -908,14 +954,37 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 initial_fresh=fresh5,
                 initial_frames=frames5,
                 initial_geometry=geometry5,
-                output_dir=trial_dir / "post_local2_monitor",
+                output_dir=trial_dir / f"post_local{local_index}_monitor",
                 max_wall_s=float(event_args.post_local_monitor_max_s),
             )
             result["post_local2_monitor"] = {
                 key: value for key, value in monitor2.items() if key not in {"forecast", "geometry"}
             }
             if monitor2["status"] == "REPLAN_REQUIRED":
-                result["status"] = "HOLD_UNSAFE_APPROACHING_OPERATOR_INTERVENTION_REQUIRED"
+                # A second (or later) local segment is not a terminal state.
+                # Re-enter the same event handler with the measured tail and
+                # latest persistent state.  Only the watchdogs above can stop
+                # this rolling loop; local numbering is diagnostic metadata.
+                next_context = dict(context)
+                next_context.update(
+                    {
+                        "local_artifacts": artifacts,
+                        "fresh3": fresh5,
+                        "fresh3_frames": frames5,
+                        "fresh3_geometry": geometry5,
+                        "fresh3_guard_distance": execution_hard_guard_distance(
+                            processor, denoiser, args
+                        ),
+                        "execution_summary": execution,
+                        "local1_interrupted": False,
+                        "replan_depth": replan_depth + 1,
+                        "replan_started_monotonic": replan_started,
+                        "failed_replans": failed_replans,
+                    }
+                )
+                next_result = handler(**next_context)
+                result["next_replan"] = next_result
+                result["status"] = next_result.get("status", "ROLLING_REPLAN_CONTINUED")
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             if monitor2["status"] == "PHYSICAL_HOLD_SAFE_MONITORING_TIMEOUT":
