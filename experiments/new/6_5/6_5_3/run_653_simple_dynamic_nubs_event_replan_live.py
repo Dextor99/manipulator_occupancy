@@ -124,6 +124,21 @@ def wait_for_stationary_safe_recovery_state(
         latest = newer
 
 
+def classify_local_authorization(authorization: dict[str, Any]) -> dict[str, Any]:
+    """Only a distance-only Fresh rejection is recoverable by replanning."""
+    if bool(authorization.get("local_execution_authorized", False)):
+        return {"kind": "authorized", "distance_only": False, "failed_checks": []}
+    checks = dict(authorization.get("verification_checks") or {})
+    failed_checks = [key for key, passed in checks.items() if not bool(passed)]
+    distance_only = set(failed_checks) == {"distance_ok"}
+    return {
+        "kind": "distance_only_replan" if distance_only else "other_failure",
+        "distance_only": bool(distance_only),
+        "failed_checks": failed_checks,
+        "verification_min_distance_m": authorization.get("verification_min_distance_m"),
+    }
+
+
 def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
     """Classify a monitor stop without weakening fail-closed behavior."""
     execution_status = execution.get("status")
@@ -1187,9 +1202,58 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             result["local2_authorization"] = authorization
             result[f"local_{local_index}_authorization"] = authorization
             if not authorization.get("local_execution_authorized", False):
+                authorization_class = classify_local_authorization(authorization)
+                result[f"local_{local_index}_authorization_classification"] = authorization_class
+                if authorization_class["distance_only"]:
+                    failed_replans += 1
+                    result["failed_replans"] = failed_replans
+                    result["status"] = "LOCAL_FRESH_DISTANCE_REJECTED_REPLAN_REQUIRED"
+                    result.setdefault("rolling_events", []).append({
+                        "type": "LOCAL_FRESH_DISTANCE_ONLY_REJECTION",
+                        "local_index": int(local_index),
+                        "verification_min_distance_m": authorization_class.get("verification_min_distance_m"),
+                        "robot_commanded": False,
+                        "action": "HOLD_AND_REPLAN_FROM_LATEST_FRESH",
+                    })
+                    if time.monotonic() - replan_started > float(event_args.max_continuous_replan_s):
+                        result["status"] = "CONTINUOUS_REPLAN_WATCHDOG_TIMEOUT_OPERATOR_INTERVENTION_REQUIRED"
+                        trial.write_json(trial_dir / "event_replan_summary.json", result)
+                        return result
+                    if worker is None:
+                        result["status"] = "LOCAL_FRESH_REPLAN_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
+                        trial.write_json(trial_dir / "event_replan_summary.json", result)
+                        return result
+                    baseline = worker.snapshot()
+                    latest_snapshot = worker.wait_for_newer_state(
+                        after_seq=v3._state_seq(baseline), timeout_s=0.35
+                    )
+                    fresh_retry, frames_retry, _, geometry_retry = fresh_from_persistent_snapshot(latest_snapshot)
+                    if not fresh_retry.get("accepted", False) or geometry_retry is None:
+                        result["status"] = "LOCAL_FRESH_REPLAN_STATE_NOT_READY_OPERATOR_INTERVENTION_REQUIRED"
+                        trial.write_json(trial_dir / "event_replan_summary.json", result)
+                        return result
+                    next_context = dict(context)
+                    next_context.update({
+                        "local_artifacts": current_local_artifacts,
+                        "fresh3": fresh_retry,
+                        "fresh3_frames": frames_retry,
+                        "fresh3_geometry": geometry_retry,
+                        "fresh3_guard_distance": float(latest_snapshot.get("raw_guard_distance_m", float("-inf"))),
+                        "execution_summary": current_execution_summary,
+                        "local1_interrupted": current_local_interrupted,
+                        "replan_depth": replan_depth,
+                        "replan_started_monotonic": replan_started,
+                        "failed_replans": failed_replans,
+                        "force_goal_directed_local": False,
+                    })
+                    next_result = handler(**next_context)
+                    result["fresh_distance_replan"] = next_result
+                    result["status"] = next_result.get("status", "LOCAL_FRESH_DISTANCE_REPLAN_CONTINUED")
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
                 failed_replans += 1
                 result["failed_replans"] = failed_replans
-                result["status"] = "LOCAL2_FRESH_REJECTED_OPERATOR_INTERVENTION_REQUIRED"
+                result["status"] = "LOCAL_FRESH_NON_DISTANCE_REJECTED_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             if worker is None:

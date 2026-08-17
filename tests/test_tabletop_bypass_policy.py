@@ -72,6 +72,25 @@ def test_formal_protocol_freezes_tabletop_floor():
     assert trial.FORMAL_PROTOCOL["gripper_base_min_z_m"] == 0.46
 
 
+def test_local_authorization_distance_only_is_recoverable():
+    classified = event.classify_local_authorization({
+        "local_execution_authorized": False,
+        "verification_checks": {"solver_ok": True, "distance_ok": False, "velocity_ok": True},
+        "verification_min_distance_m": 0.065,
+    })
+    assert classified["distance_only"] is True
+    assert classified["kind"] == "distance_only_replan"
+
+
+def test_local_authorization_non_distance_failure_is_not_recoverable():
+    classified = event.classify_local_authorization({
+        "local_execution_authorized": False,
+        "verification_checks": {"solver_ok": True, "distance_ok": True, "velocity_ok": False},
+    })
+    assert classified["distance_only"] is False
+    assert classified["kind"] == "other_failure"
+
+
 def test_fast_height_shape_policy_falls_back_to_verified_seed(monkeypatch, tmp_path):
     class FakeTrajectory:
         total_duration = 1.0
