@@ -1,0 +1,460 @@
+{
+  "policy": "goal_directed_bypass_continuation",
+  "q_escape_start_rad": [
+    0.808862566947937,
+    -0.03861699998378754,
+    1.5311816930770874,
+    -0.0009023348684422672,
+    1.5708110332489014,
+    0.8088918924331665
+  ],
+  "q_actual_continuation_start_rad": [
+    0.7722005844116211,
+    0.02739650197327137,
+    1.609446406364441,
+    0.060533467680215836,
+    1.6833350658416748,
+    0.8035805821418762
+  ],
+  "side_audit": {
+    "tcp_escape_start_m": [
+      0.4874696249203319,
+      0.2342159468378194,
+      0.5396000319459929
+    ],
+    "tcp_now_m": [
+      0.4684231407833387,
+      0.20582114016544883,
+      0.5418024181369224
+    ],
+    "tcp_final_m": [
+      0.4874412918098618,
+      -0.3999820047868132,
+      0.5395643693250993
+    ],
+    "executed_tcp_delta_m": [
+      -0.019046484136993225,
+      -0.02839480667237057,
+      0.002202386190929495
+    ],
+    "task_direction": [
+      0.03137761327002151,
+      -0.999500780783842,
+      -0.0036925056488866727
+    ],
+    "lateral_executed_delta_m": [
+      -0.01991799313790498,
+      -0.0006338065167698359,
+      0.002304945040171123
+    ],
+    "established_bypass_side": [
+      -0.9928748383158266,
+      -0.03159407368525473,
+      0.11489721470641504
+    ],
+    "semantic": "lock_side_not_constant_direction"
+  },
+  "direction": {
+    "task_direction": [
+      0.03137761327002151,
+      -0.999500780783842,
+      -0.0036925056488866727
+    ],
+    "established_bypass_side": [
+      -0.9995075947491784,
+      -0.03137782718278003,
+      0.0
+    ],
+    "original_established_bypass_side": [
+      -0.9928748383158266,
+      -0.03159407368525432,
+      0.11489721470641504
+    ],
+    "side_policy": "lock_side_not_constant_direction",
+    "tabletop_parallel_side": true,
+    "preserve_tcp_height": true,
+    "tcp_height_weight": 1.0,
+    "candidate_phases": [
+      "strong",
+      "weak",
+      "release"
+    ],
+    "risk_link": "gripper_base_link"
+  },
+  "candidates": [
+    {
+      "candidate": 1,
+      "phase": "strong",
+      "side_weight": 1.0,
+      "side_m": 0.04,
+      "forward_m": 0.05,
+      "mapping": {
+        "risk_link": "gripper_base_link",
+        "risk_point_base_m": [
+          0.5183005269489521,
+          0.20319934469548948,
+          0.4682823588643552
+        ],
+        "risk_point_local_m": [
+          -0.042588433700827925,
+          0.030850000679492957,
+          0.07130846061973918
+        ],
+        "requested_risk_delta_m": [
+          -0.039980303789967135,
+          -0.0012551130873112012,
+          0.0
+        ],
+        "linearized_risk_delta_m": [
+          -0.017871977488104464,
+          -0.00475376191736946,
+          -0.002494675251823746
+        ],
+        "requested_task_progress_m": 0.05,
+        "linearized_tcp_delta_m": [
+          -0.020477952310632548,
+          -0.01882741668781958,
+          0.002992448644795689
+        ],
+        "linearized_tcp_vertical_delta_m": 0.002992448644795689,
+        "requested_tcp_vertical_delta_m": 0.0,
+        "tabletop_parallel_side": true,
+        "preserve_tcp_height": true,
+        "linearized_task_progress_m": 0.018164418777928522,
+        "joint_delta_rad": [
+          -0.02408543062066235,
+          0.06554318349261248,
+          0.08663092178017073,
+          0.10490771146916159,
+          0.12,
+          -0.11628549939316452
+        ],
+        "raw_joint_delta_max_abs_rad": 0.2646741998295905,
+        "joint_delta_scale": 0.45338759908318055,
+        "joint_delta_max_abs_rad": 0.12
+      },
+      "tabletop_workspace_guard": {
+        "passed": true,
+        "reason": "ok",
+        "min_gripper_base_z_m": 0.5418024181369224,
+        "threshold_m": 0.46,
+        "sample_count": 51
+      },
+      "tabletop_feasible": true,
+      "coarse_min_distance_m": 0.08705462769317451,
+      "coarse_min_tau_s": 1.0,
+      "coarse_nearest_link": "left_link",
+      "task_progress_m": 0.01813398123433177,
+      "goal_distance_m": 0.5883835615471176,
+      "task_progress_ok": true,
+      "profile": [
+        {
+          "tau_s": 0.0,
+          "distance_m": 0.105105445775863,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.1,
+          "distance_m": 0.1016937408287183,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.2,
+          "distance_m": 0.09965099769918445,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.30000000000000004,
+          "distance_m": 0.09750332080997356,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.4,
+          "distance_m": 0.09507591616043609,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.5,
+          "distance_m": 0.09313294006034173,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.6000000000000001,
+          "distance_m": 0.09142677495294024,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.7000000000000001,
+          "distance_m": 0.08966935465228204,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.8,
+          "distance_m": 0.08874303969599434,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.9,
+          "distance_m": 0.08856048644599496,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 1.0,
+          "distance_m": 0.08705462769317451,
+          "nearest_link": "left_link"
+        }
+      ]
+    },
+    {
+      "candidate": 2,
+      "phase": "weak",
+      "side_weight": 0.5,
+      "side_m": 0.02,
+      "forward_m": 0.05,
+      "mapping": {
+        "risk_link": "gripper_base_link",
+        "risk_point_base_m": [
+          0.5183005269489521,
+          0.20319934469548948,
+          0.4682823588643552
+        ],
+        "risk_point_local_m": [
+          -0.042588433700827925,
+          0.030850000679492957,
+          0.07130846061973918
+        ],
+        "requested_risk_delta_m": [
+          -0.019990151894983568,
+          -0.0006275565436556006,
+          0.0
+        ],
+        "linearized_risk_delta_m": [
+          -0.008886285878097304,
+          -0.004486099034820262,
+          -0.0024121224742210236
+        ],
+        "requested_task_progress_m": 0.05,
+        "linearized_tcp_delta_m": [
+          -0.011964464313873135,
+          -0.018548707795130695,
+          0.0029081923498229315
+        ],
+        "linearized_tcp_vertical_delta_m": 0.0029081923498229315,
+        "requested_tcp_vertical_delta_m": 0.0,
+        "tabletop_parallel_side": true,
+        "preserve_tcp_height": true,
+        "linearized_task_progress_m": 0.01815329307286101,
+        "joint_delta_rad": [
+          -0.035048757551309984,
+          0.04994609081486996,
+          0.07435107669752554,
+          0.11633348599287903,
+          0.11526472293789523,
+          -0.12
+        ],
+        "raw_joint_delta_max_abs_rad": 0.2646525250443882,
+        "joint_delta_scale": 0.453424731087955,
+        "joint_delta_max_abs_rad": 0.12
+      },
+      "tabletop_workspace_guard": {
+        "passed": true,
+        "reason": "ok",
+        "min_gripper_base_z_m": 0.5418024181369224,
+        "threshold_m": 0.46,
+        "sample_count": 51
+      },
+      "tabletop_feasible": true,
+      "coarse_min_distance_m": 0.07899303372865493,
+      "coarse_min_tau_s": 1.0,
+      "coarse_nearest_link": "left_link",
+      "task_progress_m": 0.018208462843284142,
+      "goal_distance_m": 0.5880609168103471,
+      "task_progress_ok": true,
+      "profile": [
+        {
+          "tau_s": 0.0,
+          "distance_m": 0.105105445775863,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.1,
+          "distance_m": 0.10139074714642632,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.2,
+          "distance_m": 0.09835630768533707,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.30000000000000004,
+          "distance_m": 0.09535865693354806,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.4,
+          "distance_m": 0.0923178453153845,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.5,
+          "distance_m": 0.08958172661116276,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.6000000000000001,
+          "distance_m": 0.08704321233195642,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.7000000000000001,
+          "distance_m": 0.08457391453347554,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.8,
+          "distance_m": 0.08258499440842593,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.9,
+          "distance_m": 0.08104541256171507,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 1.0,
+          "distance_m": 0.07899303372865493,
+          "nearest_link": "left_link"
+        }
+      ]
+    },
+    {
+      "candidate": 3,
+      "phase": "release",
+      "side_weight": 0.0,
+      "side_m": 0.0,
+      "forward_m": 0.05,
+      "mapping": {
+        "risk_link": "gripper_base_link",
+        "risk_point_base_m": [
+          0.5183005269489521,
+          0.20319934469548948,
+          0.4682823588643552
+        ],
+        "risk_point_local_m": [
+          -0.042588433700827925,
+          0.030850000679492957,
+          0.07130846061973918
+        ],
+        "requested_risk_delta_m": [
+          -0.0,
+          -0.0,
+          0.0
+        ],
+        "linearized_risk_delta_m": [
+          9.474965313233108e-05,
+          -0.003962136747278459,
+          -0.002188042137950387
+        ],
+        "requested_task_progress_m": 0.05,
+        "linearized_tcp_delta_m": [
+          -0.0032400292492268416,
+          -0.017160104579800696,
+          0.0026523768576298488
+        ],
+        "linearized_tcp_vertical_delta_m": 0.0026523768576298488,
+        "requested_tcp_vertical_delta_m": 0.0,
+        "tabletop_parallel_side": true,
+        "preserve_tcp_height": true,
+        "linearized_task_progress_m": 0.017040079624547608,
+        "joint_delta_rad": [
+          -0.04321866559458751,
+          0.03225999259621978,
+          0.05829868815803433,
+          0.12,
+          0.10381436196326631,
+          -0.11619976150594015
+        ],
+        "raw_joint_delta_max_abs_rad": 0.28174614201174075,
+        "joint_delta_scale": 0.4259153262691328,
+        "joint_delta_max_abs_rad": 0.12
+      },
+      "tabletop_workspace_guard": {
+        "passed": true,
+        "reason": "ok",
+        "min_gripper_base_z_m": 0.5418024181369224,
+        "threshold_m": 0.46,
+        "sample_count": 51
+      },
+      "tabletop_feasible": true,
+      "coarse_min_distance_m": 0.07097081988147938,
+      "coarse_min_tau_s": 1.0,
+      "coarse_nearest_link": "left_link",
+      "task_progress_m": 0.01730845559802788,
+      "goal_distance_m": 0.5888256827328724,
+      "task_progress_ok": true,
+      "profile": [
+        {
+          "tau_s": 0.0,
+          "distance_m": 0.105105445775863,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.1,
+          "distance_m": 0.10109177735396899,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.2,
+          "distance_m": 0.09707838074571554,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.30000000000000004,
+          "distance_m": 0.0932407448912082,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.4,
+          "distance_m": 0.08959268198455134,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.5,
+          "distance_m": 0.08607024258353424,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.6000000000000001,
+          "distance_m": 0.08270467650112745,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.7000000000000001,
+          "distance_m": 0.07952583314814096,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.8,
+          "distance_m": 0.07647566991817181,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 0.9,
+          "distance_m": 0.07357595908627612,
+          "nearest_link": "left_link"
+        },
+        {
+          "tau_s": 1.0,
+          "distance_m": 0.07097081988147938,
+          "nearest_link": "left_link"
+        }
+      ]
+    }
+  ],
+  "planning_robust_target_m": 0.11,
+  "planning_robust_target_is_hard_gate": false,
+  "selected_candidate": 1,
+  "selected_phase": "strong",
+  "fast_invoked": true
+}
