@@ -319,6 +319,25 @@ def capture_next_fresh(
     return fresh, frames, points, fit_fresh_geometry(args, fresh, points)
 
 
+def fresh_from_persistent_snapshot(snapshot: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], None, dict[str, Any] | None]:
+    """Build an execution-time Fresh state without a blocking three-frame wait."""
+    aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+    geometry = aligned["geometry"]
+    fresh = {
+        "accepted": bool(geometry.get("covered", False)),
+        "reason": "persistent_worker_latest_authorization_state",
+        "track_id": int(snapshot.get("track_id", 1)),
+        "center": np.asarray(aligned["propagated_center"], dtype=np.float64).tolist(),
+        "velocity": np.asarray(snapshot["velocity"], dtype=np.float64).tolist(),
+        "radius": float(max(np.asarray(geometry["component_base_radii"], dtype=np.float64))),
+        "last_timestamp": float(time.time()),
+        "max_association_error_m": float(snapshot.get("association_error_m", 0.0)),
+        "source": "persistent_worker_latest_authorization_state",
+        "state_seq": int(v3._state_seq(snapshot)),
+    }
+    return fresh, [], None, geometry if fresh["accepted"] else None
+
+
 def monitor_measured_tail(
     args: argparse.Namespace,
     config: dict[str, Any],
@@ -821,9 +840,15 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
 
-            fresh4, frames4, points4, geometry4 = capture_next_fresh(
-                args, processor, state_reader, denoiser, monitor1["fresh"]
-            )
+            worker = context.get("persistent_worker")
+            if worker is not None:
+                fresh4, frames4, points4, geometry4 = fresh_from_persistent_snapshot(
+                    worker.snapshot()
+                )
+            else:
+                fresh4, frames4, points4, geometry4 = capture_next_fresh(
+                    args, processor, state_reader, denoiser, monitor1["fresh"]
+                )
             trial.write_json(local2_dir / "fresh4_recheck.json", {"result": fresh4, "frames": frames4})
             if points4 is not None:
                 np.save(local2_dir / "fresh4_cluster_points.npy", points4)

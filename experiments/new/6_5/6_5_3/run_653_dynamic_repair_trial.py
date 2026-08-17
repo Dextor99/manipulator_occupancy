@@ -5350,28 +5350,72 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             }
                         )
 
-                        # One fail-closed Fresh #3 gate before resuming the original task.
-                        fresh3, fresh3_frames, fresh3_points = capture_post_stop_obstacle(
-                            processor,
-                            state_reader,
-                            denoiser,
-                            args,
-                            trigger_cluster_center=np.asarray(fresh2["center"], dtype=np.float64),
-                            trigger_velocity=np.asarray(fresh2["velocity"], dtype=np.float64),
-                            trigger_timestamp=float(fresh2["last_timestamp"]),
-                            stop_when_ready=True,
-                        )
+                        # One fail-closed Fresh #3 gate before resuming the
+                        # original task.  When the persistent worker is alive,
+                        # consume its latest associated state immediately;
+                        # waiting for a new three-frame capture here can leave
+                        # a continuously moving obstacle 30--40 mm closer
+                        # before local #2 is even planned.  The worker state is
+                        # still revalidated by the local authorization and the
+                        # raw hard guard before any command is sent.
                         fresh3_geometry = None
-                        if fresh3["accepted"] and fresh3_points is not None:
-                            fresh3_geometry = fit_pca_multisphere(
-                                fresh3_points,
-                                fit_margin_m=args.multisphere_fit_margin_m,
-                                max_components=args.multisphere_max_components,
+                        fresh3_points = None
+                        fresh3_frames = []
+                        if persistent_worker is not None:
+                            v3_module = importlib.import_module(
+                                "experiments.new.6_5.6_5_3.dynamic_nubs_v3"
                             )
-                            if not fresh3_geometry["covered"]:
-                                fresh3 = {**fresh3, "accepted": False, "reason": "fresh3_multisphere_coverage_failed"}
-                            np.save(trial_dir / "fresh3_cluster_points.npy", fresh3_points)
-                            write_json(trial_dir / "fresh3_multisphere.json", fresh3_geometry)
+                            tail_snapshot = persistent_worker.snapshot()
+                            aligned_tail = v3_module.time_aligned_snapshot(
+                                tail_snapshot, execution_timestamp=time.time()
+                            )
+                            fresh3_geometry = aligned_tail["geometry"]
+                            fresh3 = {
+                                "accepted": bool(fresh3_geometry.get("covered", False)),
+                                "reason": "persistent_worker_latest_tail_state",
+                                "track_id": int(fresh2.get("track_id") or 1),
+                                "center": np.asarray(
+                                    aligned_tail["propagated_center"], dtype=np.float64
+                                ).tolist(),
+                                "velocity": np.asarray(
+                                    tail_snapshot["velocity"], dtype=np.float64
+                                ).tolist(),
+                                "radius": float(
+                                    max(
+                                        np.asarray(
+                                            fresh3_geometry["component_base_radii"],
+                                            dtype=np.float64,
+                                        )
+                                    )
+                                ),
+                                "last_timestamp": float(time.time()),
+                                "max_association_error_m": float(
+                                    tail_snapshot.get("association_error_m", 0.0)
+                                ),
+                                "source": "persistent_worker_latest_tail_state",
+                                "state_seq": int(tail_snapshot.get("state_seq", -1)),
+                            }
+                        else:
+                            fresh3, fresh3_frames, fresh3_points = capture_post_stop_obstacle(
+                                processor,
+                                state_reader,
+                                denoiser,
+                                args,
+                                trigger_cluster_center=np.asarray(fresh2["center"], dtype=np.float64),
+                                trigger_velocity=np.asarray(fresh2["velocity"], dtype=np.float64),
+                                trigger_timestamp=float(fresh2["last_timestamp"]),
+                                stop_when_ready=True,
+                            )
+                            if fresh3["accepted"] and fresh3_points is not None:
+                                fresh3_geometry = fit_pca_multisphere(
+                                    fresh3_points,
+                                    fit_margin_m=args.multisphere_fit_margin_m,
+                                    max_components=args.multisphere_max_components,
+                                )
+                                if not fresh3_geometry["covered"]:
+                                    fresh3 = {**fresh3, "accepted": False, "reason": "fresh3_multisphere_coverage_failed"}
+                                np.save(trial_dir / "fresh3_cluster_points.npy", fresh3_points)
+                                write_json(trial_dir / "fresh3_multisphere.json", fresh3_geometry)
                         write_json(trial_dir / "fresh3_recheck.json", {"result": fresh3, "frames": fresh3_frames})
 
                         fresh3_guard_distance = execution_hard_guard_distance(processor, denoiser, args)
@@ -5384,6 +5428,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 processor=processor,
                                 state_reader=state_reader,
                                 denoiser=denoiser,
+                                persistent_worker=persistent_worker,
                                 execution_summary=first_execution_summary,
                                 local1_interrupted=early_monitor_stop,
                                 local_artifacts=local_artifacts,
