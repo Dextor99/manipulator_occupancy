@@ -16,9 +16,19 @@ def tabletop_parallel_lateral_direction(
     """Return a horizontal lateral direction, orthogonal to task motion."""
     task = normalized(np.asarray(task_direction, dtype=np.float64))
     preferred = np.asarray(preferred_direction, dtype=np.float64)
-    horizontal = preferred - TABLE_UP * float(np.dot(TABLE_UP, preferred))
-    horizontal -= task * float(np.dot(task, horizontal))
-    return normalized(horizontal)
+    task_horizontal = task - TABLE_UP * float(np.dot(TABLE_UP, task))
+    if np.linalg.norm(task_horizontal) <= 1.0e-9:
+        raise ValueError("cannot construct tabletop-parallel lateral direction for vertical task")
+    task_horizontal = normalized(task_horizontal)
+    preferred_horizontal = preferred - TABLE_UP * float(np.dot(TABLE_UP, preferred))
+    lateral = preferred_horizontal - task_horizontal * float(np.dot(task_horizontal, preferred_horizontal))
+    if np.linalg.norm(lateral) <= 1.0e-9:
+        lateral = np.cross(TABLE_UP, task_horizontal)
+        if np.linalg.norm(preferred_horizontal) > 1.0e-9 and float(np.dot(lateral, preferred_horizontal)) < 0.0:
+            lateral = -lateral
+    side = normalized(lateral)
+    side[2] = 0.0
+    return normalized(side)
 
 
 def normalized(values: np.ndarray, *, fallback: np.ndarray | None = None) -> np.ndarray:

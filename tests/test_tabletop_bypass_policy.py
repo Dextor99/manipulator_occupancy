@@ -27,6 +27,14 @@ def test_tabletop_parallel_side_is_horizontal_and_lateral():
     assert side[0] < 0.0
 
 
+def test_tabletop_parallel_side_is_strictly_horizontal_for_tilted_task():
+    side = bypass.tabletop_parallel_lateral_direction(
+        np.array([-0.0012, -0.999996, -0.0024]),
+        np.array([-0.15, 0.01, -0.06]),
+    )
+    assert abs(float(side[2])) < 1.0e-12
+
+
 def test_tabletop_gate_filters_unsafe_fast_seed():
     rows = [
         {"candidate": 1, "tabletop_feasible": False, "coarse_min_distance_m": 0.20,

@@ -63,6 +63,7 @@ SCENE_PROTOCOL = {
         "preserve_tcp_height_linearized": True,
         "coarse_seed_tabletop_gate": True,
         "fast_output_tabletop_gate": True,
+        "terminal_goal_tabletop_gate": True,
         "final_authorization_guard_remains_independent": True,
     },
     "terminal_recovery_policy": {

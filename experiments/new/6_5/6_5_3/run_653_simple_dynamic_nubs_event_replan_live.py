@@ -909,6 +909,9 @@ def authorize_terminal_goal(
     selected = None
     for duration in durations:
         trajectory = make_terminal_trajectory(q_now, q_goal, duration)
+        tabletop_guard = trial.gripper_base_workspace_guard(
+            trajectory, model, min_z_m=float(getattr(args, "gripper_base_min_z_m", 0.46))
+        )
         verification = verifier.verify(
             trajectory,
             forecast,
@@ -918,16 +921,24 @@ def authorize_terminal_goal(
             q_goal=q_goal,
             solver_success=True,
         )
+        tabletop_ok = bool(tabletop_guard["passed"])
+        authorized = bool(verification.accepted and tabletop_ok)
+        checks = dict(verification.checks)
+        checks["tabletop_ok"] = tabletop_ok
+        reasons = list(verification.reasons)
+        if not tabletop_ok:
+            reasons.append("gripper_base_below_tabletop_guard")
         row = {
             "duration_s": float(duration),
-            "accepted": bool(verification.accepted),
+            "accepted": authorized,
             "min_distance_m": float(verification.min_distance),
-            "checks": verification.checks,
-            "reasons": verification.reasons,
+            "checks": checks,
+            "reasons": reasons,
+            "tabletop_workspace_guard": tabletop_guard,
             "verification_ms": float(verification.validation_ms),
         }
         attempts.append(row)
-        if verification.accepted:
+        if authorized:
             selected = trajectory
             break
     csv_path = output_dir / "authorized_terminal_goal.csv"
