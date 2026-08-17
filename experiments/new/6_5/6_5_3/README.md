@@ -121,8 +121,8 @@ all STRO/Fast triggers:
 /home/hzy/miniconda3/envs/py310/bin/python experiments/new/6_5/6_5_3/run_653_dynamic_repair_trial.py \
   --scene D1 --repeat 1 --mode moving-shadow-stop --reference-audit-only \
   --operator-phrase CCRO_653_DYNAMIC_SHADOW_APPROVED \
-  --reference-feedback-csv results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv \
-  --x-offset 0.10 --y-start 0.40 --y-goal -0.40 \
+  --reference-feedback-csv results/new/6_5/6_5_3/reference_xp00_line/reference_feedback.csv \
+  --x-offset 0.0 --y-start 0.40 --y-goal -0.40 \
   --line-velocity-m-s 0.020 --line-acc-m-s2 0.05 --duration-s 45 \
   --output results/new/6_5/6_5_3/reference_alignment_validation
 ```
@@ -200,18 +200,29 @@ Real low-speed reference recording:
   --x-offset 0.0 \
   --y-start 0.4 \
   --y-goal -0.4 \
-  --line-velocity-m-s 0.025 \
-  --line-acc-m-s2 0.06 \
-  --record-duration-s 40 \
+  --line-velocity-m-s 0.020 \
+  --line-acc-m-s2 0.05 \
+  --record-duration-s 45 \
   --output results/new/6_5/6_5_3/reference_xp00_line
 ```
 
 ## 2. D1/D2 Shadow Trial
 
-The final representative D2 tabletop demonstration uses the explicit audit
-label `D2_TABLETOP_XP10_FINAL`, the recorded `reference_xp10_line`, and
-`--x-offset 0.10`.  The label is written to `summary.json` together with
-`reference_x_offset_m`; it does not change planning or control behavior.
+The final representative D2 end-effector demonstration uses the explicit
+audit label `D2_END_EFFECTOR_OPPOSING_XP00`, the recorded
+`reference_xp00_line`, and `--x-offset 0.0`.  The obstacle is placed on a
+fixed physical lane approximately 0.13--0.16 m laterally from the TCP lane
+(nominally `X_obs ~= 0.64 m` for the home-TCP line); this is a scene setup
+quantity, not the robot reference `--x-offset`.  The label and reference
+offset are written to `summary.json`; they do not change planning or control
+behavior.
+
+For the final one-segment real execution, use
+`run_653_simple_dynamic_nubs_live.py`.  It keeps the whole-body CCRO risk
+link selection, generates bounded 0.04/0.06/0.08 m lateral seeds, invokes the
+unchanged Fast verifier, executes at most one authorized 1 s local segment,
+and then holds at the measured local tail.  It does not force an EEF-only
+risk link, automatically rejoin the reference, or continue to the goal.
 
 `live-stop-replan-execute` uses a bounded stopped-state rolling phase after
 the strict initial Fresh observation.  If Fast fails, or a later Fresh update

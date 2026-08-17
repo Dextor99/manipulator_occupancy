@@ -31,7 +31,7 @@ trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repai
 simple = importlib.import_module("experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_avoidance")
 bypass = importlib.import_module("experiments.new.6_5.6_5_3.simple_bypass_planner")
 
-DEFAULT_REFERENCE = ROOT / "results/new/6_5/6_5_3/reference_xp10_line/reference_feedback.csv"
+DEFAULT_REFERENCE = ROOT / "results/new/6_5/6_5_3/reference_xp00_line/reference_feedback.csv"
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_live"
 REFERENCE_OPERATOR_PHRASE = trial.REQUIRED_OPERATOR_PHRASE
 LOCAL_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_LOCAL_EXECUTE_APPROVED"
@@ -43,10 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeat", type=int, required=True)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--reference-feedback-csv", type=Path, default=DEFAULT_REFERENCE)
-    parser.add_argument("--task-geometry-id", default="D2_SIMPLE_DYNAMIC_NUBS_LIVE_XP10")
+    parser.add_argument("--task-geometry-id", default="D2_END_EFFECTOR_OPPOSING_XP00")
     parser.add_argument("--reference-operator-phrase", default="")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--operator-phrase", default="")
+    parser.add_argument("--x-offset", type=float, default=0.0)
     parser.add_argument("--duration-s", type=float, default=18.0)
     parser.add_argument("--forward-m", type=float, default=0.05)
     parser.add_argument("--side-lengths-m", default="0.04,0.06,0.08")
@@ -449,7 +450,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "--operator-phrase", REFERENCE_OPERATOR_PHRASE,
                 "--output", str(core_output),
                 "--duration-s", str(args.duration_s),
-                "--x-offset", "0.10",
+                "--x-offset", str(args.x_offset),
                 "--y-start", "0.40",
                 "--y-goal", "-0.40",
                 "--line-velocity-m-s", "0.020",

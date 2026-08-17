@@ -1917,6 +1917,11 @@ def test_simple_live_parser_forbids_external_candidate_input():
     assert "source_trial" not in destinations
     assert "execute" in destinations
     assert simple_live.LOCAL_EXECUTE_PHRASE == "CCRO_653_SIMPLE_DYNAMIC_LOCAL_EXECUTE_APPROVED"
+    args = parser.parse_args(["--repeat", "1"])
+    assert args.x_offset == pytest.approx(0.0)
+    assert args.task_geometry_id == "D2_END_EFFECTOR_OPPOSING_XP00"
+    assert simple_live.DEFAULT_REFERENCE.name == "reference_feedback.csv"
+    assert "reference_xp00_line" in str(simple_live.DEFAULT_REFERENCE)
 
 
 def test_simple_live_requires_both_reference_and_candidate_phrases():
