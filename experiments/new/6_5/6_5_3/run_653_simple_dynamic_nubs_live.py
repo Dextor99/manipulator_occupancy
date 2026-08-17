@@ -463,10 +463,20 @@ def apply_tabletop_height_shape_policy(
         "reasons": verification.reasons,
     }
     if seed_guard.get("passed") and verification.accepted and float(verification.min_distance) >= float(getattr(runtime_args, "online_accept_m", 0.09)):
+        result["fast_optimizer_candidate_source"] = result.get("candidate_source")
+        result["fast_optimizer_candidate_online_min_distance_m"] = result.get("candidate_online_min_distance_m")
+        result["fast_optimizer_candidate_csv"] = result.get("candidate_csv")
         artifacts_out["candidate_trajectory"] = seed
+        artifacts_out["local_tail_state"] = getattr(seed, "tail_state", None)
         fallback_csv = Path(trial_dir) / "candidate" / "height_preserving_seed_fallback.csv"
         fallback_csv.parent.mkdir(parents=True, exist_ok=True)
         trial.save_trajectory_csv(fallback_csv, seed, dt=0.01)
+        result["candidate_source"] = "VERIFIED_TABLETOP_BYPASS_SEED"
+        result["verification_min_distance_m"] = float(verification.min_distance)
+        result["candidate_online_min_distance_m"] = float(verification.min_distance)
+        result["verification_checks"] = verification.checks
+        result["verification_reasons"] = verification.reasons
+        result["candidate_csv"] = str(fallback_csv)
         result["height_preserving_seed_fallback"] = True
         result["selected_execution_candidate_source"] = "VERIFIED_TABLETOP_BYPASS_SEED"
         result["selected_execution_candidate_csv"] = str(fallback_csv)

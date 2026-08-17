@@ -102,3 +102,5 @@ def test_fast_height_shape_policy_falls_back_to_verified_seed(monkeypatch, tmp_p
     )
     assert result["height_preserving_seed_fallback"] is True
     assert result["selected_execution_candidate_source"] == "VERIFIED_TABLETOP_BYPASS_SEED"
+    assert result["candidate_source"] == "VERIFIED_TABLETOP_BYPASS_SEED"
+    assert result["fast_optimizer_candidate_source"] is None
