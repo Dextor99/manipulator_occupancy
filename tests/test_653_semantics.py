@@ -2770,8 +2770,30 @@ def test_monitor_stop_classification_is_fail_closed(reason, expected):
     assert info["rolling_replan_stop"] is expected
 
 
+def test_command_time_revalidation_statuses_classify_as_replan_or_hold():
+    replan = event_replan.classify_monitor_stop(
+        {"status": event_replan.COMMAND_TIME_REPLAN_STATUS}
+    )
+    hold = event_replan.classify_monitor_stop(
+        {"status": event_replan.COMMAND_TIME_HOLD_STATUS}
+    )
+    assert replan["rolling_replan_stop"] is True
+    assert replan["precommand_replan"] is True
+    assert hold["rolling_replan_stop"] is False
+    assert hold["precommand_replan"] is False
+
+
 def test_monitor_uses_supplied_terminal_trajectory():
     sentinel = object()
     assert event_replan.resolve_monitor_trajectory(
         {"trajectory": sentinel, "authorized_csv": "/not/read.csv"}
     ) is sentinel
+
+
+def test_command_time_and_first_local_fallback_hooks_are_present():
+    event_source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    handler_source = inspect.getsource(event_replan.make_event_handler)
+    trial_source = inspect.getsource(trial.execute_authorized_trajectory_offline_track)
+    assert "command_time_revalidate" in event_source
+    assert "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED" in trial_source
+    assert "allow_unestablished_side_fallback" in handler_source

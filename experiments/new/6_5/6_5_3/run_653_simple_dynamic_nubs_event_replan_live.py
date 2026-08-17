@@ -41,6 +41,8 @@ ROLLING_REPLAN_MONITOR_REASONS = {
     "remaining_predicted_risk",
     "current_distance_stop",
 }
+COMMAND_TIME_REPLAN_STATUS = "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
+COMMAND_TIME_HOLD_STATUS = "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND"
 
 
 def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
@@ -48,23 +50,33 @@ def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
     execution_status = execution.get("status")
     goal_check = execution.get("goal_check") or {}
     motion_monitor = goal_check.get("motion_monitor") or {}
-    reason = motion_monitor.get("reason", goal_check.get("monitor_stop_reason"))
+    command_time = execution.get("command_time_revalidation") or {}
+    reason = motion_monitor.get(
+        "reason", command_time.get("reason", goal_check.get("monitor_stop_reason"))
+    )
     monitor_stopped = bool(
         execution_status == "STOPPED_BY_MOTION_MONITOR"
         and goal_check.get("monitor_stopped", False)
     )
+    command_time_replan = execution_status == COMMAND_TIME_REPLAN_STATUS
+    monitor_stopped = bool(monitor_stopped or command_time_replan)
     rolling_replan_stop = bool(
-        monitor_stopped
-        and isinstance(reason, str)
-        and reason in ROLLING_REPLAN_MONITOR_REASONS
+        command_time_replan
+        or (
+            monitor_stopped
+            and isinstance(reason, str)
+            and reason in ROLLING_REPLAN_MONITOR_REASONS
+        )
     )
     return {
         "execution_status": execution_status,
         "monitor_stopped": monitor_stopped,
         "rolling_replan_stop": rolling_replan_stop,
+        "precommand_replan": command_time_replan,
         "reason": reason,
         "replan_requested": bool(
-            motion_monitor.get("replan_requested", goal_check.get("replan_requested", False))
+            command_time_replan
+            or motion_monitor.get("replan_requested", goal_check.get("replan_requested", False))
         ),
     }
 
@@ -87,7 +99,7 @@ def make_mid_execution_monitor(**context: Any):
     """
     trajectory = resolve_monitor_trajectory(context)
     worker = context.get("worker")
-    evaluator, _, _ = trial.make_risk_stack(
+    evaluator, verifier, _ = trial.make_risk_stack(
         context["stage4_config"], context["stage4_model"], None
     )
     args = context["args"]
@@ -196,10 +208,52 @@ def make_mid_execution_monitor(**context: Any):
             "state_seq": int(snapshot.get("state_seq", -1)),
         }
 
+    def command_time_revalidate(*, actual_q: np.ndarray) -> dict[str, Any]:
+        """Final no-wait candidate check immediately before waypoint command."""
+        if worker is None:
+            return {"ready": False, "action": "hold", "reason": "persistent_tracker_unavailable"}
+        snapshot = worker.snapshot()
+        aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+        reasons = v3._persistent_state_reasons(
+            snapshot, aligned, args, raw_guard_reason="raw_hard_guard_not_safe"
+        )
+        raw_guard = float(snapshot.get("raw_guard_distance_m", float("-inf")))
+        state_seq = int(v3._state_seq(snapshot))
+        if reasons or raw_guard <= float(args.guided_hard_stop_m):
+            return {
+                "ready": False, "action": "hold",
+                "reason": reasons or "raw_hard_guard_not_safe",
+                "state_seq": state_seq, "raw_guard_distance_m": raw_guard,
+            }
+        q_actual = np.asarray(actual_q, dtype=np.float64)
+        start_error = trial.joint_error(q_actual, np.asarray(trajectory.evaluate(0.0), dtype=np.float64))
+        if start_error["max_abs_rad"] > float(args.candidate_start_tolerance_rad):
+            return {"ready": False, "action": "replan", "reason": "command_time_start_mismatch", "state_seq": state_seq, "start_error": start_error, "raw_guard_distance_m": raw_guard}
+        forecast = v3.v3_execution_multisphere_forecast(
+            np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(snapshot["velocity"], dtype=np.float64),
+        )
+        current = evaluator.configuration(q_actual, forecast, 0.0, density="medium", with_gradient=False)
+        if current.min_distance <= float(args.moving_shadow_current_stop_m):
+            return {"ready": False, "action": "replan", "reason": "current_distance_stop", "state_seq": state_seq, "current_distance_m": float(current.min_distance), "raw_guard_distance_m": raw_guard, "start_error": start_error}
+        q_goal = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
+        verification = verifier.verify(trajectory, forecast, current_q=q_actual, current_qd=np.zeros(6), current_qdd=np.zeros(6), q_goal=q_goal, solver_success=True)
+        failures = [key for key, passed in verification.checks.items() if key != "distance_ok" and not bool(passed)]
+        if failures:
+            return {"ready": False, "action": "hold", "reason": "command_time_verification_failed", "failed_checks": failures, "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard}
+        if not verification.accepted or float(verification.min_distance) < float(args.online_accept_m):
+            return {"ready": False, "action": "replan", "reason": "command_time_candidate_clearance_failed", "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard}
+        remaining = v3._remaining_clearance(evaluator, trajectory, forecast, playback_time_s=0.0)
+        if float(remaining["min_distance_m"]) < float(args.rolling_replan_m):
+            return {"ready": False, "action": "replan", "reason": "remaining_predicted_risk", "state_seq": state_seq, "current_distance_m": float(current.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "raw_guard_distance_m": raw_guard}
+        return {"ready": True, "action": "execute", "reason": "command_time_candidate_valid", "state_seq": state_seq, "current_distance_m": float(current.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "raw_guard_distance_m": raw_guard}
+
     # ``execute_authorized_trajectory_offline_track`` uses this explicit
     # barrier before sending any waypoint command.  Keep the normal callback
     # fail-closed as well for failures that occur after motion has started.
     monitor.prearm = prearm
+    monitor.command_time_revalidate = command_time_revalidate
     return monitor
 
 
@@ -588,6 +642,7 @@ def plan_goal_directed_continuation(
     max_joint_delta_rad: float,
     tcp_link: str,
     robust_target_is_diagnostic: bool = False,
+    allow_unestablished_side_fallback: bool = False,
 ) -> dict[str, Any]:
     """Select strong/weak/release goal progress, then invoke unchanged Fast."""
     forecast = v3.v3_execution_multisphere_forecast(
@@ -613,9 +668,36 @@ def plan_goal_directed_continuation(
             "accepted_for_switch": False,
             "rejection_reasons": ["missing_ccro_surface_points"],
         }
-    side, side_audit = established_bypass_side(
-        model, q_escape_start, q_now, q_final, tcp_link=tcp_link
-    )
+    try:
+        side, side_audit = established_bypass_side(
+            model, q_escape_start, q_now, q_final, tcp_link=tcp_link
+        )
+    except RuntimeError:
+        if not allow_unestablished_side_fallback:
+            raise
+        tcp_now_fallback = live.simple.tcp_position(model, np.asarray(q_now), tcp_link)
+        tcp_final_fallback = live.simple.tcp_position(model, np.asarray(q_final), tcp_link)
+        task_fallback = bypass.normalized(tcp_final_fallback - tcp_now_fallback)
+        away = np.asarray(risk.robot_point, dtype=np.float64) - np.asarray(risk.obstacle_point, dtype=np.float64)
+        lateral = away - task_fallback * float(np.dot(task_fallback, away))
+        if np.linalg.norm(lateral) <= 1.0e-6:
+            return {
+                "status": "REJECTED_UNESTABLISHED_BYPASS_SIDE",
+                "local_repair_status": "REJECTED_UNESTABLISHED_BYPASS_SIDE",
+                "local_repair_ready": False,
+                "accepted_for_switch": False,
+                "rejection_reasons": ["cannot_construct_lateral_escape_side"],
+            }
+        side = bypass.normalized(lateral)
+        side_audit = {
+            "tcp_escape_start_m": tcp_now_fallback.tolist(),
+            "tcp_now_m": tcp_now_fallback.tolist(),
+            "tcp_final_m": tcp_final_fallback.tolist(),
+            "executed_tcp_delta_m": [0.0, 0.0, 0.0],
+            "lateral_executed_delta_m": [0.0, 0.0, 0.0],
+            "established_bypass_side": side.tolist(),
+            "semantic": "risk_away_fallback_before_first_local_motion",
+        }
     tcp_now = live.simple.tcp_position(model, np.asarray(q_now), tcp_link)
     tcp_final = live.simple.tcp_position(model, np.asarray(q_final), tcp_link)
     goals, direction = bypass.goal_directed_side_continuation_candidates(
@@ -883,6 +965,11 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 max_joint_delta_rad=float(event_args.max_joint_delta_rad),
                 tcp_link=event_args.tcp_link,
                 robust_target_is_diagnostic=True,
+                allow_unestablished_side_fallback=bool(
+                    (context.get("execution_summary") or {}).get("status")
+                    == COMMAND_TIME_REPLAN_STATUS
+                    and not (context.get("execution_summary") or {}).get("robot_commanded", False)
+                ),
             )
             result["local2_candidate"] = candidate
             result[f"local_{local_index}_candidate"] = candidate
@@ -1165,6 +1252,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     live_args = copy.copy(args)
     live_args.operator_phrase = live.LOCAL_EXECUTE_PHRASE if args.execute else ""
+    # Post-STOP static settling has already been audited by the core.  The
+    # command-time revalidation immediately before waypoint submission is the
+    # final freshness barrier for a moving obstacle.
+    live_args.candidate_pre_execute_settle_s = 0.0
     old_handler = trial.POST_LOCAL_FRESH3_HANDLER
     old_worker_factory = trial.PERSISTENT_OBSTACLE_WORKER_FACTORY
     old_mid_monitor = trial.MID_EXECUTION_MONITOR_FACTORY

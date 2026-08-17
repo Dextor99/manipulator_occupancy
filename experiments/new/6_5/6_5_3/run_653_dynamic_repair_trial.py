@@ -1848,6 +1848,24 @@ def execute_authorized_trajectory_offline_track(
             log["motion_monitor_stop_reason"] = prearm_result.get("reason")
             return log
 
+    command_validator = getattr(motion_monitor_provider, "command_time_revalidate", None)
+    if callable(command_validator):
+        command_q = np.asarray(robot.get_joint(), dtype=np.float64)
+        command_validation = command_validator(actual_q=command_q)
+        log["command_time_actual_start_joint_rad"] = command_q.tolist()
+        log["command_time_revalidation"] = command_validation
+        if not bool(command_validation.get("ready", False)):
+            action = command_validation.get("action", "hold")
+            log["motion_monitor_stop_reason"] = command_validation.get("reason")
+            log["replan_requested"] = bool(action == "replan")
+            log["status"] = (
+                "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
+                if action == "replan"
+                else "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND"
+            )
+            log["robot_commanded"] = False
+            return log
+
     started = time.perf_counter()
     ret_info = robot.offline_track_execute_joints(
         qs_exec.tolist(),
@@ -5328,9 +5346,26 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             )
                             full_execution_summary = first_execution_summary
                             break
+                        if first_execution_summary["status"] == "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND":
+                            log["events"].append(
+                                {
+                                    "type": "LOCAL_EXECUTION_COMMAND_TIME_HOLD",
+                                    "execution_path": execution_path,
+                                    "execution": first_execution_summary,
+                                }
+                            )
+                            full_execution_summary = first_execution_summary
+                            break
+                        precommand_replan = bool(
+                            first_execution_summary.get("status")
+                            == "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
+                        )
                         early_monitor_stop = bool(
-                            first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
-                            and first_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
+                            precommand_replan
+                            or (
+                                first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
+                                and first_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
+                            )
                         )
                         if (
                             first_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
@@ -5341,13 +5376,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 f"{first_execution_summary.get('timing_check')}"
                             )
                         full_execution_summary = first_execution_summary
+                        first_event_type = (
+                            "LOCAL_EXECUTION_COMMAND_TIME_REPLAN_REQUIRED"
+                            if precommand_replan
+                            else (
+                                "LIVE_REPAIR_REJOIN_EXECUTED"
+                                if execution_path == "FULL_FIRST"
+                                else "LIVE_LOCAL_REPAIR_EXECUTED_HOLD"
+                            )
+                        )
                         log["events"].append(
                             {
-                                "type": (
-                                    "LIVE_REPAIR_REJOIN_EXECUTED"
-                                    if execution_path == "FULL_FIRST"
-                                    else "LIVE_LOCAL_REPAIR_EXECUTED_HOLD"
-                                ),
+                                "type": first_event_type,
                                 "execution_path": execution_path,
                                 "execution": first_execution_summary,
                             }
