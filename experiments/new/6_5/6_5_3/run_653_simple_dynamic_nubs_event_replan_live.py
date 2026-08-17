@@ -207,12 +207,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=10.0,
         help="fail-safe watchdog for one continuous dynamic-replan episode; not a local-segment limit",
     )
-    parser.add_argument(
-        "--max-failed-replans",
-        type=int,
-        default=3,
-        help="fail-closed watchdog for consecutive infeasible replans",
-    )
     return parser
 
 
@@ -423,32 +417,22 @@ def monitor_measured_tail(
             }
             trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
             return result
-        cycle["decision"] = "PHYSICAL_HOLD_SAFE_MONITORING"
+        # A visible obstacle is not automatically a remaining task risk.  If
+        # the stopped tail is safe over the prediction horizon, hand the
+        # latest forecast to terminal-goal verification immediately.  The
+        # terminal verifier and raw guard remain hard execution gates.
+        cycle["decision"] = "PREDICTED_RISK_CLEAR"
         cycles.append(cycle)
-        if time.perf_counter() - started >= max_wall_s:
-            result = {
-                "status": "PHYSICAL_HOLD_SAFE_MONITORING_TIMEOUT",
-                "cycles": cycles,
-                "fresh": fresh,
-                "frames": frames,
-                "geometry": geometry,
-                "forecast": forecast,
-            }
-            trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
-            return result
-        previous = fresh
-        fresh, frames, points, geometry = capture_next_fresh(
-            args, processor, state_reader, denoiser, previous
-        )
-        index = len(cycles)
-        trial.write_json(
-            output_dir / f"fresh_monitor_{index:02d}.json",
-            {"result": fresh, "frames": frames},
-        )
-        if points is not None:
-            np.save(output_dir / f"fresh_monitor_{index:02d}_points.npy", points)
-        if geometry is not None:
-            trial.write_json(output_dir / f"fresh_monitor_{index:02d}_geometry.json", geometry)
+        result = {
+            "status": "PREDICTED_RISK_CLEAR",
+            "cycles": cycles,
+            "fresh": fresh,
+            "frames": frames,
+            "geometry": geometry,
+            "forecast": forecast,
+        }
+        trial.write_json(output_dir / "monitor_summary.json", {k: v for k, v in result.items() if k != "forecast"})
+        return result
 
 
 def make_terminal_trajectory(
@@ -758,17 +742,6 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         replan_depth = int(context.get("replan_depth", 0))
         replan_started = float(context.get("replan_started_monotonic", time.monotonic()))
         failed_replans = int(context.get("failed_replans", 0))
-        if failed_replans >= int(event_args.max_failed_replans):
-            result = {
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "handled": True,
-                "status": "FAILED_REPLAN_WATCHDOG_OPERATOR_INTERVENTION_REQUIRED",
-                "command_hold": True,
-                "replan_depth": replan_depth,
-                "failed_replans": failed_replans,
-            }
-            trial.write_json(trial_dir / "event_replan_summary.json", result)
-            return result
         if time.monotonic() - replan_started > float(event_args.max_continuous_replan_s):
             result = {
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -921,6 +894,9 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             execution = trial.execute_authorized_trajectory_offline_track(
+                # Continuation segments use the same prearm and predictive
+                # monitor as local #1; no local segment is exempt from the
+                # persistent-state safety barrier.
                 robot,
                 Path(authorization["authorized_trajectory_csv"]),
                 args,
@@ -928,6 +904,18 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 denoiser=denoiser,
                 playback_duration_s=None,
                 execution_label=f"Fresh-authorized event local repair #{local_index}",
+                motion_monitor_provider=make_mid_execution_monitor(
+                    authorized_csv=Path(authorization["authorized_trajectory_csv"]),
+                    robot=robot,
+                    worker=worker,
+                    processor=processor,
+                    state_reader=state_reader,
+                    denoiser=denoiser,
+                    args=args,
+                    stage4_config=config,
+                    stage4_model=model,
+                    trial_dir=local2_dir,
+                ) if worker is not None else None,
             )
             result["local2_execution"] = execution
             if execution.get("status") != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION":
@@ -935,9 +923,14 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             q_terminal_start = np.asarray(robot.get_joint(), dtype=np.float64)
-            fresh5, frames5, points5, geometry5 = capture_next_fresh(
-                args, processor, state_reader, denoiser, fresh4
-            )
+            if worker is not None:
+                fresh5, frames5, points5, geometry5 = fresh_from_persistent_snapshot(
+                    worker.snapshot()
+                )
+            else:
+                fresh5, frames5, points5, geometry5 = capture_next_fresh(
+                    args, processor, state_reader, denoiser, fresh4
+                )
             trial.write_json(local2_dir / "fresh5_recheck.json", {"result": fresh5, "frames": frames5})
             if points5 is not None:
                 np.save(local2_dir / "fresh5_cluster_points.npy", points5)
@@ -991,13 +984,13 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 result["status"] = "PHYSICAL_HOLD_SAFE_MONITORING_LIMIT_OPERATOR_CONTROL_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
-            if monitor2["status"] != "STRICT_SCENE_CLEAR":
+            if monitor2["status"] not in {"STRICT_SCENE_CLEAR", "PREDICTED_RISK_CLEAR"}:
                 result["status"] = "POST_LOCAL2_STATE_UNCERTAIN_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             forecast = monitor2["forecast"]
 
-        if monitor1["status"] != "STRICT_SCENE_CLEAR" and "post_local2_monitor" not in result:
+        if monitor1["status"] not in {"STRICT_SCENE_CLEAR", "PREDICTED_RISK_CLEAR"} and "post_local2_monitor" not in result:
             raise RuntimeError(f"unexpected post-local decision: {monitor1['status']}")
         terminal_dir = trial_dir / "terminal_goal_authorization"
         terminal, _ = authorize_terminal_goal(

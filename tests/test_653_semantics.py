@@ -33,6 +33,9 @@ hold_resume = importlib.import_module(
     "experiments.new.6_5.6_5_3.resume_653_from_hold"
 )
 d2_sweep = importlib.import_module("experiments.new.6_5.6_5_3.offline_d2_geometry_sweep")
+event_replan = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_event_replan_live"
+)
 rolling_replay = importlib.import_module(
     "experiments.new.6_5.6_5_3.offline_rolling_local_replay"
 )
@@ -2725,3 +2728,19 @@ def test_frame_csv_schema_contains_scene_roi_audit_fields():
         "table_plane_valid",
     }
     assert required <= set(trial.FRAME_FIELDS)
+
+
+def test_event_replan_has_watchdog_without_fixed_local_count():
+    args = event_replan.build_parser().parse_args(["--repeat", "1"])
+    assert args.max_continuous_replan_s == pytest.approx(10.0)
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "max_local_executions" not in source
+    assert "replan_depth + 1" in source
+    assert "REPLAN_REQUIRED" in source
+
+
+def test_event_replan_continuation_uses_predictive_monitor_and_latest_state():
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "motion_monitor_provider=make_mid_execution_monitor" in source
+    assert "fresh_from_persistent_snapshot" in source
+    assert "PREDICTED_RISK_CLEAR" in inspect.getsource(event_replan.monitor_measured_tail)
