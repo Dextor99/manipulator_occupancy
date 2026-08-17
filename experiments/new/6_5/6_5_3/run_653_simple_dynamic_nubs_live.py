@@ -481,6 +481,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             max_joint_delta_rad=float(args.max_joint_delta_rad),
             robust_target_m=float(args.planning_robust_target_m),
             tcp_link=args.tcp_link,
+            # 0.11 m remains the preferred robust seed target, but the
+            # unchanged Fast/online verifier must get a chance to repair a
+            # lower-clearance seed (r03 best seed was 0.0817 m).
+            coarse_gate_is_hard=False,
         )
         trial.select_dynamic_execution_path = lambda **kwargs: (
             "LOCAL_FIRST_DELAYED_REJOIN" if kwargs.get("local_authorized") else None
