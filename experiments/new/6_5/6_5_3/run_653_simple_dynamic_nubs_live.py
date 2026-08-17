@@ -468,6 +468,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     "--allow-live-candidate-execution",
                     "--live-execute-candidate-phrase",
                     trial.LIVE_CANDIDATE_EXECUTE_PHRASE,
+                    # The experiment-level confirmation has already happened
+                    # before reference motion.  Do not pause after Fresh/Fast:
+                    # the obstacle must be evaluated and commanded without a
+                    # human-induced stale-state delay.  The executor still
+                    # enforces all software, raw-guard, and tracker gates.
+                    "--no-candidate-execute-confirm",
                 ]
                 if args.execute
                 else []

@@ -171,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.description = __doc__
     parser.set_defaults(
         output=DEFAULT_OUTPUT,
-        task_geometry_id="D2_SIMPLE_DYNAMIC_NUBS_EVENT_REPLAN_LIVE_XP10",
+        task_geometry_id="D2_SIMPLE_DYNAMIC_NUBS_EVENT_REPLAN_LIVE_XP00",
     )
     parser.add_argument(
         "--terminal-durations-s",
