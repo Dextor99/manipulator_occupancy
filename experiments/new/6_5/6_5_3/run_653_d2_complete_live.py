@@ -32,7 +32,7 @@ trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repai
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_complete_live"
 SCENE_PHRASE = "CCRO_653_D2_COMPLETE_V2_FIXED_X_OPPOSING_CONFIRMED"
 SCENE_PROTOCOL = {
-    "scene_id": "D2_COMPLETE_V2_OPPOSING_FIXED_X_XP10",
+    "scene_id": "D2_COMPLETE_V2_OPPOSING_FIXED_X_XP00",
     "classification": "opposing_approach",
     "robot_task_direction": "approximately base -Y",
     "obstacle_nominal_direction_unit_base": [0.0, 1.0, 0.0],
