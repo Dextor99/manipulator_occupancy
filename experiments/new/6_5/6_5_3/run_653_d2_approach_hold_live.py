@@ -34,7 +34,9 @@ SCENE_ID = "D2_APPROACH_HOLD_V1_FIXED_X_XP00"
 
 # Calibrate in a non-execute shadow first.  Formal execution is blocked until
 # this value is frozen and committed.
-HOLD_STOP_LINE_Y_M: float | None = None
+# Calibrated from D2-AH shadow r02 (observed center Y=-0.145657 m).
+# The physical tape/stop mark must be placed at this value for formal runs.
+HOLD_STOP_LINE_Y_M: float | None = -0.146
 HOLD_LINE_TOLERANCE_M = 0.03
 HOLD_SPEED_THRESHOLD_M_S = 0.04
 HOLD_CONFIRM_FRAMES = 3

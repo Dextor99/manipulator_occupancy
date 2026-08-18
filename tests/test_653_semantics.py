@@ -2970,8 +2970,13 @@ def test_d2_approach_hold_execute_requires_calibrated_stop_line():
         "--scene-operator-phrase", d2_approach_hold.SCENE_PHRASE,
         "--execute",
     ])
-    with pytest.raises(RuntimeError, match="calibrate and freeze"):
-        d2_approach_hold.validate_frozen_request(args)
+    original = d2_approach_hold.HOLD_STOP_LINE_Y_M
+    d2_approach_hold.HOLD_STOP_LINE_Y_M = None
+    try:
+        with pytest.raises(RuntimeError, match="calibrate and freeze"):
+            d2_approach_hold.validate_frozen_request(args)
+    finally:
+        d2_approach_hold.HOLD_STOP_LINE_Y_M = original
 
 
 def test_command_time_revalidation_uses_strict_start_sync_threshold():
