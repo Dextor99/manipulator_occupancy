@@ -36,7 +36,9 @@ SCENE_ID = "D2_APPROACH_HOLD_V1_FIXED_X_XP00"
 # this value is frozen and committed.
 # Calibrated from D2-AH shadow r02 (observed center Y=-0.145657 m).
 # The physical tape/stop mark must be placed at this value for formal runs.
-HOLD_STOP_LINE_Y_M: float | None = -0.146
+# Offline r10 geometry scan: +0.020 m from the previous line gives the
+# preset goal ~0.1056 m dense clearance while retaining a blocked approach.
+HOLD_STOP_LINE_Y_M: float | None = -0.126
 HOLD_LINE_TOLERANCE_M = 0.03
 HOLD_SPEED_THRESHOLD_M_S = 0.04
 HOLD_CONFIRM_FRAMES = 3

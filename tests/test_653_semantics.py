@@ -3004,7 +3004,7 @@ def test_stationary_terminal_uses_full_ccro_optimizer_hooks():
     assert "StaticObstacleField.from_points" in source
     assert "verifier.verify" in source
     handler_source = inspect.getsource(event_replan.make_event_handler)
-    assert 'context.get("fresh3_geometry")' in handler_source
+    assert 'monitor1.get("geometry")' in handler_source
     assert 'use_stationary_full_plan=bool(getattr(event_args' in handler_source
     wrapper_source = inspect.getsource(simple_live.copy_wrapper_runtime_parameters)
     assert '("stationary_terminal_full_plan", False)' in wrapper_source
@@ -3032,6 +3032,21 @@ def test_stationary_terminal_route_families_and_replay_geometry_are_explicit():
     assert '"--geometry-json"' in replay_source
     assert '"--use-local1-tail"' in replay_source
     assert 'event_local_05' not in replay_source
+
+
+def test_stationary_hold_requires_three_frame_confirmation_and_tail_geometry():
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "wait_for_confirmed_stationary_snapshot" in source
+    assert "monitor1.get(\"geometry\")" in source
+    helper = inspect.getsource(event_replan.wait_for_confirmed_stationary_snapshot)
+    assert "required_frames: int = 3" in helper
+    assert "speed_threshold_m_s: float = 0.04" in helper
+
+
+def test_stationary_planner_rejects_infeasible_preset_goal_early():
+    source = inspect.getsource(stationary_terminal_ccro.plan_stationary_terminal_ccro)
+    assert "preset_goal_below_clearance_contract" in source
+    assert 'density="dense"' in source
 
 
 def test_d2_approach_hold_execute_requires_calibrated_stop_line():

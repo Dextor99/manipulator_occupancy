@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import importlib
 import json
 from pathlib import Path
 import numpy as np
 
 from experiments.exp_ccro_stage2 import _load
+
+
+def _translated_geometry(geometry: dict, dy_m: float) -> dict:
+    g = copy.deepcopy(geometry)
+    centers = np.asarray(g["component_centers"], dtype=float)
+    centers[:, 1] += float(dy_m)
+    g["component_centers"] = centers.tolist()
+    return g
 
 
 def main() -> None:
@@ -20,6 +29,7 @@ def main() -> None:
     p.add_argument("--q-start-rad", default="")
     p.add_argument("--q-goal-rad", default="")
     p.add_argument("--use-local1-tail", action="store_true")
+    p.add_argument("--scan-hold-dy-m", default="")
     args = p.parse_args()
     static = importlib.import_module("experiments.new.6_5.6_5_2.run_652_static_avoidance")
     planner = importlib.import_module("experiments.new.6_5.6_5_3.stationary_terminal_ccro")
@@ -42,6 +52,27 @@ def main() -> None:
     q_goal = parse_q(args.q_goal_rad) if args.q_goal_rad else np.asarray(authorization["q_goal_rad"], dtype=float)
     config = _load(args.config)
     model = static.make_surface_model(config)
+    if args.scan_hold_dy_m:
+        planner_config = planner._make_stationary_full_config(config, min_clearance_m=0.09)
+        evaluator, _, _ = static.make_evaluator_and_verifier(planner_config, model)
+        rows = []
+        for dy in [float(x.strip()) for x in args.scan_hold_dy_m.split(",") if x.strip()]:
+            shifted = _translated_geometry(geometry, dy)
+            points = planner._sphere_points(shifted)
+            obstacle = importlib.import_module("planning.mesh_risk").StaticObstacleField.from_points(points)
+            goal_risk = evaluator.configuration(q_goal, obstacle, density="dense", with_gradient=False)
+            start_risk = evaluator.configuration(q_start, obstacle, density="dense", with_gradient=False)
+            rows.append({
+                "dy_m": dy, "candidate_stop_line_y_m": -0.146 + dy,
+                "goal_clearance_m": float(goal_risk.min_distance),
+                "goal_nearest_link": goal_risk.nearest_link,
+                "start_clearance_m": float(start_risk.min_distance),
+            })
+        payload = {"mode": "hold_stop_line_scan", "rows": rows}
+        args.output.resolve().mkdir(parents=True, exist_ok=True)
+        (args.output.resolve() / "hold_stop_line_scan.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(json.dumps(payload, indent=2))
+        return
     payload, trajectory = planner.plan_stationary_terminal_ccro(
         config=config,
         model=model,

@@ -165,6 +165,24 @@ def plan_stationary_terminal_ccro(*, config: dict[str, Any], model: Any,
         "experiments.new.6_5.6_5_2.plan_652_static_ccro_nubs_from_trial"
     )
     evaluator, verifier, limits = static_runtime.make_evaluator_and_verifier(planner_config, model)
+    start_risk = evaluator.configuration(q_start, obstacle, density="dense", with_gradient=False)
+    goal_risk = evaluator.configuration(q_goal, obstacle, density="dense", with_gradient=False)
+    boundary_audit = {
+        "start_clearance_m": float(start_risk.min_distance),
+        "start_nearest_link": start_risk.nearest_link,
+        "goal_clearance_m": float(goal_risk.min_distance),
+        "goal_nearest_link": goal_risk.nearest_link,
+        "authorization_clearance_m": float(min_clearance_m),
+    }
+    if float(goal_risk.min_distance) < float(min_clearance_m):
+        return {
+            "status": "STATIONARY_FULL_CCRO_GOAL_INFEASIBLE",
+            "authorized": False,
+            "reason": "preset_goal_below_clearance_contract",
+            "planner_mode": "high_fidelity_route_family_full_ccro",
+            "boundary_feasibility": boundary_audit,
+            "q_start_rad": q_start.tolist(), "q_goal_rad": q_goal.tolist(),
+        }, None
     baseline = _baseline(planner_config, head, tail, durations)
     if not baseline.success:
         return {
@@ -252,7 +270,7 @@ def plan_stationary_terminal_ccro(*, config: dict[str, Any], model: Any,
         "risk_samples_per_segment": int(planner_config["risk"]["risk_samples_per_segment"]),
         "max_iterations": int(planner_config["optimizer"]["max_iterations"]),
         "duration_s": float(np.sum(durations)),
-        "min_distance_m": best_item.get("min_distance_m"),
+        "min_distance_m": best_item.get("dense_verifier_min_distance_m"),
         "checks": best_item.get("checks", {}),
         "reasons": best_item.get("reasons", []),
         "selected_family": None if best is None else best_item.get("family"),

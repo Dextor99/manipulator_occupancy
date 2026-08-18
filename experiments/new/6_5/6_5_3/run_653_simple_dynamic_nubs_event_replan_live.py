@@ -768,6 +768,56 @@ def raw_guard_from_persistent_snapshot(snapshot: dict[str, Any]) -> float:
     return value if math.isfinite(value) else float("-inf")
 
 
+def wait_for_confirmed_stationary_snapshot(
+    worker: Any,
+    args: argparse.Namespace,
+    *,
+    speed_threshold_m_s: float = 0.04,
+    required_frames: int = 3,
+    timeout_s: float = 1.5,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Require a valid, raw-safe, three-frame stationary track before Full CCRO."""
+    if worker is None:
+        return {"confirmed": False, "reason": "tracker_unavailable", "samples": []}, None
+    latest = worker.snapshot()
+    cursor = int(v3._state_seq(latest))
+    streak = 0
+    samples: list[dict[str, Any]] = []
+    deadline = time.monotonic() + float(timeout_s)
+    while time.monotonic() < deadline:
+        newer = worker.wait_for_newer_state(
+            after_seq=cursor,
+            timeout_s=min(0.20, max(0.0, deadline - time.monotonic())),
+        )
+        if newer is None:
+            continue
+        latest = newer
+        cursor = int(v3._state_seq(latest))
+        aligned = v3.time_aligned_snapshot(latest, execution_timestamp=time.time())
+        reasons = v3._persistent_state_reasons(
+            latest, aligned, args, raw_guard_reason="raw_hard_guard_not_safe"
+        )
+        raw = raw_guard_from_persistent_snapshot(latest)
+        velocity = np.asarray(latest.get("velocity", [0.0, 0.0, 0.0]), dtype=float)
+        speed = float(np.linalg.norm(velocity))
+        geometry = aligned.get("geometry")
+        valid = bool(
+            not reasons and geometry is not None and geometry.get("covered", False)
+            and raw > float(args.guided_hard_stop_m)
+        )
+        stationary = bool(valid and speed <= float(speed_threshold_m_s))
+        streak = streak + 1 if stationary else 0
+        samples.append({"state_seq": cursor, "speed_m_s": speed,
+                        "raw_guard_distance_m": raw, "stationary": stationary,
+                        "streak": streak})
+        if streak >= int(required_frames):
+            return {
+                "confirmed": True, "reason": "stationary_track_confirmed",
+                "samples": samples, "state_seq": cursor, "speed_m_s": speed,
+            }, latest
+    return {"confirmed": False, "reason": "stationary_confirmation_timeout", "samples": samples}, None
+
+
 def monitor_measured_tail(
     args: argparse.Namespace,
     config: dict[str, Any],
@@ -1694,6 +1744,22 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
 
         if monitor1["status"] not in {"STRICT_SCENE_CLEAR", "PREDICTED_RISK_CLEAR"} and "post_local2_monitor" not in result:
             raise RuntimeError(f"unexpected post-local decision: {monitor1['status']}")
+        stationary_confirmation = None
+        if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
+            stationary_confirmation, stationary_snapshot = wait_for_confirmed_stationary_snapshot(
+                context.get("persistent_worker"), args
+            )
+            result["stationary_confirmation"] = stationary_confirmation
+            if not stationary_confirmation.get("confirmed", False):
+                result["status"] = "STATIONARY_CONFIRMATION_REQUIRED_HOLD"
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
+            fresh_latest, frames_latest, _, geometry_latest = fresh_from_persistent_snapshot(stationary_snapshot)
+            monitor1["fresh"] = fresh_latest
+            monitor1["frames"] = frames_latest
+            monitor1["geometry"] = geometry_latest
+            monitor1["forecast"], _ = forecast_from_fresh(args, fresh_latest, geometry_latest, frames_latest)
+            forecast = monitor1["forecast"]
         terminal_dir = trial_dir / "terminal_goal_authorization"
         terminal, terminal_trajectory = authorize_terminal_goal(
             args,
@@ -1704,10 +1770,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             forecast,
             terminal_durations,
             terminal_dir,
-            # The measured-tail monitor keeps the accepted geometry in the
-            # handler context (fresh3_geometry); it is not exposed as a
-            # top-level ``tail_monitor["geometry"]`` field.
-            stationary_geometry=(context.get("fresh3_geometry") if bool(getattr(event_args, "stationary_terminal_full_plan", False)) else None),
+            stationary_geometry=(
+                (monitor2.get("geometry", monitor1.get("geometry")) if "post_local2_monitor" in result else monitor1.get("geometry"))
+                if bool(getattr(event_args, "stationary_terminal_full_plan", False)) else None
+            ),
             use_stationary_full_plan=bool(getattr(event_args, "stationary_terminal_full_plan", False)),
         )
         result["terminal_authorization"] = terminal
