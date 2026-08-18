@@ -30,12 +30,15 @@ def main() -> None:
     p.add_argument("--q-goal-rad", default="")
     p.add_argument("--use-local1-tail", action="store_true")
     p.add_argument("--scan-hold-dy-m", default="")
+    p.add_argument("--geometry-dy-m", type=float, default=0.0)
     args = p.parse_args()
     static = importlib.import_module("experiments.new.6_5.6_5_2.run_652_static_avoidance")
     planner = importlib.import_module("experiments.new.6_5.6_5_3.stationary_terminal_ccro")
     trial = args.source_trial.resolve()
     geometry_path = args.geometry_json if args.geometry_json.is_absolute() else trial / args.geometry_json
     geometry = json.loads(geometry_path.read_text())
+    if abs(float(args.geometry_dy_m)) > 1.0e-12:
+        geometry = _translated_geometry(geometry, float(args.geometry_dy_m))
     event_summary = json.loads((trial / "event_replan_summary.json").read_text())
     authorization = json.loads((trial / "terminal_goal_authorization" / "authorization_summary.json").read_text())
     def parse_q(value: str) -> np.ndarray:

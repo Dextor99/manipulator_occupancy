@@ -615,6 +615,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=10.0,
         help="fail-safe watchdog for one continuous dynamic-replan episode; not a local-segment limit",
     )
+    parser.add_argument("--stationary-hold-target-y-m", type=float, default=None)
+    parser.add_argument("--stationary-hold-tolerance-m", type=float, default=0.01)
     parser.add_argument("--final-precommand-fresh-timeout-s", type=float, default=0.35)
     parser.add_argument("--final-precommand-max-state-age-s", type=float, default=0.35)
     parser.add_argument("--boundary-qd-tol-rad-s", type=float, default=0.03)
@@ -801,13 +803,27 @@ def wait_for_confirmed_stationary_snapshot(
         velocity = np.asarray(latest.get("velocity", [0.0, 0.0, 0.0]), dtype=float)
         speed = float(np.linalg.norm(velocity))
         geometry = aligned.get("geometry")
+        center = np.asarray(
+            aligned.get("propagated_center", latest.get("center", [np.nan] * 3)),
+            dtype=float,
+        )
+        target_y = getattr(args, "stationary_hold_target_y_m", None)
+        position_ok = bool(
+            target_y is None or (
+                np.isfinite(center[1])
+                and abs(float(center[1]) - float(target_y))
+                <= float(getattr(args, "stationary_hold_tolerance_m", 0.01))
+            )
+        )
         valid = bool(
             not reasons and geometry is not None and geometry.get("covered", False)
             and raw > float(args.guided_hard_stop_m)
         )
-        stationary = bool(valid and speed <= float(speed_threshold_m_s))
+        stationary = bool(valid and speed <= float(speed_threshold_m_s) and position_ok)
         streak = streak + 1 if stationary else 0
-        samples.append({"state_seq": cursor, "speed_m_s": speed,
+        samples.append({"state_seq": cursor, "center_y_m": float(center[1]),
+                        "target_y_m": target_y, "position_ok": position_ok,
+                        "speed_m_s": speed,
                         "raw_guard_distance_m": raw, "stationary": stationary,
                         "streak": streak})
         if streak >= int(required_frames):
@@ -1745,6 +1761,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         if monitor1["status"] not in {"STRICT_SCENE_CLEAR", "PREDICTED_RISK_CLEAR"} and "post_local2_monitor" not in result:
             raise RuntimeError(f"unexpected post-local decision: {monitor1['status']}")
         stationary_confirmation = None
+        confirmed_stationary_geometry = None
         if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
             stationary_confirmation, stationary_snapshot = wait_for_confirmed_stationary_snapshot(
                 context.get("persistent_worker"), args
@@ -1755,6 +1772,11 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             fresh_latest, frames_latest, _, geometry_latest = fresh_from_persistent_snapshot(stationary_snapshot)
+            if not fresh_latest.get("accepted", False) or geometry_latest is None:
+                result["status"] = "STATIONARY_CONFIRMED_GEOMETRY_NOT_READY"
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
+            confirmed_stationary_geometry = geometry_latest
             monitor1["fresh"] = fresh_latest
             monitor1["frames"] = frames_latest
             monitor1["geometry"] = geometry_latest
@@ -1771,7 +1793,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             terminal_durations,
             terminal_dir,
             stationary_geometry=(
-                (monitor2.get("geometry", monitor1.get("geometry")) if "post_local2_monitor" in result else monitor1.get("geometry"))
+                confirmed_stationary_geometry
                 if bool(getattr(event_args, "stationary_terminal_full_plan", False)) else None
             ),
             use_stationary_full_plan=bool(getattr(event_args, "stationary_terminal_full_plan", False)),

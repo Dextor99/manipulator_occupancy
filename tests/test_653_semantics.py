@@ -3004,7 +3004,7 @@ def test_stationary_terminal_uses_full_ccro_optimizer_hooks():
     assert "StaticObstacleField.from_points" in source
     assert "verifier.verify" in source
     handler_source = inspect.getsource(event_replan.make_event_handler)
-    assert 'monitor1.get("geometry")' in handler_source
+    assert "confirmed_stationary_geometry" in handler_source
     assert 'use_stationary_full_plan=bool(getattr(event_args' in handler_source
     wrapper_source = inspect.getsource(simple_live.copy_wrapper_runtime_parameters)
     assert '("stationary_terminal_full_plan", False)' in wrapper_source
@@ -3037,7 +3037,7 @@ def test_stationary_terminal_route_families_and_replay_geometry_are_explicit():
 def test_stationary_hold_requires_three_frame_confirmation_and_tail_geometry():
     source = inspect.getsource(event_replan.make_event_handler)
     assert "wait_for_confirmed_stationary_snapshot" in source
-    assert "monitor1.get(\"geometry\")" in source
+    assert "confirmed_stationary_geometry" in source
     helper = inspect.getsource(event_replan.wait_for_confirmed_stationary_snapshot)
     assert "required_frames: int = 3" in helper
     assert "speed_threshold_m_s: float = 0.04" in helper

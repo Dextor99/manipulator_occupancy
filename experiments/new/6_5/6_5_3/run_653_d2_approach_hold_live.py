@@ -99,6 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
         post_local_monitor_max_s=6.0,
         stro_trigger_horizon_s=1.2,
         stationary_terminal_full_plan=True,
+        stationary_hold_target_y_m=HOLD_STOP_LINE_Y_M,
+        stationary_hold_tolerance_m=HOLD_LINE_TOLERANCE_M,
     )
     parser.add_argument("--scene-operator-phrase", default="")
     return parser
