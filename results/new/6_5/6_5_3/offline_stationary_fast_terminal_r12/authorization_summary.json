@@ -17,7 +17,10 @@
             "edge_min_distance_m": 0.16306891877593033,
             "edge_nearest_link": "wrist1_Link",
             "tabletop_ok": true,
-            "accepted": true
+            "accepted": true,
+            "accepted_as_virtual_seed": true,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
           }
         ],
         "phase": "release",
@@ -26,7 +29,12 @@
         "goal_distance_m": 0.5939742211359276,
         "remainder_to_goal_clear": false,
         "remainder_to_goal_feasible": false,
+        "remainder_seed_connectable": false,
+        "remainder_authorization_clear": false,
+        "remainder_robust": false,
         "remainder_to_goal_robust": false,
+        "virtual_topology_floor_m": 0.08,
+        "final_authorization_clearance_m": 0.09,
         "remainder_min_distance_m": -0.10168223011602291,
         "direction": {
           "task_direction": [
@@ -66,7 +74,10 @@
             "edge_min_distance_m": 0.1203707560570545,
             "edge_nearest_link": "left_link",
             "tabletop_ok": true,
-            "accepted": true
+            "accepted": true,
+            "accepted_as_virtual_seed": true,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
           }
         ],
         "phase": "release",
@@ -75,7 +86,12 @@
         "goal_distance_m": 0.567774638847656,
         "remainder_to_goal_clear": false,
         "remainder_to_goal_feasible": false,
+        "remainder_seed_connectable": false,
+        "remainder_authorization_clear": false,
+        "remainder_robust": false,
         "remainder_to_goal_robust": false,
+        "virtual_topology_floor_m": 0.08,
+        "final_authorization_clearance_m": 0.09,
         "remainder_min_distance_m": -0.0810171474487169,
         "direction": {
           "task_direction": [
@@ -115,7 +131,10 @@
             "edge_min_distance_m": 0.10881569113443762,
             "edge_nearest_link": "wrist1_Link",
             "tabletop_ok": true,
-            "accepted": true
+            "accepted": true,
+            "accepted_as_virtual_seed": true,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
           }
         ],
         "phase": "release",
@@ -124,7 +143,12 @@
         "goal_distance_m": 0.522260103273063,
         "remainder_to_goal_clear": false,
         "remainder_to_goal_feasible": false,
+        "remainder_seed_connectable": false,
+        "remainder_authorization_clear": false,
+        "remainder_robust": false,
         "remainder_to_goal_robust": false,
+        "virtual_topology_floor_m": 0.08,
+        "final_authorization_clearance_m": 0.09,
         "remainder_min_distance_m": -0.08115324330944532,
         "direction": {
           "task_direction": [
@@ -154,7 +178,8 @@
       },
       {
         "step": 4,
-        "policy": null,
+        "candidate": 1,
+        "policy": "side_only_clearance_recovery",
         "attempts": [
           {
             "policy": "release_forward",
@@ -163,7 +188,10 @@
             "edge_min_distance_m": 0.06650122321044283,
             "edge_nearest_link": "left_link",
             "tabletop_ok": true,
-            "accepted": false
+            "accepted": false,
+            "accepted_as_virtual_seed": false,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
           },
           {
             "policy": "release_forward_half",
@@ -172,7 +200,10 @@
             "edge_min_distance_m": 0.07489453176847366,
             "edge_nearest_link": "left_link",
             "tabletop_ok": true,
-            "accepted": false
+            "accepted": false,
+            "accepted_as_virtual_seed": false,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
           },
           {
             "policy": "side_only_clearance_recovery",
@@ -181,22 +212,107 @@
             "edge_min_distance_m": 0.08551163387925714,
             "edge_nearest_link": "wrist1_Link",
             "tabletop_ok": true,
-            "accepted": false
+            "accepted": true,
+            "accepted_as_virtual_seed": true,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
+          }
+        ],
+        "phase": "strong",
+        "edge_min_distance_m": 0.08551163387925714,
+        "task_progress_m": 0.002929204392211376,
+        "goal_distance_m": 0.5212658093215389,
+        "remainder_to_goal_clear": false,
+        "remainder_to_goal_feasible": false,
+        "remainder_seed_connectable": false,
+        "remainder_authorization_clear": false,
+        "remainder_robust": false,
+        "remainder_to_goal_robust": false,
+        "virtual_topology_floor_m": 0.08,
+        "final_authorization_clearance_m": 0.09,
+        "remainder_min_distance_m": -0.06805014050856203,
+        "direction": {
+          "task_direction": [
+            -0.1417109148306495,
+            -0.988586400518905,
+            -0.05113653612570633
+          ],
+          "established_bypass_side": [
+            0.9898814907098006,
+            -0.1418965621505435,
+            0.0
+          ],
+          "original_established_bypass_side": [
+            0.9898814907098006,
+            -0.14189656215054353,
+            -1.4193239951583817e-18
+          ],
+          "side_policy": "lock_side_not_constant_direction",
+          "tabletop_parallel_side": true,
+          "preserve_tcp_height": true,
+          "tcp_height_weight": 1.0,
+          "candidate_phases": [
+            "strong"
+          ],
+          "risk_link": "wrist1_Link"
+        }
+      },
+      {
+        "step": 5,
+        "policy": null,
+        "attempts": [
+          {
+            "policy": "release_forward",
+            "side_weight": 0.0,
+            "forward_m": 0.05,
+            "edge_min_distance_m": 0.062053874273612336,
+            "edge_nearest_link": "left_link",
+            "tabletop_ok": true,
+            "accepted": false,
+            "accepted_as_virtual_seed": false,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
+          },
+          {
+            "policy": "release_forward_half",
+            "side_weight": 0.0,
+            "forward_m": 0.025,
+            "edge_min_distance_m": 0.0692461174474081,
+            "edge_nearest_link": "left_link",
+            "tabletop_ok": true,
+            "accepted": false,
+            "accepted_as_virtual_seed": false,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
+          },
+          {
+            "policy": "side_only_clearance_recovery",
+            "side_weight": 1.0,
+            "forward_m": 0.0,
+            "edge_min_distance_m": 0.06453706926928202,
+            "edge_nearest_link": "wrist1_Link",
+            "tabletop_ok": true,
+            "accepted": false,
+            "accepted_as_virtual_seed": false,
+            "virtual_topology_floor_m": 0.08,
+            "final_authorization_clearance_m": 0.09
           }
         ],
         "remainder_to_goal_clear": false
       }
     ],
-    "anchor_count": 4,
+    "anchor_count": 5,
     "connected_to_goal": false,
     "connected_step": null,
-    "connection_threshold_m": 0.09,
+    "connection_threshold_m": 0.08,
+    "virtual_topology_floor_m": 0.08,
+    "final_authorization_clearance_m": 0.09,
     "robust_preference_m": 0.11,
     "max_rollout_steps": 8,
     "failure_reason": "no_safe_virtual_forward_edge"
   },
-  "virtual_rollout_elapsed_ms": 168.29968697857112,
-  "stationary_terminal_total_elapsed_ms": 168.29968697857112,
+  "virtual_rollout_elapsed_ms": 247.99745297059417,
+  "stationary_terminal_total_elapsed_ms": 247.99745297059417,
   "stationary_terminal_total_budget_ms": 1000.0,
   "stationary_terminal_target_ms": 500.0,
   "total_budget_met": true,

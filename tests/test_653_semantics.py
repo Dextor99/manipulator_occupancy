@@ -3079,6 +3079,7 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_fast_terminal_target_ms == pytest.approx(500.0)
     assert core_args.stationary_fast_terminal_max_ms == pytest.approx(1000.0)
     assert core_args.stationary_fast_terminal_virtual_max_joint_delta_rad == pytest.approx(0.30)
+    assert core_args.stationary_virtual_topology_floor_m == pytest.approx(0.08)
 
 
 def test_stationary_fast_terminal_bypass_is_one_complete_path():
@@ -3098,6 +3099,8 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "release_forward_half" in rollout_source
     assert "side_only_clearance_recovery" in rollout_source
     assert "_stationary_recovery_side" in rollout_source
+    assert "accepted_as_virtual_seed" in rollout_source
+    assert "remainder_seed_connectable" in rollout_source
     assert "sampled_joint_segment_clearance" in rollout_source
     assert "connected_to_goal" in rollout_source
     assert "no_safe_virtual_forward_edge" in rollout_source

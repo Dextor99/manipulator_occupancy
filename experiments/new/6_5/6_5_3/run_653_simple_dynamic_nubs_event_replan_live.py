@@ -647,6 +647,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stationary-fast-terminal-target-ms", type=float, default=500.0)
     parser.add_argument("--stationary-fast-terminal-max-ms", type=float, default=1000.0)
     parser.add_argument("--stationary-fast-terminal-virtual-max-joint-delta-rad", type=float, default=0.30)
+    parser.add_argument(
+        "--stationary-virtual-topology-floor-m", type=float, default=0.08,
+        help="internal stationary seed floor; final authorization remains online_accept_m",
+    )
     return parser
 
 
@@ -1084,7 +1088,10 @@ def _stationary_virtual_anchors(
     q_virtual = np.asarray(q_start, dtype=np.float64).copy()
     anchors = [q_virtual.copy()]
     audit: list[dict[str, Any]] = []
-    hard_clearance_m = float(getattr(runtime_args, "online_accept_m", 0.09))
+    virtual_topology_floor_m = float(
+        getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)
+    )
+    authorization_clearance_m = float(getattr(runtime_args, "online_accept_m", 0.09))
     robust_target_m = float(getattr(runtime_args, "planning_robust_target_m", 0.11))
     connected_to_goal = False
     connected_step = None
@@ -1159,7 +1166,7 @@ def _stationary_virtual_anchors(
             )
             accepted = bool(
                 guard.get("passed", False)
-                and float(edge_screen["min_distance_m"]) >= hard_clearance_m
+                and float(edge_screen["min_distance_m"]) >= virtual_topology_floor_m
             )
             attempt_rows.append({
                 "policy": policy,
@@ -1169,6 +1176,9 @@ def _stationary_virtual_anchors(
                 "edge_nearest_link": edge_screen.get("nearest_link"),
                 "tabletop_ok": bool(guard.get("passed", False)),
                 "accepted": accepted,
+                "accepted_as_virtual_seed": accepted,
+                "virtual_topology_floor_m": virtual_topology_floor_m,
+                "final_authorization_clearance_m": authorization_clearance_m,
             })
             if accepted:
                 selected = {"item": item, "q_goal": q_item, "edge_screen": edge_screen, "tabletop": guard, "policy": policy}
@@ -1186,7 +1196,9 @@ def _stationary_virtual_anchors(
         anchors.append(q_virtual.copy())
         remainder_screen = sampled_joint_segment_clearance(evaluator, forecast, q_virtual, q_goal, samples=13)
         remainder_min = float(remainder_screen["min_distance_m"])
-        remainder_clear = remainder_min >= hard_clearance_m
+        remainder_seed_connectable = remainder_min >= virtual_topology_floor_m
+        remainder_authorization_clear = remainder_min >= authorization_clearance_m
+        remainder_robust = remainder_min >= robust_target_m
         audit.append({
             "step": index + 1,
             "candidate": int(selected["item"]["candidate"]),
@@ -1196,19 +1208,24 @@ def _stationary_virtual_anchors(
             "edge_min_distance_m": float(selected["edge_screen"]["min_distance_m"]),
             "task_progress_m": float(np.dot(live.simple.tcp_position(model, q_virtual, tcp_link) - tcp_now, np.asarray(direction["task_direction"]))),
             "goal_distance_m": float(np.linalg.norm(tcp_goal - live.simple.tcp_position(model, q_virtual, tcp_link))),
-            "remainder_to_goal_clear": remainder_clear,
-            "remainder_to_goal_feasible": remainder_clear,
-            "remainder_to_goal_robust": remainder_min >= robust_target_m,
+            "remainder_to_goal_clear": remainder_seed_connectable,
+            "remainder_to_goal_feasible": remainder_seed_connectable,
+            "remainder_seed_connectable": remainder_seed_connectable,
+            "remainder_authorization_clear": remainder_authorization_clear,
+            "remainder_robust": remainder_robust,
+            "remainder_to_goal_robust": remainder_robust,
+            "virtual_topology_floor_m": virtual_topology_floor_m,
+            "final_authorization_clearance_m": authorization_clearance_m,
             "remainder_min_distance_m": remainder_min,
             "edge_min_distance_m": float(selected["edge_screen"]["min_distance_m"]),
             "direction": direction,
         })
-        if remainder_clear:
+        if remainder_seed_connectable:
             anchors.append(np.asarray(q_goal, dtype=np.float64).copy())
             connected_to_goal = True
             connected_step = index + 1
             break
-    return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": connected_to_goal, "connected_step": connected_step, "connection_threshold_m": hard_clearance_m, "robust_preference_m": robust_target_m, "max_rollout_steps": int(rollout_steps), "failure_reason": None if connected_to_goal else (break_reason or "max_rollout_steps_without_goal_connection")}
+    return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": connected_to_goal, "connected_step": connected_step, "connection_threshold_m": virtual_topology_floor_m, "virtual_topology_floor_m": virtual_topology_floor_m, "final_authorization_clearance_m": authorization_clearance_m, "robust_preference_m": robust_target_m, "max_rollout_steps": int(rollout_steps), "failure_reason": None if connected_to_goal else (break_reason or "max_rollout_steps_without_goal_connection")}
 
 
 def plan_stationary_fast_terminal_bypass(
