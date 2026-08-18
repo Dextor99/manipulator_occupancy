@@ -20,6 +20,7 @@ import json
 import math
 from pathlib import Path
 import sys
+import threading
 import time
 from typing import Any
 
@@ -197,6 +198,53 @@ def make_mid_execution_monitor(**context: Any):
     )
     args = context["args"]
     rolling_continuation = bool(context.get("rolling_continuation", False))
+    preplan_state = {"started": False, "done": False, "result": None, "source_state_seq": None}
+    preplan_lock = threading.Lock()
+    preplan_thread = None
+    reference = context.get("reference")
+    risk_links = set(context.get("risk_links") or [])
+    local_artifacts = context.get("local_artifacts")
+    local_index = int(context.get("event_local_index", 1))
+
+    def run_preplan(snapshot: dict[str, Any], elapsed_s: float) -> None:
+        try:
+            remaining_s = max(0.0, float(trajectory.total_duration) - float(elapsed_s))
+            aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+            geometry = copy.deepcopy(aligned.get("geometry"))
+            if geometry is None or not geometry.get("covered", False) or reference is None or not risk_links or local_artifacts is None:
+                result = {"ready": False, "reason": "rolling_preplan_context_missing"}
+            else:
+                velocity = np.asarray(snapshot["velocity"], dtype=np.float64)
+                delta = velocity * remaining_s
+                centers = np.asarray(geometry["component_centers"], dtype=np.float64) + delta[None, :]
+                geometry["component_centers"] = centers.tolist()
+                fresh = {"accepted": True, "reason": "rolling_preplan_projected_tail_state", "center": (np.asarray(aligned["propagated_center"], dtype=np.float64) + delta).tolist(), "velocity": velocity.tolist(), "radius": float(max(np.asarray(geometry["component_base_radii"], dtype=np.float64))), "last_timestamp": time.time() + remaining_s, "track_id": int(snapshot.get("track_id", 1)), "preplan_only": True}
+                out_dir = Path(context.get("trial_dir", ROOT)) / f"event_local_{local_index + 1:02d}" / "preplan"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                artifacts: dict[str, Any] = {}
+                ref_goal, ref_audit = next_recorded_reference_goal(reference, np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64), args.local_horizon_s)
+                candidate = plan_goal_directed_continuation(
+                    live.ACTIVE_BASE_FAST_REPAIR, args, context["stage4_config"], context["stage4_model"],
+                    q_escape_start=np.asarray(local_artifacts["q_now"], dtype=np.float64),
+                    q_now=np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64),
+                    q_final=np.asarray(reference.q[-1], dtype=np.float64), fresh=fresh, geometry=geometry,
+                    risk_links=risk_links, trial_dir=out_dir, nominal_reference_goal=ref_goal,
+                    artifacts_out=artifacts, forward_m=float(args.forward_m), side_m=float(args.continuation_side_m),
+                    robust_target_m=float(args.planning_robust_target_m), max_joint_delta_rad=float(args.max_joint_delta_rad),
+                    tcp_link=args.tcp_link, robust_target_is_diagnostic=True,
+                )
+                result = {"ready": bool(candidate.get("local_repair_ready", False)), "candidate": candidate, "artifacts": artifacts, "projected_fresh": fresh, "projected_geometry": geometry, "reference_goal_audit": ref_audit, "source_state_seq": int(v3._state_seq(snapshot)), "trigger_elapsed_s": float(elapsed_s), "planning_wall_ms": 0.0, "speculative_only": True}
+            with preplan_lock:
+                preplan_state.update({"done": True, "result": result})
+        except Exception as exc:
+            with preplan_lock:
+                preplan_state.update({"done": True, "result": {"ready": False, "reason": "rolling_preplan_exception", "error": repr(exc)}})
+
+    def take_rolling_preplan(*, wait_s: float = 0.05) -> dict[str, Any] | None:
+        if preplan_thread is not None and preplan_thread.is_alive() and wait_s > 0.0:
+            preplan_thread.join(timeout=float(wait_s))
+        with preplan_lock:
+            return copy.deepcopy(preplan_state["result"])
     last = {"seq": -1}
 
     def prearm(*, timeout_s: float = 1.5, required_updates: int = 2) -> dict[str, Any]:
@@ -364,6 +412,7 @@ def make_mid_execution_monitor(**context: Any):
         return {"ready": True, "action": "execute", "reason": "final_precommand_candidate_valid", "freshness": freshness, "raw_guard_distance_m": raw, "verification_min_distance_m": float(verification.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "boundary_dynamics": dynamics, "state_seq": int(v3._state_seq(snapshot))}
 
     def monitor(*, elapsed_s: float, actual_q: np.ndarray, obstacle_snapshot: Any = None) -> dict[str, Any]:
+        nonlocal preplan_thread
         del obstacle_snapshot
         if worker is None:
             return {"motion_safe": False, "reason": "persistent_tracker_unavailable", "state_age_s": None, "final_precommand_state_seq": int(last.get("final_precommand_seq", -1))}
@@ -402,6 +451,21 @@ def make_mid_execution_monitor(**context: Any):
         )
         prediction_gate_m = float(args.rolling_replan_m)
         modeled_remaining_min_m = min(float(current.min_distance), float(remaining["min_distance_m"]))
+        remaining_exec_s = max(0.0, float(trajectory.total_duration) - float(elapsed_s))
+        should_preplan = bool(
+            float(elapsed_s) >= float(args.rolling_preplan_trigger_s)
+            and remaining_exec_s >= float(args.rolling_preplan_min_lead_s)
+            and modeled_remaining_min_m <= float(args.rolling_preplan_clearance_m)
+            and not preplan_state["started"]
+            and reference is not None
+            and local_artifacts is not None
+        )
+        if should_preplan:
+            with preplan_lock:
+                preplan_state["started"] = True
+                preplan_state["source_state_seq"] = int(v3._state_seq(snapshot))
+            preplan_thread = threading.Thread(target=run_preplan, args=(copy.deepcopy(snapshot), float(elapsed_s)), daemon=True, name=f"ccro-preplan-{local_index + 1}")
+            preplan_thread.start()
         if modeled_remaining_min_m < prediction_gate_m:
             reason = "remaining_predicted_risk"
             replan = True
@@ -424,6 +488,7 @@ def make_mid_execution_monitor(**context: Any):
             "current_near_diagnostic": current_near_diagnostic,
             "current_near_threshold_m": float(args.moving_shadow_current_stop_m),
             "predictive_replan_threshold_m": prediction_gate_m,
+            "rolling_preplan": {"triggered": bool(preplan_state["started"]), "done": bool(preplan_state["done"]), "source_state_seq": preplan_state["source_state_seq"]},
         }
 
     def command_time_revalidate(*, actual_q: np.ndarray) -> dict[str, Any]:
@@ -482,6 +547,8 @@ def make_mid_execution_monitor(**context: Any):
     monitor.prearm = prearm
     monitor.command_time_revalidate = command_time_revalidate
     monitor.final_precommand_barrier = final_precommand_barrier
+    monitor.take_rolling_preplan = take_rolling_preplan
+    monitor.rolling_continuation = rolling_continuation
     return monitor
 
 
@@ -1277,9 +1344,22 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 context["reference"], q_actual, args.local_horizon_s
             )
             result["local2_reference_goal"] = local2_reference_audit
+            preplanned = context.get("rolling_preplan")
+            use_preplanned = bool(
+                isinstance(preplanned, dict)
+                and preplanned.get("ready", False)
+                and preplanned.get("candidate") is not None
+                and preplanned.get("artifacts") is not None
+            )
+            if use_preplanned:
+                candidate = preplanned["candidate"]
+                artifacts = preplanned["artifacts"]
+                result["rolling_preplan_used"] = True
+                result["rolling_preplan_source_state_seq"] = preplanned.get("source_state_seq")
             if live.ACTIVE_BASE_FAST_REPAIR is None:
                 raise RuntimeError("validated base Fast implementation is unavailable")
-            candidate = plan_goal_directed_continuation(
+            if not use_preplanned:
+                candidate = plan_goal_directed_continuation(
                 live.ACTIVE_BASE_FAST_REPAIR,
                 args,
                 config,
@@ -1304,7 +1384,8 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     == COMMAND_TIME_REPLAN_STATUS
                     and not (context.get("execution_summary") or {}).get("robot_commanded", False)
                 ),
-            )
+                )
+                result["rolling_preplan_used"] = False
             result["local2_candidate"] = candidate
             result[f"local_{local_index}_candidate"] = candidate
             if not candidate.get("local_repair_ready", False):
@@ -1433,6 +1514,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     stage4_model=model,
                     trial_dir=local2_dir,
                     rolling_continuation=True,
+                    reference=context.get("reference"),
+                    risk_links=context.get("risk_links"),
+                    local_artifacts=artifacts,
+                    event_local_index=local_index,
                 ),
             )
             result["local2_execution"] = execution

@@ -5478,6 +5478,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 stage4_config=stage4_config,
                                 stage4_model=stage4_model,
                                 trial_dir=trial_dir,
+                                reference=reference,
+                                risk_links=risk_links,
+                                local_artifacts=local_artifacts,
+                                event_local_index=1,
+                                rolling_continuation=False,
                             )
                         first_execution_summary = execute_authorized_trajectory_offline_track(
                             robot,
@@ -5493,6 +5498,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             ),
                             motion_monitor_provider=mid_execution_monitor,
                         )
+                        take_preplan = getattr(mid_execution_monitor, "take_rolling_preplan", None)
+                        if callable(take_preplan):
+                            warm = take_preplan(wait_s=0.05)
+                            if warm is not None:
+                                first_execution_summary["rolling_preplan"] = {
+                                    "ready": bool(warm.get("ready", False)),
+                                    "source_state_seq": warm.get("source_state_seq"),
+                                    "trigger_elapsed_s": warm.get("trigger_elapsed_s"),
+                                    "planning_wall_ms": warm.get("planning_wall_ms"),
+                                    "candidate": warm.get("candidate"),
+                                    "artifacts": warm.get("artifacts"),
+                                }
                         first_execution_summary["workspace_deviation_metrics"] = workspace_deviation
                         first_execution_summary["execution_path"] = execution_path
                         first_log_name = (
@@ -5636,6 +5653,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 fresh3_geometry=fresh3_geometry,
                                 fresh3_frames=fresh3_frames,
                                 fresh3_guard_distance=fresh3_guard_distance,
+                                rolling_preplan=first_execution_summary.get("rolling_preplan"),
                                 risk_links=risk_links,
                                 reference=reference,
                                 trial_dir=trial_dir,

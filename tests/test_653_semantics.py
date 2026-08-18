@@ -2942,6 +2942,15 @@ def test_final_precommand_defaults_are_conservative():
     assert args.boundary_qdd_tol_rad_s2 == pytest.approx(0.30)
 
 
+def test_rolling_preplan_hooks_are_present_and_non_authoritative():
+    source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    assert "rolling_preplan_trigger_s" in source
+    assert "take_rolling_preplan" in source
+    assert "threading.Thread" in source
+    assert "rolling_continuation" in source
+    assert "authorization_snapshot" in inspect.getsource(event_replan.make_event_handler)
+
+
 def test_command_time_revalidation_uses_strict_start_sync_threshold():
     args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
     assert args.candidate_start_sync_rad == pytest.approx(0.002)
