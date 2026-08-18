@@ -1022,13 +1022,19 @@ def _stationary_virtual_anchors(
     phase_weights = ((1.0, 0.5), (1.0, 0.5), (0.5, 0.0), (0.0,))
     for index in range(max(1, int(rollout_steps))):
         weights = phase_weights[min(index, len(phase_weights) - 1)]
+        # The phase schedule is also a bounded-computation policy: evaluate
+        # one phase-appropriate seed instead of all 3 seeds at every step.
+        # The full verifier remains the sole execution authority.
+        target_weight = (1.0, 0.5, 0.5, 0.0)[min(index, 3)]
         nominal_goal = (np.asarray(q_goal), np.zeros(6), np.zeros(6))
-        nominal = live.nominal_local_risk(
-            runtime_args, model, evaluator, forecast, q_virtual, nominal_goal
+        # Stationary rollout is intentionally a bounded seed screen.  Use a
+        # dense configuration risk query rather than replaying four full
+        # one-second trajectories; the final long NUBS still receives the
+        # complete verifier and owns execution safety.
+        risk = evaluator.configuration(
+            q_virtual, forecast, 0.0, density="medium", with_gradient=False
         )
-        if nominal.get("risk_object") is None:
-            break
-        risk = nominal["risk_object"]
+        nominal = {"risk_object": risk, "nearest_link": risk.nearest_link, "q_risk": q_virtual}
         if risk.robot_point is None or risk.obstacle_point is None:
             break
         tcp_now = live.simple.tcp_position(model, q_virtual, tcp_link)
@@ -1043,18 +1049,29 @@ def _stationary_virtual_anchors(
             max_joint_delta_rad=float(max_joint_delta_rad),
             tabletop_parallel_side=True, preserve_tcp_height=True,
         )
+        phase_goals = [
+            item for item in goals
+            if math.isclose(float(item.get("side_weight", -1.0)), target_weight, abs_tol=1.0e-12)
+        ]
+        if phase_goals:
+            goals = phase_goals
         rows = []
         for item in goals:
             q_item = np.asarray(item["q_goal"], dtype=np.float64)
-            head, tail, durations, inner, _ = trial.make_local_reference(
-                q_virtual, np.zeros(6), runtime_args,
-                reference_goal=(q_item, np.zeros(6), np.zeros(6)),
+            risk_item = evaluator.configuration(
+                q_item, forecast, 0.0, density="medium", with_gradient=False
             )
-            trajectory = trial.NUBSTrajectory6D().generate(inner, head, tail, durations)
-            minimum, profile = live.simple.trajectory_minimum(evaluator, forecast, trajectory)
+            minimum = {"distance_m": float(risk_item.min_distance), "tau_s": 0.0,
+                        "nearest_link": risk_item.nearest_link}
             guard = trial.gripper_base_workspace_guard(
-                trajectory, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+                trial.NUBSTrajectory6D().generate(
+                    trial.NUBSTrajectory6D.linear_inner_points(q_virtual, q_item, np.ones(2)),
+                    trial.NUBSTrajectory6D.make_boundary_state(q_virtual, np.zeros(6), np.zeros(6)),
+                    trial.NUBSTrajectory6D.make_boundary_state(q_item, np.zeros(6), np.zeros(6)),
+                    np.ones(2),
+                ), model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
             )
+            profile = []
             rows.append({"item": item, "q_goal": q_item, "minimum": minimum,
                          "profile": profile, "tabletop": guard})
         eligible = [row for row in rows if row["tabletop"].get("passed", False)]
@@ -1195,6 +1212,8 @@ def plan_stationary_fast_terminal_bypass(
         "planner_mode": "stationary_fast_terminal_bypass",
         "duration_s": duration,
         "segments": segments,
+        "candidate_total_duration_s": result.get("candidate_total_duration_s", duration),
+        "tail_fixed_to_goal": True,
         "full_optimizer_used": False,
         "virtual_rollout_elapsed_ms": rollout_elapsed_ms,
         "base_fast_elapsed_ms": result.get("fast_elapsed_ms"),
