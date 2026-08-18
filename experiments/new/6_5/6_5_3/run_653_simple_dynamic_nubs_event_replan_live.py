@@ -1064,6 +1064,93 @@ def plan_stationary_joint_goal_progress(
     )
 
 
+def plan_stationary_clearance_recovery(
+    base_fast: Any, runtime_args: argparse.Namespace, config: dict[str, Any], model: Any,
+    *, q_now: np.ndarray, q_goal: np.ndarray, fresh: dict[str, Any], geometry: dict[str, Any],
+    locked_bypass_side: np.ndarray, risk_links: set[str], trial_dir: Path,
+    artifacts_out: dict[str, Any], side_m: float,
+) -> dict[str, Any]:
+    """Use side-only Fast seeds to reopen the next joint-goal corridor."""
+    zero = np.zeros(6, dtype=np.float64)
+    forecast = v3.v3_execution_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+    )
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    tcp_now = live.simple.tcp_position(model, np.asarray(q_now), str(getattr(runtime_args, "tcp_link", "gripper_base_link")))
+    tcp_goal = live.simple.tcp_position(model, np.asarray(q_goal), str(getattr(runtime_args, "tcp_link", "gripper_base_link")))
+    risk = evaluator.configuration(np.asarray(q_now), forecast, 0.0, density="medium", with_gradient=False)
+    if risk.robot_point is None or risk.obstacle_point is None:
+        return {"local_repair_ready": False, "status": "REJECTED_CLEARANCE_RECOVERY_MISSING_RISK_POINTS", "rejection_reasons": ["missing_ccro_surface_points"]}
+    task = bypass.normalized(tcp_goal - tcp_now)
+    recovery_side = _stationary_recovery_side(
+        task=task, risk_robot_point=np.asarray(risk.robot_point),
+        risk_obstacle_point=np.asarray(risk.obstacle_point), established_side=np.asarray(locked_bypass_side),
+    )
+    floor = float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08))
+    seed_rows: list[dict[str, Any]] = []
+    for scale in (1.0, 1.25):
+        goals, _ = bypass.goal_directed_side_continuation_candidates(
+            model, np.asarray(q_now), tcp_position=tcp_now, goal_position=tcp_goal,
+            risk_link=str(risk.nearest_link), risk_position=np.asarray(risk.robot_point),
+            risk_point_q=np.asarray(q_now), established_side=recovery_side,
+            forward_m=0.0, side_m=float(side_m) * scale, side_weights=(1.0,),
+            tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
+            max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
+            tabletop_parallel_side=True, preserve_tcp_height=True,
+        )
+        for item in goals:
+            q_seed = np.asarray(item["q_goal"], dtype=np.float64)
+            head, tail, durations, inner, _ = trial.make_local_reference(
+                np.asarray(q_now), zero, runtime_args, reference_goal=(q_seed, zero, zero)
+            )
+            trajectory = trial.NUBSTrajectory6D().generate(inner, head, tail, durations)
+            coarse, _ = live.simple.trajectory_minimum(evaluator, forecast, trajectory)
+            q_next = bounded_joint_goal_step(
+                q_seed, np.asarray(q_goal), max_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12))
+            )
+            next_screen = sampled_joint_segment_clearance(evaluator, forecast, q_seed, q_next, samples=9, density="medium")
+            tabletop = trial.gripper_base_workspace_guard(trajectory, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)))
+            row = {
+                "q_seed": q_seed, "phase": "side_only_clearance_recovery", "side_scale": scale,
+                "coarse_min_distance_m": float(coarse["distance_m"]),
+                "next_joint_seed_clearance_m": float(next_screen["min_distance_m"]),
+                "next_joint_seed_ok": bool(float(next_screen["min_distance_m"]) >= floor),
+                "tabletop_feasible": bool(tabletop["passed"]), "trajectory": trajectory,
+            }
+            seed_rows.append(row)
+    eligible = [row for row in seed_rows if row["tabletop_feasible"] and row["coarse_min_distance_m"] >= floor]
+    selected = max(eligible, key=lambda row: (row["next_joint_seed_ok"], row["next_joint_seed_clearance_m"], row["coarse_min_distance_m"])) if eligible else None
+    audit_rows = [{k: v for k, v in row.items() if k not in {"q_seed", "trajectory"}} for row in seed_rows]
+    if selected is None:
+        trial.write_json(trial_dir / "clearance_recovery_audit.json", {"policy": "side_only_clearance_recovery", "candidates": audit_rows, "selected": None})
+        return {"local_repair_ready": False, "status": "REJECTED_NO_TOPOLOGY_SAFE_CLEARANCE_RECOVERY", "rejection_reasons": ["no_side_only_seed_at_topology_floor"], "clearance_recovery_audit": audit_rows}
+    q_seed = np.asarray(selected["q_seed"], dtype=np.float64)
+    result = base_fast(
+        runtime_args, config, model, q_now=np.asarray(q_now), qd_now=zero,
+        center=np.asarray(fresh["center"]), velocity=np.asarray(fresh["velocity"]),
+        radius=float(fresh["radius"]), risk_links=risk_links, trial_dir=trial_dir,
+        reference_goal=(q_seed, zero, zero), rejoin_goals=None,
+        obstacle_audit={"track_id": int(fresh.get("track_id", 1)), "phase": "stationary_clearance_recovery"},
+        multisphere_geometry=geometry, artifacts_out=artifacts_out,
+        accept_verified_seed_without_fast_step=True,
+        original_task_reference_goal=(q_seed, zero, zero),
+    )
+    result = live.apply_tabletop_height_shape_policy(
+        result=result, artifacts_out=artifacts_out, runtime_args=runtime_args, config=config,
+        model=model, forecast=forecast, q_now=np.asarray(q_now), qd_now=zero,
+        trial_dir=trial_dir, max_drop_m=0.005,
+    )
+    trial.write_json(trial_dir / "clearance_recovery_audit.json", {
+        "policy": "side_only_clearance_recovery", "locked_bypass_side": np.asarray(locked_bypass_side).tolist(),
+        "recovery_side": recovery_side.tolist(), "candidates": audit_rows,
+        "selected_next_joint_seed_clearance_m": selected["next_joint_seed_clearance_m"],
+        "selected_next_joint_seed_ok": selected["next_joint_seed_ok"],
+    })
+    return result
+
+
 def probe_stationary_goal_connection(
     config: dict[str, Any], model: Any, forecast: Any,
     q_now: np.ndarray, q_goal: np.ndarray, *, tcp_link: str,
@@ -1408,6 +1495,19 @@ def build_stationary_virtual_fast_route(
             trajectory = artifacts.get("candidate_trajectory")
             if candidate.get("local_repair_ready", False) and trajectory is not None:
                 selected_mode = "joint_goal_progress"
+        if trajectory is None and not joint_seed_ok:
+            artifacts = {}
+            candidate = plan_stationary_clearance_recovery(
+                base_fast, virtual_args, config, model,
+                q_now=q_virtual, q_goal=q_goal, fresh=fresh_static, geometry=geometry,
+                locked_bypass_side=locked_bypass_side, risk_links=risk_links,
+                trial_dir=step_dir / "side_only_clearance_recovery",
+                artifacts_out=artifacts,
+                side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
+            )
+            trajectory = artifacts.get("candidate_trajectory")
+            if candidate.get("local_repair_ready", False) and trajectory is not None:
+                selected_mode = "side_only_clearance_recovery"
         if trajectory is None:
             artifacts = {}
             candidate = plan_goal_directed_continuation(

@@ -3103,6 +3103,8 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "probe_stationary_goal_connection" in route_source
     assert "bounded_joint_goal_step" in route_source
     assert "plan_stationary_joint_goal_progress" in route_source
+    assert "plan_stationary_clearance_recovery" in route_source
+    assert 'selected_mode = "side_only_clearance_recovery"' in route_source
     assert 'selected_mode = "joint_goal_progress"' in route_source
     assert "goal_error_improvement" in route_source
     assert "joint_goal_progress_not_converging" in route_source
@@ -3112,6 +3114,14 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "getattr(runtime_args, \"local_horizon_s\", 1.0)" in route_source
     assert "connected_to_goal" in route_source
     assert "execute_authorized_trajectory_offline_track" not in route_source
+
+
+def test_stationary_clearance_recovery_is_side_only_and_topology_gated():
+    source = inspect.getsource(event_replan.plan_stationary_clearance_recovery)
+    assert "forward_m=0.0" in source
+    assert "next_joint_seed_clearance_m" in source
+    assert "stationary_virtual_topology_floor_m" in source
+    assert "side_only_clearance_recovery" in source
 
 
 def test_joint_polyline_resampling_preserves_endpoints():
