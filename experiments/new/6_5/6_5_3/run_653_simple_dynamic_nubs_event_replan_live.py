@@ -1095,6 +1095,19 @@ def _stationary_virtual_anchors(
         )
         q_virtual = selected["q_goal"].copy()
         anchors.append(q_virtual.copy())
+        rem_durations = np.full(2, 0.5, dtype=np.float64)
+        rem_inner = trial.NUBSTrajectory6D.linear_inner_points(q_virtual, q_goal, rem_durations)
+        rem = trial.NUBSTrajectory6D().generate(
+            rem_inner,
+            trial.NUBSTrajectory6D.make_boundary_state(q_virtual, np.zeros(6), np.zeros(6)),
+            trial.NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6)),
+            rem_durations,
+        )
+        rem_min, _ = live.simple.trajectory_minimum(evaluator, forecast, rem)
+        remainder_clear = bool(
+            float(rem_min["distance_m"])
+            >= float(getattr(runtime_args, "planning_robust_target_m", 0.11))
+        )
         audit.append({
             "step": index + 1,
             "candidate": int(selected["item"]["candidate"]),
@@ -1104,8 +1117,13 @@ def _stationary_virtual_anchors(
             "phase_weights": list(weights),
             "task_progress_m": selected.get("task_progress_m"),
             "goal_distance_m": selected.get("goal_distance_m"),
+            "remainder_to_goal_clear": remainder_clear,
+            "remainder_min_distance_m": float(rem_min["distance_m"]),
             "direction": direction,
         })
+        if remainder_clear:
+            anchors.append(np.asarray(q_goal, dtype=np.float64).copy())
+            break
     return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors)}
 
 
@@ -1177,10 +1195,63 @@ def plan_stationary_fast_terminal_bypass(
     duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 6.0))
     segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 8)))
     durations = np.full(segments, duration / segments, dtype=np.float64)
-    polyline = resample_joint_polyline(anchors, segments + 1)
+    anchor_chain = np.vstack(
+        [anchors, np.asarray(q_goal, dtype=np.float64)[None, :]]
+    )
+    polyline = resample_joint_polyline(anchor_chain, segments + 1)
+    if np.max(np.abs(polyline[-1] - np.asarray(q_goal, dtype=np.float64))) > 1.0e-9:
+        raise RuntimeError("stationary terminal polyline failed to preserve q_goal tail")
     head = trial.NUBSTrajectory6D.make_boundary_state(q_start, np.zeros(6), np.zeros(6))
     tail = trial.NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6))
     seed = trial.NUBSTrajectory6D().generate(polyline[1:-1], head, tail, durations)
+    seed_forecast = v3.v3_execution_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+    )
+    _, seed_verifier, _ = trial.make_risk_stack(config, model, None)
+    seed_verification = seed_verifier.verify(
+        seed, seed_forecast, current_q=np.asarray(q_start),
+        current_qd=np.zeros(6), current_qdd=np.zeros(6),
+        q_goal=np.asarray(q_goal), solver_success=True,
+    )
+    seed_tabletop = trial.gripper_base_workspace_guard(
+        seed, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+    )
+    seed_safe = bool(
+        seed_verification.accepted
+        and all(bool(value) for value in seed_verification.checks.values())
+        and seed_tabletop.get("passed", False)
+    )
+    if seed_safe:
+        seed_path = trial_dir / "authorized_terminal_goal.csv"
+        trial.save_trajectory_csv(seed_path, seed, dt=0.01)
+        total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+        authorized = total_elapsed_ms <= total_max_ms
+        payload = {
+            "status": "TERMINAL_GOAL_AUTHORIZED" if authorized else "STATIONARY_FAST_TERMINAL_BYPASS_HOLD",
+            "authorized": authorized,
+            "planner_mode": "stationary_fast_terminal_bypass",
+            "full_optimizer_used": False,
+            "duration_s": duration,
+            "segments": segments,
+            "candidate_total_duration_s": float(seed.total_duration),
+            "tail_fixed_to_goal": True,
+            "verification_min_distance_m": float(seed_verification.min_distance),
+            "verification_checks": seed_verification.checks,
+            "tabletop_workspace_guard": seed_tabletop,
+            "virtual_rollout_elapsed_ms": rollout_elapsed_ms,
+            "base_fast_elapsed_ms": 0.0,
+            "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
+            "stationary_terminal_total_budget_ms": total_max_ms,
+            "stationary_terminal_target_ms": total_target_ms,
+            "total_budget_met": bool(authorized),
+            "authorized_trajectory_csv": str(seed_path),
+            "virtual_rollout": rollout_audit,
+            "seed_first": True,
+        }
+        trial.write_json(trial_dir / "authorization_summary.json", payload)
+        return payload, seed if authorized else None
     # Reuse the production Fast path once.  This preserves all existing
     # verifier, tabletop, freshness and computation-ceiling gates.
     fast_args = copy.copy(runtime_args)
