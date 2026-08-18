@@ -1365,19 +1365,12 @@ def authorize_terminal_goal(
 
 def check_goal_configuration_feasibility(
     *, config: dict[str, Any], model: Any, q_goal: np.ndarray,
-    geometry: dict[str, Any], min_clearance_m: float,
+    forecast: Any, min_clearance_m: float,
 ) -> dict[str, Any]:
-    """Lightweight stationary boundary check; never runs the Full optimizer."""
-    points = stationary_ccro._sphere_points(geometry)
-    obstacle = importlib.import_module(
-        "planning.mesh_risk"
-    ).StaticObstacleField.from_points(points)
-    static_runtime = importlib.import_module(
-        "experiments.new.6_5.6_5_2.run_652_static_avoidance"
-    )
-    evaluator, _, _ = static_runtime.make_evaluator_and_verifier(config, model)
+    """Check q_goal with the same Stage-4 risk stack used by live Fast."""
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
     risk = evaluator.configuration(
-        np.asarray(q_goal, dtype=np.float64), obstacle,
+        np.asarray(q_goal, dtype=np.float64), forecast, 0.0,
         density="dense", with_gradient=False,
     )
     clearance = float(risk.min_distance)
@@ -1386,6 +1379,8 @@ def check_goal_configuration_feasibility(
         "goal_clearance_m": clearance,
         "nearest_link": risk.nearest_link,
         "authorization_clearance_m": float(min_clearance_m),
+        "evaluation_mode": "stage4_zero_velocity_dense_configuration",
+        "full_optimizer_used": False,
     }
 
 
@@ -1928,7 +1923,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             if bool(getattr(event_args, "stationary_fast_goal_directed", False)):
                 stationary_goal_check = check_goal_configuration_feasibility(
                     config=config, model=model, q_goal=q_goal,
-                    geometry=confirmed_stationary_geometry,
+                    forecast=forecast,
                     min_clearance_m=float(args.online_accept_m),
                 )
                 result["stationary_goal_feasibility"] = stationary_goal_check

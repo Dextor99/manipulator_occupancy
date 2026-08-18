@@ -3074,6 +3074,55 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.shadow_hold_observation_s == pytest.approx(3.0)
 
 
+def test_stationary_goal_check_uses_stage4_forecast(monkeypatch):
+    calls = {}
+
+    class FakeEvaluator:
+        def configuration(self, q, forecast, t, *, density, with_gradient):
+            calls["q"] = q
+            calls["forecast"] = forecast
+            calls["density"] = density
+            return type("Risk", (), {"min_distance": 0.105, "nearest_link": "left_link"})()
+
+    def fake_stack(config, model, forecast):
+        calls["stack_forecast"] = forecast
+        return FakeEvaluator(), object(), object()
+
+    monkeypatch.setattr(event_replan.trial, "make_risk_stack", fake_stack)
+    forecast = object()
+    result = event_replan.check_goal_configuration_feasibility(
+        config={}, model=object(), q_goal=np.zeros(6),
+        forecast=forecast, min_clearance_m=0.09,
+    )
+    assert result["feasible"] is True
+    assert result["goal_clearance_m"] == pytest.approx(0.105)
+    assert result["evaluation_mode"] == "stage4_zero_velocity_dense_configuration"
+    assert result["full_optimizer_used"] is False
+    assert calls["stack_forecast"] is forecast
+    assert calls["forecast"] is forecast
+
+
+def test_stationary_goal_check_rejects_below_online_clearance(monkeypatch):
+    class FakeEvaluator:
+        def configuration(self, q, forecast, t, *, density, with_gradient):
+            return type("Risk", (), {"min_distance": 0.085, "nearest_link": "left_link"})()
+
+    monkeypatch.setattr(event_replan.trial, "make_risk_stack", lambda *args: (FakeEvaluator(), None, None))
+    result = event_replan.check_goal_configuration_feasibility(
+        config={}, model=object(), q_goal=np.zeros(6),
+        forecast=object(), min_clearance_m=0.09,
+    )
+    assert result["feasible"] is False
+    assert result["goal_clearance_m"] == pytest.approx(0.085)
+
+
+def test_stationary_goal_check_has_no_stage2_schema_dependency():
+    source = inspect.getsource(event_replan.check_goal_configuration_feasibility)
+    assert "d_accept" not in source
+    assert "run_652_static_avoidance" not in source
+    assert "make_risk_stack" in source
+
+
 def test_command_time_stale_is_not_treated_as_executed_local_tail():
     source = inspect.getsource(event_replan.make_event_handler)
     assert "NOT_EXECUTED_COMMAND_TIME_STALE" in source
