@@ -1491,7 +1491,17 @@ def wait_for_candidate_goal_guarded(
             # must not overwrite an already-reached endpoint.  This is a
             # narrow completion race exception: raw guard and every genuine
             # predictive-risk/monitor failure still take priority.
-            if endpoint_reached and motion_monitor.get("reason") == "obstacle_track_stale":
+            reason_value = motion_monitor.get("reason")
+            if isinstance(reason_value, str):
+                monitor_reasons = {reason_value}
+            elif isinstance(reason_value, (list, tuple, set)):
+                monitor_reasons = {str(item) for item in reason_value}
+            else:
+                monitor_reasons = set()
+            segment_end_stale_only = bool(
+                endpoint_reached and monitor_reasons == {"obstacle_track_stale"}
+            )
+            if segment_end_stale_only:
                 samples[-1]["motion_monitor"]["segment_end_stale_completion"] = True
                 return (
                     {

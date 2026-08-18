@@ -3152,6 +3152,63 @@ def test_completed_endpoint_wins_over_segment_end_stale_monitor():
     assert samples[-1]["motion_monitor"]["segment_end_stale_completion"] is True
 
 
+def test_completed_endpoint_accepts_r11_list_reason_shape():
+    class FakeRobot:
+        def __init__(self):
+            self.values = [np.zeros(6), np.ones(6) * 0.01]
+            self.index = 0
+
+        def get_joint(self):
+            value = self.values[min(self.index, len(self.values) - 1)].copy()
+            self.index += 1
+            return value
+
+    robot = FakeRobot()
+    args = type("Args", (), {"guided_hard_stop_m": 0.10})()
+    result, samples = trial.wait_for_candidate_goal_guarded(
+        robot, np.ones(6) * 0.01,
+        processor=None, denoiser=None, args=args,
+        goal_tolerance_rad=0.02, min_execution_wait_s=0.0,
+        motion_timeout_s=0.2, poll_s=0.0, min_motion_rad=0.001,
+        guard_provider=lambda: {"distance_m": 0.20, "timestamp": 0.0},
+        motion_monitor_provider=lambda **kwargs: {
+            "motion_safe": False,
+            "reason": ["obstacle_track_stale"],
+        },
+    )
+    assert result["reached"] is True
+    assert result["monitor_stale_at_completed_endpoint"] is True
+    assert samples[-1]["motion_monitor"]["segment_end_stale_completion"] is True
+
+
+def test_completed_endpoint_does_not_override_stale_plus_predictive_risk():
+    class FakeRobot:
+        def __init__(self):
+            self.values = [np.zeros(6), np.ones(6) * 0.01]
+            self.index = 0
+
+        def get_joint(self):
+            value = self.values[min(self.index, len(self.values) - 1)].copy()
+            self.index += 1
+            return value
+
+    robot = FakeRobot()
+    args = type("Args", (), {"guided_hard_stop_m": 0.10})()
+    result, _ = trial.wait_for_candidate_goal_guarded(
+        robot, np.ones(6) * 0.01,
+        processor=None, denoiser=None, args=args,
+        goal_tolerance_rad=0.02, min_execution_wait_s=0.0,
+        motion_timeout_s=0.2, poll_s=0.0, min_motion_rad=0.001,
+        guard_provider=lambda: {"distance_m": 0.20, "timestamp": 0.0},
+        motion_monitor_provider=lambda **kwargs: {
+            "motion_safe": False,
+            "reason": ["obstacle_track_stale", "remaining_predicted_risk"],
+        },
+    )
+    assert result["reached"] is False
+    assert result["monitor_stopped"] is True
+
+
 def test_command_time_stale_is_not_treated_as_executed_local_tail():
     source = inspect.getsource(event_replan.make_event_handler)
     assert "NOT_EXECUTED_COMMAND_TIME_STALE" in source
