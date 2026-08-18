@@ -3086,6 +3086,11 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "stationary_fast_terminal_bypass" in source
     assert "STATIONARY_FAST_TERMINAL_BYPASS_HOLD" in source
     assert 'if not terminal.get("authorized", False) and can_continue_local_after_terminal_block' in source
+    assert 'context["local_artifacts"]["q_now"]' in source
+    planner_source = inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
+    assert 'fast_args.fast_max_ms = remaining_ms' in planner_source
+    assert 'stationary_terminal_total_elapsed_ms' in planner_source
+    assert 'phase_weights = ((1.0, 0.5), (1.0, 0.5), (0.5, 0.0), (0.0,))' in inspect.getsource(event_replan._stationary_virtual_anchors)
 
 
 def test_joint_polyline_resampling_preserves_endpoints():

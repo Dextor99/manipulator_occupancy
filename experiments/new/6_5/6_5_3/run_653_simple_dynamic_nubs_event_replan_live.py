@@ -1019,8 +1019,9 @@ def _stationary_virtual_anchors(
     q_virtual = np.asarray(q_start, dtype=np.float64).copy()
     anchors = [q_virtual.copy()]
     audit: list[dict[str, Any]] = []
-    weights = (1.0, 0.5, 0.0)
+    phase_weights = ((1.0, 0.5), (1.0, 0.5), (0.5, 0.0), (0.0,))
     for index in range(max(1, int(rollout_steps))):
+        weights = phase_weights[min(index, len(phase_weights) - 1)]
         nominal_goal = (np.asarray(q_goal), np.zeros(6), np.zeros(6))
         nominal = live.nominal_local_risk(
             runtime_args, model, evaluator, forecast, q_virtual, nominal_goal
@@ -1059,7 +1060,20 @@ def _stationary_virtual_anchors(
         eligible = [row for row in rows if row["tabletop"].get("passed", False)]
         if not eligible:
             break
-        selected = max(eligible, key=lambda row: float(row["minimum"]["distance_m"]))
+        task_direction = np.asarray(direction["task_direction"], dtype=np.float64)
+        for row in eligible:
+            tcp_end = live.simple.tcp_position(model, row["q_goal"], tcp_link)
+            row["task_progress_m"] = float(np.dot(tcp_end - tcp_now, task_direction))
+            row["goal_distance_m"] = float(np.linalg.norm(tcp_goal - tcp_end))
+        selected = max(
+            eligible,
+            key=lambda row: (
+                float(row["minimum"]["distance_m"]) >= float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
+                row["task_progress_m"],
+                -row["goal_distance_m"],
+                float(row["minimum"]["distance_m"]),
+            ),
+        )
         q_virtual = selected["q_goal"].copy()
         anchors.append(q_virtual.copy())
         audit.append({
@@ -1068,6 +1082,9 @@ def _stationary_virtual_anchors(
             "phase": selected["item"].get("phase"),
             "coarse_min_distance_m": float(selected["minimum"]["distance_m"]),
             "coarse_min_tau_s": float(selected["minimum"]["tau_s"]),
+            "phase_weights": list(weights),
+            "task_progress_m": selected.get("task_progress_m"),
+            "goal_distance_m": selected.get("goal_distance_m"),
             "direction": direction,
         })
     return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors)}
@@ -1090,6 +1107,8 @@ def plan_stationary_fast_terminal_bypass(
     artifacts_out: dict[str, Any],
 ) -> tuple[dict[str, Any], Any | None]:
     """Plan one complete stationary terminal path with a single Fast call."""
+    planner_started = time.perf_counter()
+    total_max_ms = float(getattr(runtime_args, "fast_max_ms", 250.0))
     trial_dir.mkdir(parents=True, exist_ok=True)
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
     try:
@@ -1120,6 +1139,19 @@ def plan_stationary_fast_terminal_bypass(
         max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
         tcp_link=tcp_link,
     )
+    rollout_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+    remaining_ms = max(0.0, total_max_ms - rollout_elapsed_ms)
+    if remaining_ms <= 1.0:
+        payload = {
+            "status": "STATIONARY_FAST_TERMINAL_BYPASS_TIMEOUT_HOLD",
+            "authorized": False,
+            "planner_mode": "stationary_fast_terminal_bypass",
+            "virtual_rollout_elapsed_ms": rollout_elapsed_ms,
+            "total_fast_budget_ms": total_max_ms,
+            "full_optimizer_used": False,
+        }
+        trial.write_json(trial_dir / "authorization_summary.json", payload)
+        return payload, None
     duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 6.0))
     segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 8)))
     durations = np.full(segments, duration / segments, dtype=np.float64)
@@ -1134,6 +1166,7 @@ def plan_stationary_fast_terminal_bypass(
     fast_args.local_segments = segments
     fast_args.stationary_fast_terminal_active = True
     fast_args.stationary_fast_terminal_polyline = polyline
+    fast_args.fast_max_ms = remaining_ms
     result = base_fast(
         fast_args, config, model, q_now=np.asarray(q_start), qd_now=np.zeros(6),
         center=np.asarray(fresh["center"]), velocity=np.zeros(3),
@@ -1150,7 +1183,11 @@ def plan_stationary_fast_terminal_bypass(
     result["duration_s"] = duration
     result["segments"] = segments
     result["tail_fixed_to_goal"] = True
-    authorized = bool(result.get("local_repair_ready", False))
+    total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+    authorized = bool(
+        result.get("local_repair_ready", False)
+        and total_elapsed_ms <= total_max_ms
+    )
     trajectory = artifacts_out.get("candidate_trajectory") if authorized else None
     payload = {
         "status": "TERMINAL_GOAL_AUTHORIZED" if authorized else "STATIONARY_FAST_TERMINAL_BYPASS_HOLD",
@@ -1158,6 +1195,12 @@ def plan_stationary_fast_terminal_bypass(
         "planner_mode": "stationary_fast_terminal_bypass",
         "duration_s": duration,
         "segments": segments,
+        "full_optimizer_used": False,
+        "virtual_rollout_elapsed_ms": rollout_elapsed_ms,
+        "base_fast_elapsed_ms": result.get("fast_elapsed_ms"),
+        "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
+        "stationary_terminal_total_budget_ms": total_max_ms,
+        "total_budget_met": bool(total_elapsed_ms <= total_max_ms),
         "virtual_rollout": rollout_audit,
         "side_audit": side_audit,
         "fast_result": result,
@@ -2203,7 +2246,11 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     args, config, model,
                     q_start=np.asarray(q_terminal_start), q_goal=np.asarray(q_goal),
                     fresh=monitor1["fresh"], geometry=confirmed_stationary_geometry,
-                    q_escape_start=np.asarray(q_terminal_start),
+                    q_escape_start=(
+                        np.asarray(context["local_artifacts"]["q_now"], dtype=np.float64)
+                        if not command_time_stale
+                        else np.asarray(q_terminal_start, dtype=np.float64)
+                    ),
                     trial_dir=bypass_dir,
                     nominal_reference_goal=(np.asarray(q_goal), np.zeros(6), np.zeros(6)),
                     risk_links=set(context.get("risk_links") or set()),
