@@ -3072,6 +3072,28 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.command_time_fast_retry is True
     assert core_args.stationary_center_span_m == pytest.approx(0.02)
     assert core_args.shadow_hold_observation_s == pytest.approx(3.0)
+    assert core_args.stationary_fast_terminal_bypass is True
+    assert core_args.stationary_fast_terminal_duration_s == pytest.approx(6.0)
+    assert core_args.stationary_fast_terminal_segments == 8
+    assert core_args.stationary_fast_terminal_rollout_steps == 4
+
+
+def test_stationary_fast_terminal_bypass_is_one_complete_path():
+    args = d2_approach_hold.build_parser().parse_args(["--repeat", "1"])
+    assert args.terminal_durations_s == "6.0,8.0"
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "plan_stationary_fast_terminal_bypass" in source
+    assert "stationary_fast_terminal_bypass" in source
+    assert "STATIONARY_FAST_TERMINAL_BYPASS_HOLD" in source
+    assert 'if not terminal.get("authorized", False) and can_continue_local_after_terminal_block' in source
+
+
+def test_joint_polyline_resampling_preserves_endpoints():
+    points = np.array([[0.0] * 6, [1.0] * 6, [1.0, 2.0, 1.0, 1.0, 1.0, 1.0]])
+    sampled = event_replan.resample_joint_polyline(points, 5)
+    assert sampled.shape == (5, 6)
+    np.testing.assert_allclose(sampled[0], points[0])
+    np.testing.assert_allclose(sampled[-1], points[-1])
 
 
 def test_stationary_goal_check_uses_stage4_forecast(monkeypatch):

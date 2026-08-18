@@ -87,6 +87,9 @@ SCENE_PROTOCOL = {
         "stationary_hold_switches_to_fast_goal_directed": True,
         "command_time_stale_replans_from_latest_state": True,
         "terminal_distance_blocked_reenters_goal_directed_fast": True,
+        "terminal_distance_blocked_uses_fast_terminal_bypass": True,
+        "stationary_fast_terminal_is_single_complete_path": True,
+        "stationary_terminal_full_ccro_enabled": False,
         "terminal_failure_is_fail_closed": True,
         "continuous_replan_watchdog_s": 10.0,
     },
@@ -111,8 +114,13 @@ def build_parser() -> argparse.ArgumentParser:
         stationary_terminal_full_plan=False,
         stationary_fast_goal_directed=True,
         command_time_fast_retry=True,
+        stationary_fast_terminal_bypass=True,
+        stationary_fast_terminal_duration_s=6.0,
+        stationary_fast_terminal_segments=8,
+        stationary_fast_terminal_rollout_steps=4,
         stationary_center_span_m=HOLD_CENTER_SPAN_MAX_M,
         shadow_hold_observation_s=3.0,
+        terminal_durations_s="6.0,8.0",
     )
     parser.add_argument("--scene-operator-phrase", default="")
     return parser

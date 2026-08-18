@@ -2255,6 +2255,15 @@ def run_fast_repair(
     head, tail, durations, p_inner, q_goal = make_local_reference(
         q_now, qd_now, args, reference_goal=reference_goal
     )
+    virtual_polyline = getattr(args, "stationary_fast_terminal_polyline", None)
+    if virtual_polyline is not None:
+        virtual_polyline = np.asarray(virtual_polyline, dtype=np.float64)
+        if virtual_polyline.ndim == 2 and virtual_polyline.shape[1] == 6 and virtual_polyline.shape[0] >= 2:
+            # The stationary terminal branch has already checked these
+            # anchors virtually.  Keep the preset q_goal as an immutable tail
+            # and let the same Fast/verifier repair this long seed once.
+            p_inner = virtual_polyline[1:-1].copy()
+            q_goal = np.asarray(reference_goal[0], dtype=np.float64).copy()
     reference_trajectory = NUBSTrajectory6D().generate(p_inner, head, tail, durations)
     original_task_reference_trajectory: Any = reference_trajectory
     if original_task_reference_goal is not None:
@@ -2292,7 +2301,9 @@ def run_fast_repair(
         dense_active=True,
         v4_mode=True,
         deadline_perf=deadline_perf,
-        elastic_tail_position=True,
+        # Stationary terminal bypass fixes the terminal at the preset goal;
+        # the normal dynamic local path keeps its historical elastic tail.
+        elastic_tail_position=not bool(getattr(args, "stationary_fast_terminal_active", False)),
         cheap_scale_screening=True,
         # A small linearization buffer compensates for the finite-distance
         # model; the externally reported/accepted requirement remains 3 mm.

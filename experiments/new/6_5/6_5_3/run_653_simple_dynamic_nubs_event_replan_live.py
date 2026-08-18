@@ -636,6 +636,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="retry a stale pre-command local candidate from the latest actual state",
     )
+    parser.add_argument(
+        "--stationary-fast-terminal-bypass", action=argparse.BooleanOptionalAction,
+        default=False,
+        help="use one long-horizon Fast terminal bypass after confirmed stationary hold",
+    )
+    parser.add_argument("--stationary-fast-terminal-duration-s", type=float, default=6.0)
+    parser.add_argument("--stationary-fast-terminal-segments", type=int, default=8)
+    parser.add_argument("--stationary-fast-terminal-rollout-steps", type=int, default=4)
     return parser
 
 
@@ -951,6 +959,215 @@ def make_terminal_trajectory(
     tail = trial.NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6))
     inner = trial.NUBSTrajectory6D.linear_inner_points(q_now, q_goal, durations)
     return trial.NUBSTrajectory6D().generate(inner, head, tail, durations)
+
+
+def resample_joint_polyline(points: np.ndarray, count: int) -> np.ndarray:
+    """Resample a joint-space polyline at uniform arclength fractions.
+
+    The first and last samples are preserved exactly.  This is deliberately
+    geometry-only: it is used to build a stationary virtual rollout before a
+    single real Fast call, and never commands the robot by itself.
+    """
+    values = np.asarray(points, dtype=np.float64)
+    if values.ndim != 2 or values.shape[0] < 2:
+        raise ValueError("polyline must have shape (N, 6) with N >= 2")
+    if int(count) < 2:
+        raise ValueError("count must be >= 2")
+    count = int(count)
+    deltas = np.linalg.norm(np.diff(values, axis=0), axis=1)
+    arclength = np.concatenate(([0.0], np.cumsum(deltas)))
+    total = float(arclength[-1])
+    if total <= 1.0e-12:
+        return np.repeat(values[:1], count, axis=0)
+    targets = np.linspace(0.0, total, count)
+    result = np.empty((count, values.shape[1]), dtype=np.float64)
+    for index, target in enumerate(targets):
+        right = int(np.searchsorted(arclength, target, side="right"))
+        right = min(max(right, 1), len(arclength) - 1)
+        left = right - 1
+        span = float(arclength[right] - arclength[left])
+        weight = 0.0 if span <= 1.0e-12 else (target - arclength[left]) / span
+        result[index] = values[left] + float(weight) * (values[right] - values[left])
+    result[0] = values[0]
+    result[-1] = values[-1]
+    return result
+
+
+def _stationary_virtual_anchors(
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    q_start: np.ndarray,
+    q_goal: np.ndarray,
+    fresh: dict[str, Any],
+    geometry: dict[str, Any],
+    side: np.ndarray,
+    rollout_steps: int,
+    forward_m: float,
+    side_m: float,
+    max_joint_delta_rad: float,
+    tcp_link: str,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Create strong/weak/release virtual anchors without invoking Fast."""
+    forecast = v3.v3_execution_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+    )
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    q_virtual = np.asarray(q_start, dtype=np.float64).copy()
+    anchors = [q_virtual.copy()]
+    audit: list[dict[str, Any]] = []
+    weights = (1.0, 0.5, 0.0)
+    for index in range(max(1, int(rollout_steps))):
+        nominal_goal = (np.asarray(q_goal), np.zeros(6), np.zeros(6))
+        nominal = live.nominal_local_risk(
+            runtime_args, model, evaluator, forecast, q_virtual, nominal_goal
+        )
+        if nominal.get("risk_object") is None:
+            break
+        risk = nominal["risk_object"]
+        if risk.robot_point is None or risk.obstacle_point is None:
+            break
+        tcp_now = live.simple.tcp_position(model, q_virtual, tcp_link)
+        tcp_goal = live.simple.tcp_position(model, np.asarray(q_goal), tcp_link)
+        goals, direction = bypass.goal_directed_side_continuation_candidates(
+            model, q_virtual, tcp_position=tcp_now, goal_position=tcp_goal,
+            risk_link=str(nominal["nearest_link"]),
+            risk_position=np.asarray(risk.robot_point),
+            risk_point_q=np.asarray(nominal["q_risk"]), established_side=side,
+            forward_m=float(forward_m), side_m=float(side_m),
+            side_weights=weights, tcp_link=tcp_link,
+            max_joint_delta_rad=float(max_joint_delta_rad),
+            tabletop_parallel_side=True, preserve_tcp_height=True,
+        )
+        rows = []
+        for item in goals:
+            q_item = np.asarray(item["q_goal"], dtype=np.float64)
+            head, tail, durations, inner, _ = trial.make_local_reference(
+                q_virtual, np.zeros(6), runtime_args,
+                reference_goal=(q_item, np.zeros(6), np.zeros(6)),
+            )
+            trajectory = trial.NUBSTrajectory6D().generate(inner, head, tail, durations)
+            minimum, profile = live.simple.trajectory_minimum(evaluator, forecast, trajectory)
+            guard = trial.gripper_base_workspace_guard(
+                trajectory, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+            )
+            rows.append({"item": item, "q_goal": q_item, "minimum": minimum,
+                         "profile": profile, "tabletop": guard})
+        eligible = [row for row in rows if row["tabletop"].get("passed", False)]
+        if not eligible:
+            break
+        selected = max(eligible, key=lambda row: float(row["minimum"]["distance_m"]))
+        q_virtual = selected["q_goal"].copy()
+        anchors.append(q_virtual.copy())
+        audit.append({
+            "step": index + 1,
+            "candidate": int(selected["item"]["candidate"]),
+            "phase": selected["item"].get("phase"),
+            "coarse_min_distance_m": float(selected["minimum"]["distance_m"]),
+            "coarse_min_tau_s": float(selected["minimum"]["tau_s"]),
+            "direction": direction,
+        })
+    return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors)}
+
+
+def plan_stationary_fast_terminal_bypass(
+    base_fast: Any,
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    q_start: np.ndarray,
+    q_goal: np.ndarray,
+    fresh: dict[str, Any],
+    geometry: dict[str, Any],
+    q_escape_start: np.ndarray,
+    trial_dir: Path,
+    nominal_reference_goal: tuple[np.ndarray, np.ndarray, np.ndarray],
+    risk_links: set[str],
+    artifacts_out: dict[str, Any],
+) -> tuple[dict[str, Any], Any | None]:
+    """Plan one complete stationary terminal path with a single Fast call."""
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
+    try:
+        side, side_audit = established_bypass_side(
+            model, q_escape_start, q_start, q_goal, tcp_link=tcp_link
+        )
+    except RuntimeError:
+        tcp_now = live.simple.tcp_position(model, q_start, tcp_link)
+        tcp_goal = live.simple.tcp_position(model, q_goal, tcp_link)
+        task = bypass.normalized(tcp_goal - tcp_now)
+        nominal_forecast = v3.v3_execution_multisphere_forecast(
+            geometry["component_centers"], geometry["component_base_radii"], np.zeros(3)
+        )
+        evaluator, _, _ = trial.make_risk_stack(config, model, nominal_forecast)
+        nominal = live.nominal_local_risk(
+            runtime_args, model, evaluator, nominal_forecast, q_start,
+            (q_goal, np.zeros(6), np.zeros(6)),
+        )
+        away = np.asarray(nominal["risk_object"].robot_point) - np.asarray(nominal["risk_object"].obstacle_point)
+        side = bypass.tabletop_parallel_lateral_direction(task, away - task * float(np.dot(task, away)))
+        side_audit = {"semantic": "risk_away_stationary_fallback", "established_bypass_side": side.tolist()}
+    anchors, rollout_audit = _stationary_virtual_anchors(
+        runtime_args, config, model, q_start=q_start, q_goal=q_goal,
+        fresh=fresh, geometry=geometry, side=side,
+        rollout_steps=int(getattr(runtime_args, "stationary_fast_terminal_rollout_steps", 4)),
+        forward_m=float(getattr(runtime_args, "forward_m", 0.05)),
+        side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
+        max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
+        tcp_link=tcp_link,
+    )
+    duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 6.0))
+    segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 8)))
+    durations = np.full(segments, duration / segments, dtype=np.float64)
+    polyline = resample_joint_polyline(anchors, segments + 1)
+    head = trial.NUBSTrajectory6D.make_boundary_state(q_start, np.zeros(6), np.zeros(6))
+    tail = trial.NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6))
+    seed = trial.NUBSTrajectory6D().generate(polyline[1:-1], head, tail, durations)
+    # Reuse the production Fast path once.  This preserves all existing
+    # verifier, tabletop, freshness and computation-ceiling gates.
+    fast_args = copy.copy(runtime_args)
+    fast_args.local_horizon_s = duration
+    fast_args.local_segments = segments
+    fast_args.stationary_fast_terminal_active = True
+    fast_args.stationary_fast_terminal_polyline = polyline
+    result = base_fast(
+        fast_args, config, model, q_now=np.asarray(q_start), qd_now=np.zeros(6),
+        center=np.asarray(fresh["center"]), velocity=np.zeros(3),
+        radius=float(fresh.get("radius", 0.0)), risk_links=risk_links,
+        trial_dir=trial_dir, reference_goal=(np.asarray(q_goal), np.zeros(6), np.zeros(6)),
+        rejoin_goals=None, obstacle_audit={"track_id": int(fresh.get("track_id", 1)), "phase": "stationary_fast_terminal_bypass"},
+        multisphere_geometry=geometry, artifacts_out=artifacts_out,
+        accept_verified_seed_without_fast_step=True,
+        original_task_reference_goal=nominal_reference_goal,
+    )
+    result["planner_mode"] = "stationary_fast_terminal_bypass"
+    result["virtual_rollout"] = rollout_audit
+    result["side_audit"] = side_audit
+    result["duration_s"] = duration
+    result["segments"] = segments
+    result["tail_fixed_to_goal"] = True
+    authorized = bool(result.get("local_repair_ready", False))
+    trajectory = artifacts_out.get("candidate_trajectory") if authorized else None
+    payload = {
+        "status": "TERMINAL_GOAL_AUTHORIZED" if authorized else "STATIONARY_FAST_TERMINAL_BYPASS_HOLD",
+        "authorized": authorized,
+        "planner_mode": "stationary_fast_terminal_bypass",
+        "duration_s": duration,
+        "segments": segments,
+        "virtual_rollout": rollout_audit,
+        "side_audit": side_audit,
+        "fast_result": result,
+        "authorized_trajectory_csv": str(trial_dir / "candidate" / "fast_ccro_nubs_candidate.csv") if authorized else None,
+    }
+    if trajectory is not None:
+        trial.save_trajectory_csv(trial_dir / "authorized_terminal_goal.csv", trajectory, dt=0.01)
+        payload["authorized_trajectory_csv"] = str(trial_dir / "authorized_terminal_goal.csv")
+    trial.write_json(trial_dir / "authorization_summary.json", payload)
+    return payload, trajectory
 
 
 def next_recorded_reference_goal(reference: Any, q_actual: np.ndarray, horizon_s: float):
@@ -1345,6 +1562,12 @@ def authorize_terminal_goal(
         attempts.append(row)
         if authorized:
             selected = trajectory
+            break
+        # The shorter direct terminal duration is already the least stale
+        # probe.  Once it fails only on distance, trying slower/longer direct
+        # NUBS variants cannot make a blocked stationary path viable; hand it
+        # to the dedicated stationary Fast bypass instead.
+        if not bool(checks.get("distance_ok", False)):
             break
     csv_path = output_dir / "authorized_terminal_goal.csv"
     if csv_path.exists():
@@ -1964,11 +2187,43 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         terminal_classification = classify_terminal_authorization(terminal)
         result["terminal_authorization_classification"] = terminal_classification
         if not terminal.get("authorized", False):
+            # Once the obstacle is confirmed stationary, a blocked direct
+            # terminal path is solved by one complete long-horizon Fast
+            # bypass.  This deliberately does not recurse through local #2,
+            # #3, ...; the virtual rollout supplies the side/release anchors
+            # and the single real Fast call owns the final verifier.
+            if (
+                bool(getattr(event_args, "stationary_fast_terminal_bypass", False))
+                and bool(terminal_classification.get("distance_blocked", False))
+                and confirmed_stationary_geometry is not None
+            ):
+                bypass_dir = trial_dir / "stationary_fast_terminal_bypass"
+                bypass_payload, bypass_trajectory = plan_stationary_fast_terminal_bypass(
+                    trial.run_fast_repair,
+                    args, config, model,
+                    q_start=np.asarray(q_terminal_start), q_goal=np.asarray(q_goal),
+                    fresh=monitor1["fresh"], geometry=confirmed_stationary_geometry,
+                    q_escape_start=np.asarray(q_terminal_start),
+                    trial_dir=bypass_dir,
+                    nominal_reference_goal=(np.asarray(q_goal), np.zeros(6), np.zeros(6)),
+                    risk_links=set(context.get("risk_links") or set()),
+                    artifacts_out={},
+                )
+                result["stationary_fast_terminal_bypass"] = bypass_payload
+                if not bypass_payload.get("authorized", False) or bypass_trajectory is None:
+                    result["status"] = "STATIONARY_FAST_TERMINAL_BYPASS_HOLD"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                terminal = bypass_payload
+                terminal_trajectory = bypass_trajectory
+                terminal_dir = bypass_dir
+                result["terminal_authorization"] = terminal
+                result["terminal_planner_mode"] = "stationary_fast_terminal_bypass"
             if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
                 result["status"] = "STATIONARY_FULL_CCRO_HOLD"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
-            if can_continue_local_after_terminal_block(tail_monitor, terminal):
+            if not terminal.get("authorized", False) and can_continue_local_after_terminal_block(tail_monitor, terminal):
                 worker = context.get("persistent_worker")
                 if worker is None:
                     result["status"] = "TERMINAL_PATH_BLOCKED_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"

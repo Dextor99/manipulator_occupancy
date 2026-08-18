@@ -604,6 +604,10 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("command_time_fast_retry", False),
         ("stationary_center_span_m", 0.02),
         ("shadow_hold_observation_s", 0.0),
+        ("stationary_fast_terminal_bypass", False),
+        ("stationary_fast_terminal_duration_s", 6.0),
+        ("stationary_fast_terminal_segments", 8),
+        ("stationary_fast_terminal_rollout_steps", 4),
     ):
         setattr(core_args, name, getattr(wrapper_args, name, default))
 
