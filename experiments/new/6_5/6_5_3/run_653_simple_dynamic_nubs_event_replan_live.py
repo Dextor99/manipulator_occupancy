@@ -1021,6 +1021,16 @@ def append_unique_route_point(route: list[np.ndarray], q: np.ndarray, *, tol_rad
         route.append(q_value.copy())
 
 
+def bounded_joint_goal_step(q_now: np.ndarray, q_goal: np.ndarray, *, max_delta_rad: float) -> np.ndarray:
+    q_now = np.asarray(q_now, dtype=np.float64)
+    q_goal = np.asarray(q_goal, dtype=np.float64)
+    delta = q_goal - q_now
+    peak = float(np.max(np.abs(delta)))
+    if peak <= float(max_delta_rad):
+        return q_goal.copy()
+    return q_now + (float(max_delta_rad) / peak) * delta
+
+
 def probe_stationary_goal_connection(
     config: dict[str, Any], model: Any, forecast: Any,
     q_now: np.ndarray, q_goal: np.ndarray, *, tcp_link: str,
@@ -1305,6 +1315,13 @@ def build_stationary_virtual_fast_route(
         np.asarray(geometry["component_base_radii"], dtype=np.float64),
         np.zeros(3, dtype=np.float64),
     )
+    tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
+    try:
+        locked_bypass_side, locked_side_audit = established_bypass_side(
+            model, np.asarray(q_escape_start), np.asarray(q_start), q_goal, tcp_link=tcp_link
+        )
+    except RuntimeError as exc:
+        return None, {"connected_to_goal": False, "reason": "locked_bypass_side_unavailable", "error": str(exc), "steps": step_audit}
     zero = np.zeros(6, dtype=np.float64)
     for virtual_index in range(1, int(max_virtual_steps) + 1):
         if deadline_perf is not None and time.perf_counter() >= deadline_perf:
@@ -1324,6 +1341,19 @@ def build_stationary_virtual_fast_route(
                 "virtual_fast_step_count": sum(row.get("action") == "virtual_fast_progress" for row in step_audit),
                 "route_point_count": len(route_points), "steps": step_audit,
             }
+        q_joint_step = bounded_joint_goal_step(
+            q_virtual, q_goal,
+            max_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
+        )
+        joint_evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+        joint_screen = sampled_joint_segment_clearance(
+            joint_evaluator, forecast, q_virtual, q_joint_step,
+            samples=9, density="medium",
+        )
+        joint_seed_ok = float(joint_screen["min_distance_m"]) >= float(
+            getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)
+        )
+        progress_goal = q_joint_step if joint_seed_ok else q_goal
         step_dir = trial_dir / f"virtual_fast_{virtual_index:02d}"
         artifacts: dict[str, Any] = {}
         virtual_args = copy.copy(runtime_args)
@@ -1334,25 +1364,29 @@ def build_stationary_virtual_fast_route(
         virtual_args.max_joint_delta_rad = float(getattr(runtime_args, "max_joint_delta_rad", 0.12))
         candidate = plan_goal_directed_continuation(
             base_fast, virtual_args, config, model,
-            q_escape_start=np.asarray(q_escape_start), q_now=q_virtual, q_final=q_goal,
+            q_escape_start=np.asarray(q_escape_start), q_now=q_virtual, q_final=progress_goal,
             fresh=fresh_static, geometry=geometry, risk_links=risk_links, trial_dir=step_dir,
-            nominal_reference_goal=(q_goal, zero, zero), artifacts_out=artifacts,
+            nominal_reference_goal=(progress_goal, zero, zero), artifacts_out=artifacts,
             forward_m=float(getattr(runtime_args, "forward_m", 0.05)),
             side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
             robust_target_m=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
             max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
             tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
             robust_target_is_diagnostic=True, allow_unestablished_side_fallback=False,
+            locked_bypass_side=locked_bypass_side,
         )
         trajectory = artifacts.get("candidate_trajectory")
         if not candidate.get("local_repair_ready", False) or trajectory is None:
-            return None, {"connected_to_goal": False, "reason": "virtual_fast_local_failed", "failed_virtual_index": virtual_index, "candidate": candidate, "steps": step_audit}
+            return None, {"connected_to_goal": False, "reason": "virtual_fast_local_failed", "failed_virtual_index": virtual_index, "candidate": candidate, "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]), "steps": step_audit}
         sampled = sample_trajectory_shape_points(trajectory, samples=samples_per_local)
         for point in sampled:
             append_unique_route_point(route_points, point)
         q_virtual = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
         step_audit.append({
             "virtual_index": virtual_index, "action": "virtual_fast_progress",
+            "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]),
+            "joint_goal_seed_ok": bool(joint_seed_ok),
+            "locked_bypass_side": locked_bypass_side.tolist(),
             "fast_elapsed_ms": candidate.get("fast_elapsed_ms"),
             "verification_min_distance_m": candidate.get("verification_min_distance_m"),
             "q_virtual_tail_rad": q_virtual.tolist(), "sampled_shape_point_count": len(sampled),
@@ -1646,6 +1680,7 @@ def plan_goal_directed_continuation(
     tcp_link: str,
     robust_target_is_diagnostic: bool = False,
     allow_unestablished_side_fallback: bool = False,
+    locked_bypass_side: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Select strong/weak/release goal progress, then invoke unchanged Fast."""
     forecast = v3.v3_execution_multisphere_forecast(
@@ -1672,9 +1707,17 @@ def plan_goal_directed_continuation(
             "rejection_reasons": ["missing_ccro_surface_points"],
         }
     try:
-        side, side_audit = established_bypass_side(
-            model, q_escape_start, q_now, q_final, tcp_link=tcp_link
-        )
+        if locked_bypass_side is not None:
+            side = bypass.normalized(np.asarray(locked_bypass_side, dtype=np.float64))
+            side_audit = {
+                "semantic": "locked_from_real_local1",
+                "locked_bypass_side": side.tolist(),
+                "q_escape_start_rad": np.asarray(q_escape_start).tolist(),
+            }
+        else:
+            side, side_audit = established_bypass_side(
+                model, q_escape_start, q_now, q_final, tcp_link=tcp_link
+            )
     except RuntimeError:
         if not allow_unestablished_side_fallback:
             raise

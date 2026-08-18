@@ -3101,6 +3101,8 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "sample_trajectory_shape_points" in route_source
     assert "append_unique_route_point" in route_source
     assert "probe_stationary_goal_connection" in route_source
+    assert "bounded_joint_goal_step" in route_source
+    assert "locked_bypass_side" in route_source
     assert "getattr(runtime_args, \"local_segments\", 5)" in route_source
     assert "getattr(runtime_args, \"local_horizon_s\", 1.0)" in route_source
     assert "connected_to_goal" in route_source
