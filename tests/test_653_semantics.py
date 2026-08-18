@@ -3075,7 +3075,7 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_fast_terminal_bypass is True
     assert core_args.stationary_fast_terminal_duration_s == pytest.approx(6.0)
     assert core_args.stationary_fast_terminal_segments == 8
-    assert core_args.stationary_fast_terminal_rollout_steps == 4
+    assert core_args.stationary_fast_terminal_rollout_steps == 8
     assert core_args.stationary_fast_terminal_target_ms == pytest.approx(500.0)
     assert core_args.stationary_fast_terminal_max_ms == pytest.approx(1000.0)
 
@@ -3092,7 +3092,8 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     planner_source = inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert 'fast_args.fast_max_ms = remaining_ms' in planner_source
     assert 'stationary_terminal_total_elapsed_ms' in planner_source
-    assert 'phase_weights = ((1.0, 0.5), (1.0, 0.5), (0.5, 0.0), (0.0,))' in inspect.getsource(event_replan._stationary_virtual_anchors)
+    assert 'phase_weights = ((1.0, 0.5), (0.5,), (0.5,), (0.5,))' in inspect.getsource(event_replan._stationary_virtual_anchors)
+    assert "sampled_joint_segment_clearance" in inspect.getsource(event_replan._stationary_virtual_anchors)
 
 
 def test_joint_polyline_resampling_preserves_endpoints():

@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
         stationary_fast_terminal_bypass=True,
         stationary_fast_terminal_duration_s=6.0,
         stationary_fast_terminal_segments=8,
-        stationary_fast_terminal_rollout_steps=4,
+        stationary_fast_terminal_rollout_steps=8,
         stationary_fast_terminal_target_ms=500.0,
         stationary_fast_terminal_max_ms=1000.0,
         stationary_center_span_m=HOLD_CENTER_SPAN_MAX_M,

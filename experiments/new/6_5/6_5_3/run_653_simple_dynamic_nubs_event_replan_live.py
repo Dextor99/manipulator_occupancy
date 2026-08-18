@@ -995,6 +995,39 @@ def resample_joint_polyline(points: np.ndarray, count: int) -> np.ndarray:
     return result
 
 
+def sampled_joint_segment_clearance(
+    evaluator: Any,
+    forecast: Any,
+    q0: np.ndarray,
+    q1: np.ndarray,
+    *,
+    samples: int = 7,
+    density: str = "medium",
+) -> dict[str, Any]:
+    """Cheap topology screen for a virtual joint-space edge."""
+    q0 = np.asarray(q0, dtype=np.float64)
+    q1 = np.asarray(q1, dtype=np.float64)
+    minimum = math.inf
+    nearest_link = None
+    minimum_alpha = None
+    profile = []
+    for alpha in np.linspace(0.0, 1.0, max(2, int(samples))):
+        q = (1.0 - float(alpha)) * q0 + float(alpha) * q1
+        risk = evaluator.configuration(q, forecast, 0.0, density=density, with_gradient=False)
+        distance = float(risk.min_distance)
+        profile.append({"alpha": float(alpha), "distance_m": distance, "nearest_link": risk.nearest_link})
+        if distance < minimum:
+            minimum = distance
+            nearest_link = risk.nearest_link
+            minimum_alpha = float(alpha)
+    return {
+        "min_distance_m": float(minimum),
+        "nearest_link": nearest_link,
+        "minimum_alpha": minimum_alpha,
+        "samples": profile,
+    }
+
+
 def _stationary_virtual_anchors(
     runtime_args: argparse.Namespace,
     config: dict[str, Any],
@@ -1010,6 +1043,7 @@ def _stationary_virtual_anchors(
     side_m: float,
     max_joint_delta_rad: float,
     tcp_link: str,
+    deadline_perf: float | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Create strong/weak/release virtual anchors without invoking Fast."""
     forecast = v3.v3_execution_multisphere_forecast(
@@ -1021,13 +1055,19 @@ def _stationary_virtual_anchors(
     q_virtual = np.asarray(q_start, dtype=np.float64).copy()
     anchors = [q_virtual.copy()]
     audit: list[dict[str, Any]] = []
-    phase_weights = ((1.0, 0.5), (1.0, 0.5), (0.5, 0.0), (0.0,))
+    hard_clearance_m = float(getattr(runtime_args, "online_accept_m", 0.09))
+    robust_target_m = float(getattr(runtime_args, "planning_robust_target_m", 0.11))
+    phase_weights = ((1.0, 0.5), (0.5,), (0.5,), (0.5,))
+    connected_to_goal = False
+    connected_step = None
     for index in range(max(1, int(rollout_steps))):
+        if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+            return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": False, "connected_step": None, "failure_reason": "virtual_rollout_budget_exhausted", "max_rollout_steps": int(rollout_steps)}
         weights = phase_weights[min(index, len(phase_weights) - 1)]
         # The phase schedule is also a bounded-computation policy: evaluate
         # one phase-appropriate seed instead of all 3 seeds at every step.
         # The full verifier remains the sole execution authority.
-        target_weight = (1.0, 0.5, 0.5, 0.0)[min(index, 3)]
+        target_weight = (1.0, 0.5, 0.5, 0.5)[min(index, 3)]
         nominal_goal = (np.asarray(q_goal), np.zeros(6), np.zeros(6))
         # Stationary rollout is intentionally a bounded seed screen.  Use a
         # dense configuration risk query rather than replaying four full
@@ -1063,8 +1103,8 @@ def _stationary_virtual_anchors(
             risk_item = evaluator.configuration(
                 q_item, forecast, 0.0, density="medium", with_gradient=False
             )
-            minimum = {"distance_m": float(risk_item.min_distance), "tau_s": 0.0,
-                        "nearest_link": risk_item.nearest_link}
+            edge_screen = sampled_joint_segment_clearance(evaluator, forecast, q_virtual, q_item)
+            minimum = {"distance_m": float(risk_item.min_distance), "tau_s": 0.0, "nearest_link": risk_item.nearest_link}
             guard = trial.gripper_base_workspace_guard(
                 trial.NUBSTrajectory6D().generate(
                     trial.NUBSTrajectory6D.linear_inner_points(q_virtual, q_item, np.ones(2)),
@@ -1075,8 +1115,8 @@ def _stationary_virtual_anchors(
             )
             profile = []
             rows.append({"item": item, "q_goal": q_item, "minimum": minimum,
-                         "profile": profile, "tabletop": guard})
-        eligible = [row for row in rows if row["tabletop"].get("passed", False)]
+                         "edge_screen": edge_screen, "profile": profile, "tabletop": guard})
+        eligible = [row for row in rows if row["tabletop"].get("passed", False) and float(row["edge_screen"]["min_distance_m"]) >= hard_clearance_m]
         if not eligible:
             break
         task_direction = np.asarray(direction["task_direction"], dtype=np.float64)
@@ -1087,7 +1127,7 @@ def _stationary_virtual_anchors(
         selected = max(
             eligible,
             key=lambda row: (
-                float(row["minimum"]["distance_m"]) >= float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
+                float(row["edge_screen"]["min_distance_m"]) >= robust_target_m,
                 row["task_progress_m"],
                 -row["goal_distance_m"],
                 float(row["minimum"]["distance_m"]),
@@ -1095,19 +1135,9 @@ def _stationary_virtual_anchors(
         )
         q_virtual = selected["q_goal"].copy()
         anchors.append(q_virtual.copy())
-        rem_durations = np.full(2, 0.5, dtype=np.float64)
-        rem_inner = trial.NUBSTrajectory6D.linear_inner_points(q_virtual, q_goal, rem_durations)
-        rem = trial.NUBSTrajectory6D().generate(
-            rem_inner,
-            trial.NUBSTrajectory6D.make_boundary_state(q_virtual, np.zeros(6), np.zeros(6)),
-            trial.NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6)),
-            rem_durations,
-        )
-        rem_min, _ = live.simple.trajectory_minimum(evaluator, forecast, rem)
-        remainder_clear = bool(
-            float(rem_min["distance_m"])
-            >= float(getattr(runtime_args, "planning_robust_target_m", 0.11))
-        )
+        remainder_screen = sampled_joint_segment_clearance(evaluator, forecast, q_virtual, q_goal, samples=13)
+        remainder_min = float(remainder_screen["min_distance_m"])
+        remainder_clear = remainder_min >= hard_clearance_m
         audit.append({
             "step": index + 1,
             "candidate": int(selected["item"]["candidate"]),
@@ -1118,13 +1148,18 @@ def _stationary_virtual_anchors(
             "task_progress_m": selected.get("task_progress_m"),
             "goal_distance_m": selected.get("goal_distance_m"),
             "remainder_to_goal_clear": remainder_clear,
-            "remainder_min_distance_m": float(rem_min["distance_m"]),
+            "remainder_to_goal_feasible": remainder_clear,
+            "remainder_to_goal_robust": remainder_min >= robust_target_m,
+            "remainder_min_distance_m": remainder_min,
+            "edge_min_distance_m": float(selected["edge_screen"]["min_distance_m"]),
             "direction": direction,
         })
         if remainder_clear:
             anchors.append(np.asarray(q_goal, dtype=np.float64).copy())
+            connected_to_goal = True
+            connected_step = index + 1
             break
-    return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors)}
+    return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": connected_to_goal, "connected_step": connected_step, "connection_threshold_m": hard_clearance_m, "robust_preference_m": robust_target_m, "max_rollout_steps": int(rollout_steps), "failure_reason": None if connected_to_goal else "remainder_to_goal_not_feasible"}
 
 
 def plan_stationary_fast_terminal_bypass(
@@ -1178,6 +1213,7 @@ def plan_stationary_fast_terminal_bypass(
         side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
         max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
         tcp_link=tcp_link,
+        deadline_perf=planner_started + total_max_ms / 1000.0,
     )
     rollout_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
     remaining_ms = max(0.0, total_max_ms - rollout_elapsed_ms)
@@ -1192,12 +1228,28 @@ def plan_stationary_fast_terminal_bypass(
         }
         trial.write_json(trial_dir / "authorization_summary.json", payload)
         return payload, None
+    if not bool(rollout_audit.get("connected_to_goal", False)):
+        total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+        payload = {
+            "status": "STATIONARY_FAST_TERMINAL_ROUTE_NOT_CONNECTED_HOLD",
+            "authorized": False,
+            "planner_mode": "stationary_fast_terminal_bypass",
+            "full_optimizer_used": False,
+            "virtual_rollout": rollout_audit,
+            "virtual_rollout_elapsed_ms": total_elapsed_ms,
+            "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
+            "stationary_terminal_total_budget_ms": total_max_ms,
+            "stationary_terminal_target_ms": total_target_ms,
+            "total_budget_met": total_elapsed_ms <= total_max_ms,
+            "fast_invoked": False,
+            "reason": "virtual_bypass_never_opened_safe_goal_connection",
+        }
+        trial.write_json(trial_dir / "authorization_summary.json", payload)
+        return payload, None
     duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 6.0))
     segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 8)))
     durations = np.full(segments, duration / segments, dtype=np.float64)
-    anchor_chain = np.vstack(
-        [anchors, np.asarray(q_goal, dtype=np.float64)[None, :]]
-    )
+    anchor_chain = np.asarray(anchors, dtype=np.float64)
     polyline = resample_joint_polyline(anchor_chain, segments + 1)
     if np.max(np.abs(polyline[-1] - np.asarray(q_goal, dtype=np.float64))) > 1.0e-9:
         raise RuntimeError("stationary terminal polyline failed to preserve q_goal tail")
