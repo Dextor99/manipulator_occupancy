@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-08-18T02:55:16.086238+00:00",
+  "status": "ROLLING_LOCAL_VIRTUAL_FAILED",
+  "robot_commanded": false,
+  "real_rgbd": true,
+  "virtual_robot_state": true,
+  "source_trial": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/simple_dynamic_nubs_complete_live/r46/core_live/trials/D2_opposing_approach_r46",
+  "task_geometry_id": "D2C_COMPACT_TABLETOP_XP10",
+  "obstacle_nominal_size_m": [
+    0.1,
+    0.1,
+    0.1
+  ],
+  "obstacle_motion_mode": "dynamic",
+  "forecast_interface": "measured_local_constant_velocity",
+  "geometry_quality_audit_limits": {
+    "audit_only": true,
+    "axial_limit_m": 0.16000000000000003,
+    "component_radius_limit_m": 0.15000000000000002
+  },
+  "perception_parameters_frozen": {
+    "cluster_eps_m": 0.05,
+    "cluster_min_samples": 15,
+    "cluster_min_points": 15,
+    "cluster_min_volume_m3": 0.0005,
+    "temporal_denoise": true
+  },
+  "safety_parameters_frozen": {
+    "online_accept_m": 0.09,
+    "raw_hard_guard_m": 0.1,
+    "local_horizon_s": 1.0,
+    "fast_budget_ms": 150.0
+  },
+  "runtime_git_commit": "cc15a35cd4fb602611bd928bea36f7fc32ca2a20",
+  "requested_segments": 3,
+  "max_wall_s": 10.0,
+  "segments": [],
+  "error": "Frame didn't arrive within 5000",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_3/shadow_653_rolling_local_virtual.py\", line 366, in run\n    seed = first_external_seed(\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_3/shadow_653_rolling_local_virtual.py\", line 73, in first_external_seed\n    frame = processor.process_frame()\n  File \"/home/hzy/Code/manipulator_occupancy/test_remove_robot_points_fast.py\", line 363, in process_frame\n    frame_data = self._reader.read()\n  File \"/home/hzy/Code/manipulator_occupancy/camera/realsense_pipeline_reader.py\", line 53, in read\n    frames = self.align.process(self.pipeline.wait_for_frames())\nRuntimeError: Frame didn't arrive within 5000\n"
+}
