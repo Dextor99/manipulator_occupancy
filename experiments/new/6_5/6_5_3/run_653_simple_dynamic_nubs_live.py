@@ -600,6 +600,8 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("closed_loop_goal_tolerance_rad", 0.01),
         ("guidance_horizon_s", 1.5),
         ("stationary_terminal_full_plan", False),
+        ("stationary_hold_target_y_m", None),
+        ("stationary_hold_tolerance_m", 0.01),
     ):
         setattr(core_args, name, getattr(wrapper_args, name, default))
 

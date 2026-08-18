@@ -3043,6 +3043,15 @@ def test_stationary_hold_requires_three_frame_confirmation_and_tail_geometry():
     assert "speed_threshold_m_s: float = 0.04" in helper
 
 
+def test_d2_approach_hold_forwards_stop_line_to_core():
+    wrapper_args = d2_approach_hold.build_parser().parse_args(["--repeat", "1"])
+    core_args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
+    simple_live.copy_wrapper_runtime_parameters(wrapper_args, core_args)
+    assert core_args.stationary_terminal_full_plan is True
+    assert core_args.stationary_hold_target_y_m == pytest.approx(-0.126)
+    assert core_args.stationary_hold_tolerance_m == pytest.approx(0.01)
+
+
 def test_stationary_planner_rejects_infeasible_preset_goal_early():
     source = inspect.getsource(stationary_terminal_ccro.plan_stationary_terminal_ccro)
     assert "preset_goal_below_clearance_contract" in source
