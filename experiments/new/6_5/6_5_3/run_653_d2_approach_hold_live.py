@@ -83,13 +83,15 @@ SCENE_PROTOCOL = {
     },
     "terminal_recovery_policy": {
         "stationary_hold_safe_is_goal_path_clear": False,
-        "direct_terminal_distance_blocked_reenters_local": True,
-        "terminal_non_distance_failure_is_fail_closed": True,
+        "stationary_hold_switches_to_full_terminal_ccro": True,
+        "direct_terminal_distance_blocked_reenters_local": False,
+        "terminal_failure_is_fail_closed": True,
         "continuous_replan_watchdog_s": 10.0,
     },
     "operator_rule": (
-        "move mainly along base +Y with fixed X to the pre-marked stop line; "
-        "after STRO, hold the obstacle completely still and do not adjust it"
+        "move mainly along base +Y with approximately fixed X; after STRO, "
+        "continue into the recommended hold region, stop the obstacle, and "
+        "keep it completely stationary without further adjustment"
     ),
 }
 

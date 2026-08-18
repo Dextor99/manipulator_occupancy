@@ -5438,11 +5438,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         if observation_s > 0.0 and persistent_worker is not None:
                             started = time.monotonic()
                             initial = persistent_worker.snapshot()
-                            initial_seq = int(v3._state_seq(initial))
+                            initial_seq = int(initial.get("state_seq", -1))
                             while time.monotonic() - started < observation_s:
                                 time.sleep(0.05)
                             final = persistent_worker.snapshot()
-                            final_seq = int(v3._state_seq(final))
+                            final_seq = int(final.get("state_seq", -1))
                             log["events"].append({
                                 "type": "SHADOW_HOLD_OBSERVATION_COMPLETE",
                                 "observation_s": observation_s,
