@@ -586,6 +586,10 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("tcp_link", "gripper_base_link"),
         ("continuation_side_m", 0.04),
         ("rolling_replan_m", 0.09),
+        ("final_precommand_fresh_timeout_s", 0.35),
+        ("final_precommand_max_state_age_s", 0.25),
+        ("boundary_qd_tol_rad_s", 0.03),
+        ("boundary_qdd_tol_rad_s2", 0.30),
         # Initial STRO early warning only; execution remains 0.5 s.
         ("stro_trigger_horizon_s", 1.2),
         ("max_local_replans", 3),
