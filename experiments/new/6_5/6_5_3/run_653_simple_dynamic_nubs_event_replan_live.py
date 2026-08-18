@@ -41,6 +41,8 @@ DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_event_replan_
 EVENT_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_EVENT_REPLAN_EXECUTE_APPROVED"
 ROLLING_REPLAN_MONITOR_REASONS = {
     "remaining_predicted_risk",
+    "stationary_terminal_motion_resumed",
+    "stationary_terminal_track_changed",
 }
 COMMAND_TIME_REPLAN_STATUS = "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
 COMMAND_TIME_HOLD_STATUS = "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND"
@@ -163,6 +165,7 @@ def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
     # in-motion stop and must not be counted as a rolling interruption.
     rolling_replan_stop = bool(
         monitor_stopped
+        and bool(motion_monitor.get("replan_requested", goal_check.get("replan_requested", False)))
         and isinstance(reason, str)
         and reason in ROLLING_REPLAN_MONITOR_REASONS
     )
@@ -221,6 +224,9 @@ def make_mid_execution_monitor(**context: Any):
             "track_id": snapshot.get("track_id"),
             "geometry_covered": bool(geometry is not None and geometry.get("covered", False)),
         }
+        if velocity.shape != (3,) or not np.all(np.isfinite(velocity)):
+            audit["reason"] = "stationary_terminal_velocity_invalid"
+            return None, audit
         if geometry is None or not geometry.get("covered", False):
             audit["reason"] = "stationary_terminal_geometry_not_covered"
             return None, audit
@@ -492,17 +498,17 @@ def make_mid_execution_monitor(**context: Any):
                 "state_seq_delta_from_final": int(v3._state_seq(snapshot)) - int(last.get("final_precommand_seq", -1)),
             }
         if confirmed_stationary_terminal:
-            forecast, stationary_audit = stationary_terminal_forecast_from_snapshot(
-                snapshot, aligned, horizon_s=float(trajectory.total_duration)
-            )
-            if forecast is None:
-                return {"ready": False, "action": "replan", "reason": stationary_audit["reason"], "state_seq": state_seq, "raw_guard_distance_m": raw_guard, "stationary_terminal_audit": stationary_audit}
-        else:
-            forecast = v3.v3_execution_multisphere_forecast(
-                np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
-                np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
-                np.asarray(snapshot["velocity"], dtype=np.float64),
-            )
+            track_id = snapshot.get("track_id")
+            speed = float(np.linalg.norm(np.asarray(snapshot.get("velocity", [np.nan] * 3), dtype=np.float64)))
+            if confirmed_stationary_track_id is not None and track_id != confirmed_stationary_track_id:
+                return {"motion_safe": False, "replan_requested": True, "reason": "stationary_terminal_track_changed", "state_seq": int(v3._state_seq(snapshot)), "raw_guard_distance_m": raw_guard}
+            if not np.isfinite(speed) or speed > 0.04:
+                return {"motion_safe": False, "replan_requested": True, "reason": "stationary_terminal_motion_resumed", "state_seq": int(v3._state_seq(snapshot)), "raw_guard_distance_m": raw_guard, "speed_m_s": speed}
+        forecast = v3.v3_execution_multisphere_forecast(
+            np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(snapshot["velocity"], dtype=np.float64),
+        )
         current = evaluator.configuration(
             np.asarray(actual_q, dtype=np.float64), forecast, 0.0,
             density="medium", with_gradient=False,
@@ -578,12 +584,26 @@ def make_mid_execution_monitor(**context: Any):
         start_error = trial.joint_error(q_actual, np.asarray(trajectory.evaluate(0.0), dtype=np.float64))
         if start_error["max_abs_rad"] > float(args.candidate_start_sync_rad):
             return {"ready": False, "action": "replan", "reason": "command_time_start_mismatch", "state_seq": state_seq, "start_error": start_error, "raw_guard_distance_m": raw_guard}
-        forecast = v3.v3_execution_multisphere_forecast(
+        full_forecast = None
+        stationary_audit = None
+        if confirmed_stationary_terminal:
+            full_forecast, stationary_audit = stationary_terminal_forecast_from_snapshot(
+                snapshot, aligned, horizon_s=float(trajectory.total_duration)
+            )
+            if full_forecast is None:
+                return {"ready": False, "action": "replan", "reason": stationary_audit["reason"], "state_seq": state_seq, "raw_guard_distance_m": raw_guard, "stationary_terminal_audit": stationary_audit}
+        else:
+            full_forecast = v3.v3_execution_multisphere_forecast(
+                np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+                np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+                np.asarray(snapshot["velocity"], dtype=np.float64),
+            )
+        rolling_forecast = v3.v3_execution_multisphere_forecast(
             np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
             np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
             np.asarray(snapshot["velocity"], dtype=np.float64),
         )
-        current = evaluator.configuration(q_actual, forecast, 0.0, density="medium", with_gradient=False)
+        current = evaluator.configuration(q_actual, rolling_forecast, 0.0, density="medium", with_gradient=False)
         current_near_diagnostic = bool(
             float(current.min_distance) <= float(args.moving_shadow_current_stop_m)
         )
@@ -593,14 +613,14 @@ def make_mid_execution_monitor(**context: Any):
             "current_near_threshold_m": float(args.moving_shadow_current_stop_m),
         }
         q_goal = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
-        verification = verifier.verify(trajectory, forecast, current_q=q_actual, current_qd=np.zeros(6), current_qdd=np.zeros(6), q_goal=q_goal, solver_success=True)
+        verification = verifier.verify(trajectory, full_forecast, current_q=q_actual, current_qd=np.zeros(6), current_qdd=np.zeros(6), q_goal=q_goal, solver_success=True)
         failures = [key for key, passed in verification.checks.items() if key != "distance_ok" and not bool(passed)]
         if failures:
             return {"ready": False, "action": "hold", "reason": "command_time_verification_failed", "failed_checks": failures, "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard, **distance_diag}
         if not verification.accepted or float(verification.min_distance) < float(args.online_accept_m):
             return {"ready": False, "action": "replan", "reason": "command_time_candidate_clearance_failed", "verification_checks": verification.checks, "verification_min_distance_m": float(verification.min_distance), "state_seq": state_seq, "raw_guard_distance_m": raw_guard, **distance_diag}
         remaining = v3._remaining_clearance(
-            evaluator, trajectory, forecast, playback_time_s=0.0,
+            evaluator, trajectory, rolling_forecast, playback_time_s=0.0,
             max_lookahead_s=(float(args.prediction_horizon_s) if confirmed_stationary_terminal else None),
         )
         prediction_gate_m = float(args.rolling_replan_m)
@@ -608,7 +628,7 @@ def make_mid_execution_monitor(**context: Any):
         if modeled_remaining_min_m < prediction_gate_m:
             return {"ready": False, "action": "replan", "reason": "remaining_predicted_risk", "state_seq": state_seq, "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "raw_guard_distance_m": raw_guard, "predictive_replan_threshold_m": prediction_gate_m, **distance_diag}
         last["command_time_seq"] = state_seq
-        return {"ready": True, "action": "execute", "reason": "command_time_candidate_valid", "state_seq": state_seq, "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "raw_guard_distance_m": raw_guard, "predictive_replan_threshold_m": prediction_gate_m, "forecast_semantics": "confirmed_stationary_frozen_occupancy" if confirmed_stationary_terminal else "fresh_dynamic", **distance_diag}
+        return {"ready": True, "action": "execute", "reason": "command_time_candidate_valid", "state_seq": state_seq, "remaining_clearance_m": float(remaining["min_distance_m"]), "remaining_tau_s": remaining.get("tau_s"), "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "raw_guard_distance_m": raw_guard, "predictive_replan_threshold_m": prediction_gate_m, "full_verification_forecast_semantics": "confirmed_stationary_frozen_occupancy" if confirmed_stationary_terminal else "fresh_dynamic", "rolling_forecast_semantics": "fresh_dynamic_short_horizon", "full_verification_forecast_horizon_s": float(trajectory.total_duration), "rolling_lookahead_s": float(args.prediction_horizon_s) if confirmed_stationary_terminal else None, **distance_diag}
 
     # ``execute_authorized_trajectory_offline_track`` uses this explicit
     # barrier before sending any waypoint command.  Keep the normal callback

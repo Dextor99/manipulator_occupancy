@@ -2889,8 +2889,8 @@ def test_monitor_stop_classification_is_fail_closed(reason, expected):
     execution = {
         "status": "STOPPED_BY_MOTION_MONITOR",
         "goal_check": {
-            "monitor_stopped": True,
-            "motion_monitor": {"reason": reason, "replan_requested": False},
+                "monitor_stopped": True,
+                "motion_monitor": {"reason": reason, "replan_requested": reason == "remaining_predicted_risk"},
         },
     }
     info = event_replan.classify_monitor_stop(execution)
@@ -3144,6 +3144,16 @@ def test_remaining_clearance_supports_bounded_lookahead():
     source = inspect.getsource(dynamic_nubs_v3._remaining_clearance)
     assert "max_lookahead_s" in source
     assert "remaining = min(remaining, horizon)" in source
+
+
+def test_terminal_execution_uses_split_forecast_semantics_and_replan_reasons():
+    source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    assert "full_forecast" in source
+    assert "rolling_forecast" in source
+    assert "fresh_dynamic_short_horizon" in source
+    assert "stationary_terminal_motion_resumed" in source
+    assert "stationary_terminal_track_changed" in source
+    assert '"replan_requested": True' in source
 
 
 def test_joint_polyline_resampling_preserves_endpoints():
