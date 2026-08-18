@@ -3097,6 +3097,7 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "release_forward" in rollout_source
     assert "release_forward_half" in rollout_source
     assert "side_only_clearance_recovery" in rollout_source
+    assert "_stationary_recovery_side" in rollout_source
     assert "sampled_joint_segment_clearance" in rollout_source
     assert "connected_to_goal" in rollout_source
     assert "no_safe_virtual_forward_edge" in rollout_source

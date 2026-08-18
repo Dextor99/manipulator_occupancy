@@ -1029,6 +1029,28 @@ def sampled_joint_segment_clearance(
     }
 
 
+def _stationary_recovery_side(
+    *,
+    task: np.ndarray,
+    risk_robot_point: np.ndarray,
+    risk_obstacle_point: np.ndarray,
+    established_side: np.ndarray,
+) -> np.ndarray:
+    """Recompute a local away direction without changing the established side."""
+    task_vec = bypass.normalized(np.asarray(task, dtype=np.float64))
+    away = np.asarray(risk_robot_point, dtype=np.float64) - np.asarray(
+        risk_obstacle_point, dtype=np.float64
+    )
+    lateral = away - task_vec * float(np.dot(task_vec, away))
+    recovery = bypass.tabletop_parallel_lateral_direction(task_vec, lateral)
+    established = bypass.tabletop_parallel_lateral_direction(
+        task_vec, np.asarray(established_side, dtype=np.float64)
+    )
+    if float(np.dot(recovery, established)) < 0.0:
+        recovery = -recovery
+    return recovery
+
+
 def _stationary_virtual_anchors(
     runtime_args: argparse.Namespace,
     config: dict[str, Any],
@@ -1096,10 +1118,19 @@ def _stationary_virtual_anchors(
             policy_specs = (("strong_establish_side", 1.0, 0.0),)
         attempt_rows: list[dict[str, Any]] = []
         for policy, side_weight, policy_forward_m in policy_specs:
+            candidate_side = side
+            if policy == "side_only_clearance_recovery":
+                candidate_side = _stationary_recovery_side(
+                    task=tcp_goal - tcp_now,
+                    risk_robot_point=np.asarray(risk.robot_point),
+                    risk_obstacle_point=np.asarray(risk.obstacle_point),
+                    established_side=side,
+                )
             goals, direction = bypass.goal_directed_side_continuation_candidates(
                 model, q_virtual, tcp_position=tcp_now, goal_position=tcp_goal,
                 risk_link=str(risk.nearest_link), risk_position=np.asarray(risk.robot_point),
-                risk_point_q=q_virtual, established_side=side, forward_m=float(policy_forward_m),
+                risk_point_q=q_virtual, established_side=candidate_side,
+                forward_m=float(policy_forward_m),
                 side_m=float(side_m), side_weights=(float(side_weight),), tcp_link=tcp_link,
                 max_joint_delta_rad=float(max_joint_delta_rad), tabletop_parallel_side=True,
                 preserve_tcp_height=True,
