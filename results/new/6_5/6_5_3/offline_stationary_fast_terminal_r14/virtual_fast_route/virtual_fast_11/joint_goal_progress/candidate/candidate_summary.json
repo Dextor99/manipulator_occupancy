@@ -1,0 +1,205 @@
+{
+  "created_at": "2026-08-18T14:41:15.081069+00:00",
+  "status": "LOCAL_REPAIR_READY",
+  "local_repair_status": "LOCAL_REPAIR_READY",
+  "local_repair_ready": true,
+  "execution_authorization_status": "PENDING_POST_PLAN_FRESH_RECHECK",
+  "accepted_for_switch": false,
+  "repair_step_ok": true,
+  "rejection_reasons": [],
+  "candidate_source": "FAST_REPAIRED_BYPASS",
+  "fast_extra_correction_applied": true,
+  "optimizer_diagnostics": {
+    "fast_accepted_step": true,
+    "clearance_gain_meets_preference": true,
+    "motion_from_fast_seed_meets_preference": true
+  },
+  "verified_seed_is_candidate_contract": true,
+  "candidate_equals_fast_seed": false,
+  "candidate_is_original_reference": false,
+  "candidate_is_reference_continuation": false,
+  "warm_start": {
+    "mode": "linear"
+  },
+  "fast_elapsed_ms": 37.79296501306817,
+  "online_pipeline_elapsed_ms": 37.79296501306817,
+  "repair_elapsed_ms": 25.23523400304839,
+  "candidate_verification_ms": 12.54748395876959,
+  "reference_verification_ms": 0.0,
+  "diagnostic_reference_verification_ms": 11.937186995055526,
+  "paired_verification_wall_ms": 24.48559203185141,
+  "diagnostic_total_wall_ms": 124.67733497032896,
+  "post_check_ms": 24.119303037878126,
+  "budget_exhausted": false,
+  "tail_delta_q_rad": [
+    0.014349367354445919,
+    0.00881321599307655,
+    -0.019371574343895137,
+    0.013019153972837483,
+    -0.0006921990447865678,
+    -0.0032042398035865838
+  ],
+  "tail_delta_q_max_rad": 0.019371574343895137,
+  "selected_rejoin_offset_s": null,
+  "rejoin_search_audit": [],
+  "candidate_total_duration_s": 1.0,
+  "fast_budget_ms": 250.0,
+  "fast_target_ms": 150.0,
+  "fast_max_ms": 250.0,
+  "realtime_target_met": true,
+  "realtime_target_diagnostic": "met",
+  "online_accept_m": 0.09,
+  "verification_min_distance_m": 0.09433051470361883,
+  "reference_online_min_distance_m": 0.0810073484605153,
+  "fast_seed_online_min_distance_m": 0.0810073484605153,
+  "candidate_online_min_distance_m": 0.09433051470361883,
+  "candidate_min_clearance_m": 0.09433051470361883,
+  "candidate_min_tau_s": 1.0,
+  "candidate_min_nearest_link": "gripper_base_link",
+  "candidate_end_clearance_m": 0.09433051470361883,
+  "candidate_end_minus_min_clearance_m": 0.0,
+  "candidate_min_tau_fraction": 1.0,
+  "candidate_closest_approach_before_tail": false,
+  "guidance_horizon_s": null,
+  "guidance_tail_clearance": null,
+  "clearance_improvement_m": 0.013323166243103535,
+  "clearance_improvement_vs_fast_seed_m": 0.013323166243103535,
+  "min_clearance_improvement_m": 0.003,
+  "min_clearance_improvement_preference_m": 0.003,
+  "clearance_improvement_is_hard_gate": false,
+  "max_delta_q_from_reference_rad": 0.019371574343895137,
+  "delta_candidate_from_bypass_seed_max_abs_rad": 0.019371574343895137,
+  "delta_candidate_from_original_reference_max_abs_rad": 0.019371574343895137,
+  "verification_reasons": [],
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": true,
+    "position_ok": true,
+    "velocity_ok": true,
+    "acceleration_ok": true,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "repair_iterations": 1,
+  "accepted_steps": 1,
+  "active_constraints": 8,
+  "qp_successes": 1,
+  "risk_scan_ms": 11.44058903446421,
+  "linearization_ms": 3.8692650268785655,
+  "qp_ms": 6.935290002729744,
+  "trajectory_generation_ms": 0.3423480084165931,
+  "motion_check_ms": 0.48790802247822285,
+  "candidate_distance_check_ms": 0.0,
+  "scale_attempts": 7,
+  "unaccounted_fast_ms": 2.1598339080810547,
+  "messages": [
+    "projected_qp max_violation=1.409e-12 clearance_reward=0",
+    "scale 1.00 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=1.119e-01",
+    "scale 0.85 rejected: motion q=0.000e+00 qd=0.000e+00 qdd=6.174e-02",
+    "accepted scale 0.65 by linear screen predicted_min=0.089315"
+  ],
+  "q_now": [
+    0.2918847578545673,
+    -0.44807361148135305,
+    0.9214398768133631,
+    0.25531990092965345,
+    1.5311742011036993,
+    0.4284075352631132
+  ],
+  "qd_now": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "q_goal": [
+    0.2065148188095669,
+    -0.4082347857000596,
+    0.9575076657009344,
+    0.22492330522872175,
+    1.5363683361545093,
+    0.3052032954595266
+  ],
+  "obstacle_center": [
+    0.5858751882060553,
+    -0.11227623821626907,
+    0.38127377624291786
+  ],
+  "obstacle_velocity": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "obstacle_radius": 0.1290123162818909,
+  "obstacle_geometry_mode": "fresh_pca_multisphere",
+  "forecast_builder": "v3_execution_multisphere_forecast",
+  "forecast_component_radii_at_0s_m": [
+    0.10877161035940625,
+    0.1290123162818909
+  ],
+  "forecast_component_radii_at_candidate_end_m": [
+    0.10877161035940625,
+    0.1290123162818909
+  ],
+  "multisphere_geometry": {
+    "source_point_count": 215,
+    "component_count": 2,
+    "component_centers": [
+      [
+        0.5736728264330938,
+        -0.13213894676602495,
+        0.4276828123510354
+      ],
+      [
+        0.5981915907432499,
+        -0.09222789687632882,
+        0.33443101082537896
+      ]
+    ],
+    "component_base_radii": [
+      0.10877161035940625,
+      0.1290123162818909
+    ],
+    "pca_axis": [
+      0.2819500035624704,
+      0.3788099135272034,
+      -0.881480144362104
+    ],
+    "axial_length_m": 0.2375066856473821,
+    "transverse_radius_m": 0.08719583146224381,
+    "fit_margin_m": 0.005,
+    "max_point_to_union_distance": -0.0050000000000000044,
+    "coverage_ratio": 1.0,
+    "single_sphere_radius": 0.1387851562157069,
+    "multi_sphere_max_radius": 0.1290123162818909,
+    "covered": true,
+    "rolling_rigid_translation_m": [
+      0.0001286432390765757,
+      0.0005642121901402869,
+      0.0012691180969123805
+    ]
+  },
+  "obstacle_association": {
+    "track_id": 1,
+    "phase": "stationary_joint_goal_progress"
+  },
+  "risk_links": [
+    "base_link",
+    "foreArm_Link",
+    "gripper_base_link",
+    "left_link",
+    "right_link",
+    "shoulder_Link",
+    "upperArm_Link",
+    "wrist1_Link",
+    "wrist2_Link",
+    "wrist3_Link"
+  ],
+  "candidate_csv": "results/new/6_5/6_5_3/offline_stationary_fast_terminal_r14/virtual_fast_route/virtual_fast_11/joint_goal_progress/candidate/fast_ccro_nubs_candidate.csv"
+}
