@@ -2995,7 +2995,9 @@ def test_d2_approach_hold_freezes_scene_and_requires_dynamic_trigger():
     assert audit["passed"] is False
     assert audit["reason"] == "core_trial_dir_missing"
     args = d2_approach_hold.build_parser().parse_args(["--repeat", "1"])
-    assert args.stationary_terminal_full_plan is True
+    assert args.stationary_terminal_full_plan is False
+    assert args.stationary_fast_goal_directed is True
+    assert args.command_time_fast_retry is True
 
 
 def test_stationary_terminal_uses_full_ccro_optimizer_hooks():
@@ -3047,9 +3049,24 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     wrapper_args = d2_approach_hold.build_parser().parse_args(["--repeat", "1"])
     core_args = trial.build_parser().parse_args(["--scene", "D2", "--repeat", "1"])
     simple_live.copy_wrapper_runtime_parameters(wrapper_args, core_args)
-    assert core_args.stationary_terminal_full_plan is True
+    assert core_args.stationary_terminal_full_plan is False
+    assert core_args.stationary_fast_goal_directed is True
+    assert core_args.command_time_fast_retry is True
     assert core_args.stationary_center_span_m == pytest.approx(0.02)
     assert core_args.shadow_hold_observation_s == pytest.approx(3.0)
+
+
+def test_command_time_stale_is_not_treated_as_executed_local_tail():
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "NOT_EXECUTED_COMMAND_TIME_STALE" in source
+    assert "command_time_stale" in source
+    assert "q_actual = np.asarray(robot.get_joint()" in source
+
+
+def test_d2_ah_live_disables_full_stationary_ccro():
+    source = inspect.getsource(d2_approach_hold.build_parser)
+    assert "stationary_terminal_full_plan=False" in source
+    assert "stationary_fast_goal_directed=True" in source
 
 
 def test_stationary_planner_rejects_infeasible_preset_goal_early():

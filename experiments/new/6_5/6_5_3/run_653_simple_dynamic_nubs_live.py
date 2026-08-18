@@ -600,6 +600,8 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("closed_loop_goal_tolerance_rad", 0.01),
         ("guidance_horizon_s", 1.5),
         ("stationary_terminal_full_plan", False),
+        ("stationary_fast_goal_directed", False),
+        ("command_time_fast_retry", False),
         ("stationary_center_span_m", 0.02),
         ("shadow_hold_observation_s", 0.0),
     ):

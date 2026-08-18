@@ -5572,16 +5572,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             full_execution_summary = first_execution_summary
                             break
                         precommand_replan = execution_status in PRECOMMAND_REPLAN_STATUSES
-                        early_monitor_stop = bool(
-                            precommand_replan
-                            or (
+                        actually_commanded = bool(first_execution_summary.get("robot_commanded", False))
+                        # A command-time stale candidate was rejected before
+                        # any waypoint was sent.  It is not a local tail and
+                        # must never enter normal post-local/terminal logic.
+                        precommand_stale = bool(precommand_replan and not actually_commanded)
+                        actual_motion_interrupted = bool(
+                            actually_commanded
+                            and (
                                 first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
                                 and first_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
                             )
                         )
+                        early_monitor_stop = actual_motion_interrupted
                         if (
                             first_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
                             and not early_monitor_stop
+                            and not precommand_stale
                         ):
                             raise RuntimeError(
                                 "authorized first segment did not follow its time axis: "
@@ -5602,6 +5609,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 "type": first_event_type,
                                 "execution_path": execution_path,
                                 "execution": first_execution_summary,
+                                "robot_commanded": actually_commanded,
+                                "local_execution_state": (
+                                    "NOT_EXECUTED_COMMAND_TIME_STALE"
+                                    if precommand_stale else
+                                    ("INTERRUPTED_AFTER_COMMAND" if actual_motion_interrupted else "COMPLETED")
+                                ),
                             }
                         )
 
@@ -5674,7 +5687,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         write_json(trial_dir / "fresh3_recheck.json", {"result": fresh3, "frames": fresh3_frames})
 
                         fresh3_guard_distance = execution_hard_guard_distance(processor, denoiser, args)
-                        if execution_path != "FULL_FIRST" and callable(POST_LOCAL_FRESH3_HANDLER):
+                        if callable(POST_LOCAL_FRESH3_HANDLER) and (
+                            execution_path != "FULL_FIRST" or precommand_stale
+                        ):
                             continuation = POST_LOCAL_FRESH3_HANDLER(
                                 args=args,
                                 stage4_config=stage4_config,
@@ -5686,6 +5701,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 persistent_worker=persistent_worker,
                                 execution_summary=first_execution_summary,
                                 local1_interrupted=early_monitor_stop,
+                                local_execution_state=(
+                                    "NOT_EXECUTED_COMMAND_TIME_STALE"
+                                    if precommand_stale else
+                                    ("INTERRUPTED_AFTER_COMMAND" if actual_motion_interrupted else "COMPLETED")
+                                ),
                                 local_artifacts=local_artifacts,
                                 fresh3=fresh3,
                                 fresh3_geometry=fresh3_geometry,

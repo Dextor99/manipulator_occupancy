@@ -83,8 +83,10 @@ SCENE_PROTOCOL = {
     },
     "terminal_recovery_policy": {
         "stationary_hold_safe_is_goal_path_clear": False,
-        "stationary_hold_switches_to_full_terminal_ccro": True,
-        "direct_terminal_distance_blocked_reenters_local": False,
+        "stationary_hold_switches_to_full_terminal_ccro": False,
+        "stationary_hold_switches_to_fast_goal_directed": True,
+        "command_time_stale_replans_from_latest_state": True,
+        "terminal_distance_blocked_reenters_goal_directed_fast": True,
         "terminal_failure_is_fail_closed": True,
         "continuous_replan_watchdog_s": 10.0,
     },
@@ -104,7 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
         task_geometry_id=SCENE_ID,
         post_local_monitor_max_s=6.0,
         stro_trigger_horizon_s=1.2,
-        stationary_terminal_full_plan=True,
+        # D2-AH live is intentionally Fast-only.  Full stationary CCRO is
+        # retained for offline/static experiments, never this online path.
+        stationary_terminal_full_plan=False,
+        stationary_fast_goal_directed=True,
+        command_time_fast_retry=True,
         stationary_center_span_m=HOLD_CENTER_SPAN_MAX_M,
         shadow_hold_observation_s=3.0,
     )

@@ -628,6 +628,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--stationary-terminal-full-plan", action="store_true",
         help="after confirmed stationary recovery, use one full static CCRO-NUBS terminal plan",
     )
+    parser.add_argument(
+        "--stationary-fast-goal-directed", action=argparse.BooleanOptionalAction,
+        default=False,
+        help="use Fast goal-directed recovery after a confirmed stationary hold",
+    )
+    parser.add_argument(
+        "--command-time-fast-retry", action=argparse.BooleanOptionalAction,
+        default=False,
+        help="retry a stale pre-command local candidate from the latest actual state",
+    )
     return parser
 
 
@@ -1355,6 +1365,32 @@ def authorize_terminal_goal(
     return payload, selected
 
 
+def check_goal_configuration_feasibility(
+    *, config: dict[str, Any], model: Any, q_goal: np.ndarray,
+    geometry: dict[str, Any], min_clearance_m: float,
+) -> dict[str, Any]:
+    """Lightweight stationary boundary check; never runs the Full optimizer."""
+    points = stationary_ccro._sphere_points(geometry)
+    obstacle = importlib.import_module(
+        "planning.mesh_risk"
+    ).StaticObstacleField.from_points(points)
+    static_runtime = importlib.import_module(
+        "experiments.new.6_5.6_5_2.run_652_static_avoidance"
+    )
+    evaluator, _, _ = static_runtime.make_evaluator_and_verifier(config, model)
+    risk = evaluator.configuration(
+        np.asarray(q_goal, dtype=np.float64), obstacle,
+        density="dense", with_gradient=False,
+    )
+    clearance = float(risk.min_distance)
+    return {
+        "feasible": bool(clearance >= float(min_clearance_m)),
+        "goal_clearance_m": clearance,
+        "nearest_link": risk.nearest_link,
+        "authorization_clearance_m": float(min_clearance_m),
+    }
+
+
 def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple[float, ...]):
     def handler(**context: Any) -> dict[str, Any]:
         args = context["args"]
@@ -1372,6 +1408,19 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         current_local_artifacts = context["local_artifacts"]
         current_execution_summary = context.get("execution_summary")
         current_local_interrupted = bool(context.get("local1_interrupted", False))
+        local_execution_state = str(context.get("local_execution_state", "COMPLETED"))
+        command_time_stale = local_execution_state == "NOT_EXECUTED_COMMAND_TIME_STALE"
+        if command_time_stale and not bool(getattr(event_args, "command_time_fast_retry", False)):
+            result = {
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "handled": True,
+                "status": "LOCAL_NOT_EXECUTED_COMMAND_TIME_STALE_HOLD",
+                "command_hold": True,
+                "local_execution_state": local_execution_state,
+                "robot_commanded": False,
+            }
+            trial.write_json(Path(context["trial_dir"]) / "event_replan_summary.json", result)
+            return result
         completed_local_index = replan_depth + 1
         if time.monotonic() - replan_started > float(event_args.max_continuous_replan_s):
             result = {
@@ -1384,13 +1433,15 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             }
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
+        # Always read hardware feedback at handler entry.  In particular, a
+        # command-time stale candidate never advanced the robot to its CSV
+        # tail, so candidate[-1] is not a valid current configuration.
         q_actual = np.asarray(robot.get_joint(), dtype=np.float64)
         early_execution = bool(context.get("local1_interrupted", False))
         q_expected = np.asarray(
             context["local_artifacts"]["candidate_trajectory"].evaluate(
                 context["local_artifacts"]["candidate_trajectory"].total_duration
-            ),
-            dtype=np.float64,
+            ), dtype=np.float64,
         )
         start_error = trial.joint_error(q_actual, q_expected)
         result: dict[str, Any] = {
@@ -1401,10 +1452,16 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             "q_actual_local1_tail_rad": q_actual.tolist(),
             "local1_tail_error": start_error,
             "local_segment_index": replan_depth + 1,
+            "local_execution_state": local_execution_state,
+            "local_executed": not command_time_stale,
             "continuous_replan_watchdog_s": float(event_args.max_continuous_replan_s),
             "failed_replans": failed_replans,
         }
-        if start_error["max_abs_rad"] > args.candidate_start_tolerance_rad and not early_execution:
+        if (
+            start_error["max_abs_rad"] > args.candidate_start_tolerance_rad
+            and not early_execution
+            and not command_time_stale
+        ):
             result["status"] = "EVENT_REPLAN_BLOCKED_LOCAL1_TAIL_MISMATCH"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
             return result
@@ -1447,17 +1504,24 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
 
         q_terminal_start = q_actual
 
+        # A stale pre-command candidate is a retry of the same physical local
+        # segment, regardless of the old candidate's tail audit.  It must be
+        # handled before terminal authorization and must not consume a local
+        # segment index.
         needs_goal_directed_local = bool(
-            monitor1["status"] == "REPLAN_REQUIRED"
+            command_time_stale
+            or monitor1["status"] == "REPLAN_REQUIRED"
             or (force_goal_directed_local and monitor1["status"] == "PREDICTED_RISK_CLEAR")
         )
         if needs_goal_directed_local:
             result["local_continuation_reason"] = (
+                "command_time_stale_same_local_retry"
+                if command_time_stale else
                 "terminal_direct_path_blocked"
                 if force_goal_directed_local
                 else "stationary_hold_not_safe"
             )
-            local_index = replan_depth + 2
+            local_index = replan_depth + (1 if command_time_stale else 2)
             local2_dir = trial_dir / f"event_local_{local_index:02d}"
             local2_dir.mkdir(parents=True, exist_ok=True)
             artifacts: dict[str, Any] = {}
@@ -1485,7 +1549,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 args,
                 config,
                 model,
-                q_escape_start=np.asarray(context["local_artifacts"]["q_now"], dtype=np.float64),
+                q_escape_start=(
+                    q_actual.copy() if command_time_stale
+                    else np.asarray(context["local_artifacts"]["q_now"], dtype=np.float64)
+                ),
                 q_now=q_actual,
                 q_final=q_goal,
                 fresh=monitor1["fresh"],
@@ -1561,7 +1628,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                         "local_index": int(local_index),
                         "verification_min_distance_m": authorization_class.get("verification_min_distance_m"),
                         "robot_commanded": False,
-                        "action": "HOLD_AND_REPLAN_FROM_LATEST_FRESH",
+                        "action": "REPLAN_IMMEDIATELY_FROM_REJECTING_FRESH",
                     })
                     if time.monotonic() - replan_started > float(event_args.max_continuous_replan_s):
                         result["status"] = "CONTINUOUS_REPLAN_WATCHDOG_TIMEOUT_OPERATOR_INTERVENTION_REQUIRED"
@@ -1769,7 +1836,11 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             raise RuntimeError(f"unexpected post-local decision: {monitor1['status']}")
         stationary_confirmation = None
         confirmed_stationary_geometry = None
-        if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
+        stationary_mode = bool(
+            getattr(event_args, "stationary_terminal_full_plan", False)
+            or getattr(event_args, "stationary_fast_goal_directed", False)
+        )
+        if stationary_mode:
             stationary_confirmation, stationary_snapshot = wait_for_confirmed_stationary_snapshot(
                 context.get("persistent_worker"), args,
                 center_span_max_m=float(getattr(args, "stationary_center_span_m", 0.02)),
@@ -1785,11 +1856,28 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             confirmed_stationary_geometry = geometry_latest
+            if bool(getattr(event_args, "stationary_fast_goal_directed", False)):
+                # Once the three-frame stationary confirmation succeeds, do
+                # not extrapolate tracker jitter through the terminal/local
+                # Fast checks.
+                fresh_latest = dict(fresh_latest)
+                fresh_latest["velocity"] = [0.0, 0.0, 0.0]
             monitor1["fresh"] = fresh_latest
             monitor1["frames"] = frames_latest
             monitor1["geometry"] = geometry_latest
             monitor1["forecast"], _ = forecast_from_fresh(args, fresh_latest, geometry_latest, frames_latest)
             forecast = monitor1["forecast"]
+            if bool(getattr(event_args, "stationary_fast_goal_directed", False)):
+                stationary_goal_check = check_goal_configuration_feasibility(
+                    config=config, model=model, q_goal=q_goal,
+                    geometry=confirmed_stationary_geometry,
+                    min_clearance_m=float(args.online_accept_m),
+                )
+                result["stationary_goal_feasibility"] = stationary_goal_check
+                if not stationary_goal_check["feasible"]:
+                    result["status"] = "STATIONARY_GOAL_INFEASIBLE_HOLD"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
         terminal_dir = trial_dir / "terminal_goal_authorization"
         terminal, terminal_trajectory = authorize_terminal_goal(
             args,
