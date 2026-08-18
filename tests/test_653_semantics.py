@@ -81,6 +81,9 @@ d2_complete = importlib.import_module(
 d2_approach_hold = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_d2_approach_hold_live"
 )
+stationary_terminal_ccro = importlib.import_module(
+    "experiments.new.6_5.6_5_3.stationary_terminal_ccro"
+)
 dynamic_nubs_v3 = importlib.import_module(
     "experiments.new.6_5.6_5_3.dynamic_nubs_v3"
 )
@@ -2980,6 +2983,15 @@ def test_d2_approach_hold_freezes_scene_and_requires_dynamic_trigger():
     audit = d2_approach_hold.audit_approach_hold({}, execute=False)
     assert audit["passed"] is False
     assert audit["reason"] == "core_trial_dir_missing"
+    args = d2_approach_hold.build_parser().parse_args(["--repeat", "1"])
+    assert args.stationary_terminal_full_plan is True
+
+
+def test_stationary_terminal_uses_full_ccro_optimizer_hooks():
+    source = inspect.getsource(stationary_terminal_ccro.plan_stationary_terminal_ccro)
+    assert "_risk_optimizer" in source
+    assert "StaticObstacleField.from_points" in source
+    assert "verifier.verify" in source
 
 
 def test_d2_approach_hold_execute_requires_calibrated_stop_line():

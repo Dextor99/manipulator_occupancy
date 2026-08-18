@@ -35,6 +35,7 @@ trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repai
 live = importlib.import_module("experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_live")
 bypass = importlib.import_module("experiments.new.6_5.6_5_3.simple_bypass_planner")
 v3 = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
+stationary_ccro = importlib.import_module("experiments.new.6_5.6_5_3.stationary_terminal_ccro")
 
 DEFAULT_OUTPUT = ROOT / "results/new/6_5/6_5_3/simple_dynamic_nubs_event_replan_live"
 EVENT_EXECUTE_PHRASE = "CCRO_653_SIMPLE_DYNAMIC_EVENT_REPLAN_EXECUTE_APPROVED"
@@ -621,6 +622,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rolling-preplan-trigger-s", type=float, default=0.40)
     parser.add_argument("--rolling-preplan-clearance-m", type=float, default=0.12)
     parser.add_argument("--rolling-preplan-min-lead-s", type=float, default=0.25)
+    parser.add_argument(
+        "--stationary-terminal-full-plan", action="store_true",
+        help="after confirmed stationary recovery, use one full static CCRO-NUBS terminal plan",
+    )
     return parser
 
 
@@ -1199,8 +1204,20 @@ def authorize_terminal_goal(
     forecast: Any,
     durations: tuple[float, ...],
     output_dir: Path,
+    stationary_geometry: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    if bool(getattr(args, "stationary_terminal_full_plan", False)) and stationary_geometry is not None:
+        payload, trajectory = stationary_ccro.plan_stationary_terminal_ccro(
+            config=config, model=model, q_start=q_now, q_goal=q_goal,
+            geometry=stationary_geometry, output_dir=output_dir,
+            min_clearance_m=float(args.online_accept_m),
+        )
+        payload["planner_mode"] = "full_static_ccro_nubs"
+        trial.write_json(output_dir / "authorization_summary.json", payload)
+        if trajectory is not None:
+            trial.save_trajectory_csv(output_dir / "authorized_terminal_goal.csv", trajectory, dt=0.01)
+        return payload, trajectory
     _, verifier, _ = trial.make_risk_stack(config, model, None)
     attempts = []
     selected = None
@@ -1677,6 +1694,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             forecast,
             terminal_durations,
             terminal_dir,
+            stationary_geometry=(tail_monitor.get("geometry") if bool(getattr(args, "stationary_terminal_full_plan", False)) else None),
         )
         result["terminal_authorization"] = terminal
         terminal_classification = classify_terminal_authorization(terminal)

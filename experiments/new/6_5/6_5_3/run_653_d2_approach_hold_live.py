@@ -96,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
         task_geometry_id=SCENE_ID,
         post_local_monitor_max_s=6.0,
         stro_trigger_horizon_s=1.2,
+        stationary_terminal_full_plan=True,
     )
     parser.add_argument("--scene-operator-phrase", default="")
     return parser
