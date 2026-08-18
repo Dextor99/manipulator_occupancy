@@ -196,6 +196,7 @@ def make_mid_execution_monitor(**context: Any):
         context["stage4_config"], context["stage4_model"], None
     )
     args = context["args"]
+    rolling_continuation = bool(context.get("rolling_continuation", False))
     last = {"seq": -1}
 
     def prearm(*, timeout_s: float = 1.5, required_updates: int = 2) -> dict[str, Any]:
@@ -208,6 +209,25 @@ def make_mid_execution_monitor(**context: Any):
         """
         if worker is None:
             return {"ready": False, "reason": "persistent_tracker_unavailable"}
+        if rolling_continuation:
+            snapshot = worker.snapshot()
+            aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+            reasons = v3._persistent_state_reasons(
+                snapshot, aligned, args, raw_guard_reason="raw_hard_guard_not_safe"
+            )
+            raw = float(snapshot.get("raw_guard_distance_m", float("-inf")))
+            seq = int(v3._state_seq(snapshot))
+            ready = bool(not reasons and raw > float(args.guided_hard_stop_m))
+            if ready:
+                last["prearm_seq"] = seq
+            return {
+                "ready": ready,
+                "reason": None if ready else (reasons or "raw_hard_guard_not_safe"),
+                "baseline_state_seq": seq,
+                "rolling_continuation": True,
+                "no_wait": True,
+                "samples": [{"state_seq": seq, "state_age_s": float(aligned["propagation_dt_s"]), "raw_guard_distance_m": raw, "reasons": reasons}],
+            }
         baseline = worker.snapshot()
         baseline_seq = v3._state_seq(baseline)
         latest = baseline
@@ -510,6 +530,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--final-precommand-max-state-age-s", type=float, default=0.25)
     parser.add_argument("--boundary-qd-tol-rad-s", type=float, default=0.03)
     parser.add_argument("--boundary-qdd-tol-rad-s2", type=float, default=0.30)
+    parser.add_argument("--rolling-preplan-trigger-s", type=float, default=0.40)
+    parser.add_argument("--rolling-preplan-clearance-m", type=float, default=0.12)
+    parser.add_argument("--rolling-preplan-min-lead-s", type=float, default=0.25)
     return parser
 
 
@@ -1292,10 +1315,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 return result
 
             worker = context.get("persistent_worker")
+            authorization_snapshot = None
             if worker is not None:
-                fresh4, frames4, points4, geometry4 = fresh_from_persistent_snapshot(
-                    worker.snapshot()
-                )
+                authorization_snapshot = worker.snapshot()
+                fresh4, frames4, points4, geometry4 = fresh_from_persistent_snapshot(authorization_snapshot)
             else:
                 fresh4, frames4, points4, geometry4 = capture_next_fresh(
                     args, processor, state_reader, denoiser, monitor1["fresh"]
@@ -1346,10 +1369,14 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                         result["status"] = "LOCAL_FRESH_REPLAN_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
                         trial.write_json(trial_dir / "event_replan_summary.json", result)
                         return result
-                    baseline = worker.snapshot()
-                    latest_snapshot = worker.wait_for_newer_state(
-                        after_seq=v3._state_seq(baseline), timeout_s=0.35
-                    )
+                    # Replan immediately from the rejecting Fresh snapshot;
+                    # waiting for another frame only lets a moving obstacle
+                    # approach farther before the same-local retry.
+                    latest_snapshot = authorization_snapshot
+                    if latest_snapshot is None:
+                        result["status"] = "LOCAL_FRESH_REPLAN_SNAPSHOT_UNAVAILABLE"
+                        trial.write_json(trial_dir / "event_replan_summary.json", result)
+                        return result
                     fresh_retry, frames_retry, _, geometry_retry = fresh_from_persistent_snapshot(latest_snapshot)
                     if not fresh_retry.get("accepted", False) or geometry_retry is None:
                         result["status"] = "LOCAL_FRESH_REPLAN_STATE_NOT_READY_OPERATOR_INTERVENTION_REQUIRED"
@@ -1405,6 +1432,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     stage4_config=config,
                     stage4_model=model,
                     trial_dir=local2_dir,
+                    rolling_continuation=True,
                 ),
             )
             result["local2_execution"] = execution
