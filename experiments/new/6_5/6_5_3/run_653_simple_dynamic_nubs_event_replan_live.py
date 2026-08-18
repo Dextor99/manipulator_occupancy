@@ -207,6 +207,7 @@ def make_mid_execution_monitor(**context: Any):
     local_index = int(context.get("event_local_index", 1))
 
     def run_preplan(snapshot: dict[str, Any], elapsed_s: float) -> None:
+        planning_started = time.perf_counter()
         try:
             remaining_s = max(0.0, float(trajectory.total_duration) - float(elapsed_s))
             aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
@@ -219,7 +220,7 @@ def make_mid_execution_monitor(**context: Any):
                 centers = np.asarray(geometry["component_centers"], dtype=np.float64) + delta[None, :]
                 geometry["component_centers"] = centers.tolist()
                 fresh = {"accepted": True, "reason": "rolling_preplan_projected_tail_state", "center": (np.asarray(aligned["propagated_center"], dtype=np.float64) + delta).tolist(), "velocity": velocity.tolist(), "radius": float(max(np.asarray(geometry["component_base_radii"], dtype=np.float64))), "last_timestamp": time.time() + remaining_s, "track_id": int(snapshot.get("track_id", 1)), "preplan_only": True}
-                out_dir = Path(context.get("trial_dir", ROOT)) / f"event_local_{local_index + 1:02d}" / "preplan"
+                out_dir = Path(context.get("root_trial_dir", context.get("trial_dir", ROOT))) / f"event_local_{local_index + 1:02d}" / "preplan"
                 out_dir.mkdir(parents=True, exist_ok=True)
                 artifacts: dict[str, Any] = {}
                 ref_goal, ref_audit = next_recorded_reference_goal(reference, np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64), args.local_horizon_s)
@@ -233,7 +234,7 @@ def make_mid_execution_monitor(**context: Any):
                     robust_target_m=float(args.planning_robust_target_m), max_joint_delta_rad=float(args.max_joint_delta_rad),
                     tcp_link=args.tcp_link, robust_target_is_diagnostic=True,
                 )
-                result = {"ready": bool(candidate.get("local_repair_ready", False)), "candidate": candidate, "artifacts": artifacts, "projected_fresh": fresh, "projected_geometry": geometry, "reference_goal_audit": ref_audit, "source_state_seq": int(v3._state_seq(snapshot)), "trigger_elapsed_s": float(elapsed_s), "planning_wall_ms": 0.0, "speculative_only": True}
+                result = {"ready": bool(candidate.get("local_repair_ready", False)), "candidate": candidate, "artifacts": artifacts, "projected_fresh": fresh, "projected_geometry": geometry, "reference_goal_audit": ref_audit, "source_state_seq": int(v3._state_seq(snapshot)), "trigger_elapsed_s": float(elapsed_s), "planning_wall_ms": 1000.0 * (time.perf_counter() - planning_started), "speculative_only": True}
             with preplan_lock:
                 preplan_state.update({"done": True, "result": result})
         except Exception as exc:
@@ -1491,6 +1492,24 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 result["status"] = "LOCAL_CONTINUATION_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
+            local_monitor = make_mid_execution_monitor(
+                authorized_csv=Path(authorization["authorized_trajectory_csv"]),
+                robot=robot,
+                worker=worker,
+                processor=processor,
+                state_reader=state_reader,
+                denoiser=denoiser,
+                args=args,
+                stage4_config=config,
+                stage4_model=model,
+                trial_dir=local2_dir,
+                root_trial_dir=trial_dir,
+                rolling_continuation=True,
+                reference=context.get("reference"),
+                risk_links=context.get("risk_links"),
+                local_artifacts=artifacts,
+                event_local_index=local_index,
+            )
             execution = trial.execute_authorized_trajectory_offline_track(
                 # Continuation segments use the same prearm and predictive
                 # monitor as local #1; no local segment is exempt from the
@@ -1502,24 +1521,21 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 denoiser=denoiser,
                 playback_duration_s=None,
                 execution_label=f"Fresh-authorized event local repair #{local_index}",
-                motion_monitor_provider=make_mid_execution_monitor(
-                    authorized_csv=Path(authorization["authorized_trajectory_csv"]),
-                    robot=robot,
-                    worker=worker,
-                    processor=processor,
-                    state_reader=state_reader,
-                    denoiser=denoiser,
-                    args=args,
-                    stage4_config=config,
-                    stage4_model=model,
-                    trial_dir=local2_dir,
-                    rolling_continuation=True,
-                    reference=context.get("reference"),
-                    risk_links=context.get("risk_links"),
-                    local_artifacts=artifacts,
-                    event_local_index=local_index,
-                ),
+                motion_monitor_provider=local_monitor,
             )
+            next_rolling_preplan = None
+            take_preplan = getattr(local_monitor, "take_rolling_preplan", None)
+            if callable(take_preplan):
+                next_rolling_preplan = take_preplan(wait_s=0.05)
+            if next_rolling_preplan is not None:
+                execution["rolling_preplan"] = {
+                    "ready": bool(next_rolling_preplan.get("ready", False)),
+                    "source_state_seq": next_rolling_preplan.get("source_state_seq"),
+                    "trigger_elapsed_s": next_rolling_preplan.get("trigger_elapsed_s"),
+                    "planning_wall_ms": next_rolling_preplan.get("planning_wall_ms"),
+                    "candidate": next_rolling_preplan.get("candidate"),
+                    "artifacts": next_rolling_preplan.get("artifacts"),
+                }
             result["local2_execution"] = execution
             result[f"local_{local_index}_execution"] = execution
             execution_status = execution.get("status")
@@ -1611,6 +1627,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                         "replan_depth": replan_depth + 1,
                         "replan_started_monotonic": replan_started,
                         "failed_replans": failed_replans,
+                        "rolling_preplan": execution.get("rolling_preplan"),
                     }
                 )
                 next_result = handler(**next_context)
