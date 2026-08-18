@@ -84,6 +84,9 @@ d2_approach_hold = importlib.import_module(
 stationary_terminal_ccro = importlib.import_module(
     "experiments.new.6_5.6_5_3.stationary_terminal_ccro"
 )
+stationary_terminal_replay = importlib.import_module(
+    "experiments.new.6_5.6_5_3.offline_replay_653_stationary_terminal"
+)
 dynamic_nubs_v3 = importlib.import_module(
     "experiments.new.6_5.6_5_3.dynamic_nubs_v3"
 )
@@ -2994,6 +2997,10 @@ def test_stationary_terminal_uses_full_ccro_optimizer_hooks():
     assert "verifier.verify" in source
     handler_source = inspect.getsource(event_replan.make_event_handler)
     assert 'context.get("fresh3_geometry")' in handler_source
+    assert 'use_stationary_full_plan=bool(getattr(event_args' in handler_source
+    wrapper_source = inspect.getsource(simple_live.copy_wrapper_runtime_parameters)
+    assert '("stationary_terminal_full_plan", False)' in wrapper_source
+    assert callable(stationary_terminal_replay.main)
 
 
 def test_d2_approach_hold_execute_requires_calibrated_stop_line():

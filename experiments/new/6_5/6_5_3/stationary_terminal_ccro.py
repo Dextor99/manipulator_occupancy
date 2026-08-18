@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import importlib
+import copy
 
 import numpy as np
 
@@ -42,9 +44,12 @@ def plan_stationary_terminal_ccro(*, config: dict[str, Any], model: Any,
     tail = NUBSTrajectory6D.make_boundary_state(q_goal)
     points = _sphere_points(geometry)
     obstacle = StaticObstacleField.from_points(points)
-    evaluator, verifier, limits = __import__(
-        "experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial", fromlist=["make_risk_stack"]
-    ).make_risk_stack(config, model, None)
+    static_runtime = importlib.import_module(
+        "experiments.new.6_5.6_5_2.run_652_static_avoidance"
+    )
+    static_config = copy.deepcopy(config)
+    static_config.setdefault("validation", {})["d_accept"] = float(min_clearance_m)
+    evaluator, verifier, limits = static_runtime.make_evaluator_and_verifier(static_config, model)
     baseline = _baseline(config, head, tail, durations)
     optimizer = _risk_optimizer(config, head, tail, durations, limits, evaluator, obstacle, None)
     result = optimizer.optimize(baseline.p_inner)
