@@ -1,0 +1,10 @@
+{
+  "status": "FAILED_DYNAMIC_EXECUTION",
+  "execution_path": "LOCAL_FIRST_DELAYED_REJOIN",
+  "error": "'Namespace' object has no attribute 'final_precommand_fresh_timeout_s'",
+  "traceback": "Traceback (most recent call last):\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_3/run_653_dynamic_repair_trial.py\", line 5482, in run\n    first_execution_summary = execute_authorized_trajectory_offline_track(\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_3/run_653_simple_dynamic_nubs_live.py\", line 560, in guarded_executor\n    result = original_executor(\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_3/run_653_dynamic_repair_trial.py\", line 1981, in execute_authorized_trajectory_offline_track\n    final_result = final_barrier(actual_q=np.asarray(robot.get_joint(), dtype=np.float64))\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_3/run_653_simple_dynamic_nubs_event_replan_live.py\", line 310, in final_precommand_barrier\n    freshness, snapshot = wait_for_final_fresh_snapshot(after_seq=after_seq)\n  File \"/home/hzy/Code/manipulator_occupancy/experiments/new/6_5/6_5_3/run_653_simple_dynamic_nubs_event_replan_live.py\", line 259, in wait_for_final_fresh_snapshot\n    deadline = started + max(0.0, float(args.final_precommand_fresh_timeout_s))\nAttributeError: 'Namespace' object has no attribute 'final_precommand_fresh_timeout_s'\n",
+  "stop_return": {
+    "method": "move_control_stop",
+    "return": 0
+  }
+}
