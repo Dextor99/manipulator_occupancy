@@ -3073,13 +3073,15 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_center_span_m == pytest.approx(0.02)
     assert core_args.shadow_hold_observation_s == pytest.approx(3.0)
     assert core_args.stationary_fast_terminal_bypass is True
-    assert core_args.stationary_fast_terminal_duration_s == pytest.approx(8.0)
-    assert core_args.stationary_fast_terminal_segments == 12
+    assert core_args.stationary_fast_terminal_duration_s == pytest.approx(10.0)
+    assert core_args.stationary_fast_terminal_segments == 16
     assert core_args.stationary_fast_terminal_rollout_steps == 8
-    assert core_args.stationary_fast_terminal_target_ms == pytest.approx(800.0)
-    assert core_args.stationary_fast_terminal_max_ms == pytest.approx(1500.0)
+    assert core_args.stationary_fast_terminal_target_ms == pytest.approx(5000.0)
+    assert core_args.stationary_fast_terminal_max_ms == pytest.approx(7000.0)
     assert core_args.stationary_fast_terminal_virtual_max_joint_delta_rad == pytest.approx(0.30)
     assert core_args.stationary_virtual_topology_floor_m == pytest.approx(0.08)
+    assert core_args.stationary_fast_terminal_virtual_fast_steps == 20
+    assert core_args.stationary_fast_terminal_route_max_ms == pytest.approx(5000.0)
 
 
 def test_stationary_fast_terminal_bypass_is_one_complete_path():
@@ -3098,6 +3100,7 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "plan_goal_directed_continuation" in route_source
     assert "sample_trajectory_shape_points" in route_source
     assert "append_unique_route_point" in route_source
+    assert "probe_stationary_goal_connection" in route_source
     assert "getattr(runtime_args, \"local_segments\", 5)" in route_source
     assert "getattr(runtime_args, \"local_horizon_s\", 1.0)" in route_source
     assert "connected_to_goal" in route_source

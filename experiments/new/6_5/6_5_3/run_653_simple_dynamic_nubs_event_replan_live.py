@@ -646,6 +646,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stationary-fast-terminal-rollout-steps", type=int, default=4)
     parser.add_argument("--stationary-fast-terminal-target-ms", type=float, default=500.0)
     parser.add_argument("--stationary-fast-terminal-max-ms", type=float, default=1000.0)
+    parser.add_argument("--stationary-fast-terminal-route-max-ms", type=float, default=5000.0)
     parser.add_argument("--stationary-fast-terminal-virtual-max-joint-delta-rad", type=float, default=0.30)
     parser.add_argument("--stationary-fast-terminal-virtual-fast-steps", type=int, default=6)
     parser.add_argument("--stationary-fast-terminal-samples-per-local", type=int, default=3)
@@ -1020,6 +1021,33 @@ def append_unique_route_point(route: list[np.ndarray], q: np.ndarray, *, tol_rad
         route.append(q_value.copy())
 
 
+def probe_stationary_goal_connection(
+    config: dict[str, Any], model: Any, forecast: Any,
+    q_now: np.ndarray, q_goal: np.ndarray, *, tcp_link: str,
+    min_clearance_m: float, min_tcp_z_m: float, samples: int = 25,
+) -> dict[str, Any]:
+    """Lightweight stationary topology probe; not an execution authorization."""
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    q_now = np.asarray(q_now, dtype=np.float64)
+    q_goal = np.asarray(q_goal, dtype=np.float64)
+    screen = sampled_joint_segment_clearance(
+        evaluator, forecast, q_now, q_goal, samples=int(samples), density="medium"
+    )
+    min_z = math.inf
+    for alpha in np.linspace(0.0, 1.0, int(samples)):
+        q = (1.0 - float(alpha)) * q_now + float(alpha) * q_goal
+        min_z = min(min_z, float(live.simple.tcp_position(model, q, tcp_link)[2]))
+    return {
+        "connectable": bool(
+            float(screen["min_distance_m"]) >= float(min_clearance_m)
+            and min_z >= float(min_tcp_z_m)
+        ),
+        "min_distance_m": float(screen["min_distance_m"]),
+        "nearest_link": screen.get("nearest_link"),
+        "min_tcp_z_m": float(min_z),
+    }
+
+
 def sampled_joint_segment_clearance(
     evaluator: Any,
     forecast: Any,
@@ -1281,15 +1309,16 @@ def build_stationary_virtual_fast_route(
     for virtual_index in range(1, int(max_virtual_steps) + 1):
         if deadline_perf is not None and time.perf_counter() >= deadline_perf:
             return None, {"connected_to_goal": False, "reason": "stationary_virtual_fast_budget_exhausted", "steps": step_audit}
-        direct_dir = trial_dir / f"virtual_fast_{virtual_index:02d}" / "direct_terminal_probe"
-        direct_payload, direct_trajectory = authorize_terminal_goal(
-            runtime_args, config, model, q_virtual, q_goal, forecast, (6.0,), direct_dir,
-            stationary_geometry=None, use_stationary_full_plan=False,
+        connection = probe_stationary_goal_connection(
+            config, model, forecast, q_virtual, q_goal,
+            tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
+            min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
+            min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+            samples=25,
         )
-        if direct_payload.get("authorized", False) and direct_trajectory is not None:
-            for point in sample_trajectory_shape_points(direct_trajectory, samples=4):
-                append_unique_route_point(route_points, point)
-            step_audit.append({"virtual_index": virtual_index, "action": "direct_terminal_connected"})
+        if connection["connectable"]:
+            append_unique_route_point(route_points, q_goal)
+            step_audit.append({"virtual_index": virtual_index, "action": "goal_spatially_connected", "connection_probe": connection})
             return np.asarray(route_points, dtype=np.float64), {
                 "connected_to_goal": True, "planner": "virtual_fast_chain",
                 "virtual_fast_step_count": sum(row.get("action") == "virtual_fast_progress" for row in step_audit),
@@ -1355,13 +1384,15 @@ def plan_stationary_fast_terminal_bypass(
         raise ValueError("stationary terminal target/max budget is invalid")
     trial_dir.mkdir(parents=True, exist_ok=True)
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
+    route_max_ms = float(getattr(runtime_args, "stationary_fast_terminal_route_max_ms", 5000.0))
+    route_budget_ms = min(route_max_ms, max(0.0, total_max_ms - 1500.0))
     route_points, route_audit = build_stationary_virtual_fast_route(
         base_fast, runtime_args, config, model, q_escape_start=q_escape_start,
         q_start=q_start, q_goal=q_goal, fresh=fresh, geometry=geometry,
         risk_links=risk_links, trial_dir=trial_dir / "virtual_fast_route",
         max_virtual_steps=int(getattr(runtime_args, "stationary_fast_terminal_virtual_fast_steps", 6)),
         samples_per_local=int(getattr(runtime_args, "stationary_fast_terminal_samples_per_local", 3)),
-        deadline_perf=planner_started + total_max_ms / 1000.0,
+        deadline_perf=planner_started + route_budget_ms / 1000.0,
     )
     rollout_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
     remaining_ms = max(0.0, total_max_ms - rollout_elapsed_ms)

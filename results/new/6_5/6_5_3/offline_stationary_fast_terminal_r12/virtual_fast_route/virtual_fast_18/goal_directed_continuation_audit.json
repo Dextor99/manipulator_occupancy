@@ -1,0 +1,460 @@
+{
+  "policy": "goal_directed_bypass_continuation",
+  "q_escape_start_rad": [
+    0.8733831644058228,
+    -0.091018445789814,
+    1.474400520324707,
+    -0.00533698033541441,
+    1.5708000659942627,
+    0.8733904957771301
+  ],
+  "q_actual_continuation_start_rad": [
+    0.12381456562363416,
+    0.3370259526777712,
+    2.1219713643547933,
+    0.6390361754685485,
+    2.9032298523366515,
+    -0.019319766461264987
+  ],
+  "side_audit": {
+    "tcp_escape_start_m": [
+      0.4874688220372082,
+      0.2843898335323878,
+      0.539584341456633
+    ],
+    "tcp_now_m": [
+      0.32856558915720896,
+      -0.050236418581452,
+      0.5636270762963316
+    ],
+    "tcp_final_m": [
+      0.4874412918098618,
+      -0.3999820047868132,
+      0.5395643693250993
+    ],
+    "executed_tcp_delta_m": [
+      -0.15890323287999925,
+      -0.3346262521138398,
+      0.024042734839698543
+    ],
+    "task_direction": [
+      0.41277908318603834,
+      -0.9086830774737219,
+      -0.06251794300022687
+    ],
+    "lateral_executed_delta_m": [
+      -0.25672121741812753,
+      -0.11929182543620967,
+      0.03885787308398694
+    ],
+    "established_bypass_side": [
+      -0.8984493994306796,
+      -0.41748660277498373,
+      0.13599122459208332
+    ],
+    "semantic": "lock_side_not_constant_direction"
+  },
+  "direction": {
+    "task_direction": [
+      0.41277908318603834,
+      -0.9086830774737219,
+      -0.06251794300022687
+    ],
+    "established_bypass_side": [
+      -0.9104640907996204,
+      -0.4135881276879458,
+      0.0
+    ],
+    "original_established_bypass_side": [
+      -0.8984493994306796,
+      -0.4174866027749838,
+      0.13599122459208332
+    ],
+    "side_policy": "lock_side_not_constant_direction",
+    "tabletop_parallel_side": true,
+    "preserve_tcp_height": true,
+    "tcp_height_weight": 1.0,
+    "candidate_phases": [
+      "strong",
+      "weak",
+      "release"
+    ],
+    "risk_link": "right_link"
+  },
+  "candidates": [
+    {
+      "candidate": 1,
+      "phase": "strong",
+      "side_weight": 1.0,
+      "side_m": 0.04,
+      "forward_m": 0.05,
+      "mapping": {
+        "risk_link": "right_link",
+        "risk_point_base_m": [
+          0.5174625119342332,
+          -0.15679904260780814,
+          0.42860850580056875
+        ],
+        "risk_point_local_m": [
+          0.013306226028474932,
+          0.010150000452995255,
+          -0.006289013979963464
+        ],
+        "requested_risk_delta_m": [
+          -0.03641856363198482,
+          -0.01654352510751783,
+          0.0
+        ],
+        "linearized_risk_delta_m": [
+          -0.007494143098659168,
+          -0.010288785397906296,
+          0.00030570153502832613
+        ],
+        "requested_task_progress_m": 0.05,
+        "linearized_tcp_delta_m": [
+          -0.005698535214434267,
+          -0.01004666567572384,
+          -0.0007000667974871209
+        ],
+        "linearized_tcp_vertical_delta_m": -0.0007000667974871209,
+        "requested_tcp_vertical_delta_m": 0.0,
+        "tabletop_parallel_side": true,
+        "preserve_tcp_height": true,
+        "linearized_task_progress_m": 0.006820765679390468,
+        "joint_delta_rad": [
+          -0.03015326310269271,
+          0.0061009691296295444,
+          0.01249975807598827,
+          0.01632492664902971,
+          0.015484156772914082,
+          -0.12
+        ],
+        "raw_joint_delta_max_abs_rad": 0.4179739262359355,
+        "joint_delta_scale": 0.2870992482250271,
+        "joint_delta_max_abs_rad": 0.12
+      },
+      "tabletop_workspace_guard": {
+        "passed": true,
+        "reason": "ok",
+        "min_gripper_base_z_m": 0.5629150590819395,
+        "threshold_m": 0.46,
+        "sample_count": 51
+      },
+      "tabletop_feasible": true,
+      "coarse_min_distance_m": 0.13770770095533724,
+      "coarse_min_tau_s": 0.0,
+      "coarse_nearest_link": "wrist2_Link",
+      "task_progress_m": 0.006625308296317184,
+      "goal_distance_m": 0.3783855734373083,
+      "task_progress_ok": true,
+      "profile": [
+        {
+          "tau_s": 0.0,
+          "distance_m": 0.13770770095533724,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.1,
+          "distance_m": 0.13794788879773792,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.2,
+          "distance_m": 0.13871094243253623,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.30000000000000004,
+          "distance_m": 0.13925738195495255,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.4,
+          "distance_m": 0.13934744133791727,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.5,
+          "distance_m": 0.13947379000628127,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.6000000000000001,
+          "distance_m": 0.139614905767264,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.7000000000000001,
+          "distance_m": 0.13973783599566544,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.8,
+          "distance_m": 0.13994158821604283,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.9,
+          "distance_m": 0.1402284718887378,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 1.0,
+          "distance_m": 0.14032775492877858,
+          "nearest_link": "gripper_base_link"
+        }
+      ]
+    },
+    {
+      "candidate": 2,
+      "phase": "weak",
+      "side_weight": 0.5,
+      "side_m": 0.02,
+      "forward_m": 0.05,
+      "mapping": {
+        "risk_link": "right_link",
+        "risk_point_base_m": [
+          0.5174625119342332,
+          -0.15679904260780814,
+          0.42860850580056875
+        ],
+        "risk_point_local_m": [
+          0.013306226028474932,
+          0.010150000452995255,
+          -0.006289013979963464
+        ],
+        "requested_risk_delta_m": [
+          -0.01820928181599241,
+          -0.008271762553758916,
+          0.0
+        ],
+        "linearized_risk_delta_m": [
+          -0.002431408725730667,
+          -0.008123129569336961,
+          0.00029251949287535444
+        ],
+        "requested_task_progress_m": 0.05,
+        "linearized_tcp_delta_m": [
+          7.679952873529785e-05,
+          -0.007814426682178093,
+          -0.0007081487455752791
+        ],
+        "linearized_tcp_vertical_delta_m": -0.0007081487455752791,
+        "requested_tcp_vertical_delta_m": 0.0,
+        "tabletop_parallel_side": true,
+        "preserve_tcp_height": true,
+        "linearized_task_progress_m": 0.007176810528226389,
+        "joint_delta_rad": [
+          -0.025464978057432027,
+          -0.0067654782902140265,
+          0.004042533198174198,
+          0.016757902058919784,
+          0.015581044531990579,
+          -0.11999999999999998
+        ],
+        "raw_joint_delta_max_abs_rad": 0.4042038101405306,
+        "joint_delta_scale": 0.2968799328197309,
+        "joint_delta_max_abs_rad": 0.11999999999999998
+      },
+      "tabletop_workspace_guard": {
+        "passed": true,
+        "reason": "ok",
+        "min_gripper_base_z_m": 0.5629115197582916,
+        "threshold_m": 0.46,
+        "sample_count": 51
+      },
+      "tabletop_feasible": true,
+      "coarse_min_distance_m": 0.13618806497102873,
+      "coarse_min_tau_s": 1.0,
+      "coarse_nearest_link": "gripper_base_link",
+      "task_progress_m": 0.007157042486295947,
+      "goal_distance_m": 0.37775015343123813,
+      "task_progress_ok": true,
+      "profile": [
+        {
+          "tau_s": 0.0,
+          "distance_m": 0.13770770095533724,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.1,
+          "distance_m": 0.1377040231184147,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.2,
+          "distance_m": 0.1377006388023761,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.30000000000000004,
+          "distance_m": 0.1377066931774547,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.4,
+          "distance_m": 0.13771496036310718,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.5,
+          "distance_m": 0.13745490854424683,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.6000000000000001,
+          "distance_m": 0.13717990678229866,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.7000000000000001,
+          "distance_m": 0.13696865474968428,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.8,
+          "distance_m": 0.13666222720422888,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.9,
+          "distance_m": 0.1362992128572155,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 1.0,
+          "distance_m": 0.13618806497102873,
+          "nearest_link": "gripper_base_link"
+        }
+      ]
+    },
+    {
+      "candidate": 3,
+      "phase": "release",
+      "side_weight": 0.0,
+      "side_m": 0.0,
+      "forward_m": 0.05,
+      "mapping": {
+        "risk_link": "right_link",
+        "risk_point_base_m": [
+          0.5174625119342332,
+          -0.15679904260780814,
+          0.42860850580056875
+        ],
+        "risk_point_local_m": [
+          0.013306226028474932,
+          0.010150000452995255,
+          -0.006289013979963464
+        ],
+        "requested_risk_delta_m": [
+          -0.0,
+          -0.0,
+          0.0
+        ],
+        "linearized_risk_delta_m": [
+          0.0029884384739782624,
+          -0.005804713706800572,
+          0.00027840762190088457
+        ],
+        "requested_task_progress_m": 0.05,
+        "linearized_tcp_delta_m": [
+          0.0062595121755857856,
+          -0.005424731042022944,
+          -0.0007168007743974254
+        ],
+        "linearized_tcp_vertical_delta_m": -0.0007168007743974254,
+        "requested_tcp_vertical_delta_m": 0.0,
+        "tabletop_parallel_side": true,
+        "preserve_tcp_height": true,
+        "linearized_task_progress_m": 0.007557969904719081,
+        "joint_delta_rad": [
+          -0.020445992919703435,
+          -0.02053949325562983,
+          -0.005011243515142949,
+          0.01722141848897071,
+          0.015684766515218725,
+          -0.12000000000000001
+        ],
+        "raw_joint_delta_max_abs_rad": 0.39043369404512557,
+        "joint_delta_scale": 0.30735052284224895,
+        "joint_delta_max_abs_rad": 0.12000000000000001
+      },
+      "tabletop_workspace_guard": {
+        "passed": true,
+        "reason": "ok",
+        "min_gripper_base_z_m": 0.5628257210031632,
+        "threshold_m": 0.46,
+        "sample_count": 51
+      },
+      "tabletop_feasible": true,
+      "coarse_min_distance_m": 0.13157846430874368,
+      "coarse_min_tau_s": 1.0,
+      "coarse_nearest_link": "gripper_base_link",
+      "task_progress_m": 0.0076779933834836165,
+      "goal_distance_m": 0.37722975098985384,
+      "task_progress_ok": true,
+      "profile": [
+        {
+          "tau_s": 0.0,
+          "distance_m": 0.13770770095533724,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.1,
+          "distance_m": 0.13744304188791767,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.2,
+          "distance_m": 0.1366204629943982,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.30000000000000004,
+          "distance_m": 0.13596904766251217,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.4,
+          "distance_m": 0.135539552007779,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.5,
+          "distance_m": 0.13500156356886323,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.6000000000000001,
+          "distance_m": 0.13446527083377377,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.7000000000000001,
+          "distance_m": 0.1340395501473125,
+          "nearest_link": "wrist2_Link"
+        },
+        {
+          "tau_s": 0.8,
+          "distance_m": 0.133200420685508,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 0.9,
+          "distance_m": 0.13202396872775493,
+          "nearest_link": "gripper_base_link"
+        },
+        {
+          "tau_s": 1.0,
+          "distance_m": 0.13157846430874368,
+          "nearest_link": "gripper_base_link"
+        }
+      ]
+    }
+  ],
+  "planning_robust_target_m": 0.11,
+  "planning_robust_target_is_hard_gate": false,
+  "selected_candidate": 1,
+  "selected_phase": "strong",
+  "fast_invoked": true
+}
