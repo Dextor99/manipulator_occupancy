@@ -3076,6 +3076,8 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_fast_terminal_duration_s == pytest.approx(6.0)
     assert core_args.stationary_fast_terminal_segments == 8
     assert core_args.stationary_fast_terminal_rollout_steps == 4
+    assert core_args.stationary_fast_terminal_target_ms == pytest.approx(500.0)
+    assert core_args.stationary_fast_terminal_max_ms == pytest.approx(1000.0)
 
 
 def test_stationary_fast_terminal_bypass_is_one_complete_path():

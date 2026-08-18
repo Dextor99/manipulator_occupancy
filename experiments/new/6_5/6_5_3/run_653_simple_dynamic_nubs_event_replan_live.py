@@ -644,6 +644,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stationary-fast-terminal-duration-s", type=float, default=6.0)
     parser.add_argument("--stationary-fast-terminal-segments", type=int, default=8)
     parser.add_argument("--stationary-fast-terminal-rollout-steps", type=int, default=4)
+    parser.add_argument("--stationary-fast-terminal-target-ms", type=float, default=500.0)
+    parser.add_argument("--stationary-fast-terminal-max-ms", type=float, default=1000.0)
     return parser
 
 
@@ -1125,7 +1127,10 @@ def plan_stationary_fast_terminal_bypass(
 ) -> tuple[dict[str, Any], Any | None]:
     """Plan one complete stationary terminal path with a single Fast call."""
     planner_started = time.perf_counter()
-    total_max_ms = float(getattr(runtime_args, "fast_max_ms", 250.0))
+    total_target_ms = float(getattr(runtime_args, "stationary_fast_terminal_target_ms", 500.0))
+    total_max_ms = float(getattr(runtime_args, "stationary_fast_terminal_max_ms", 1000.0))
+    if total_target_ms <= 0.0 or total_max_ms < total_target_ms:
+        raise ValueError("stationary terminal target/max budget is invalid")
     trial_dir.mkdir(parents=True, exist_ok=True)
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
     try:
@@ -1184,6 +1189,7 @@ def plan_stationary_fast_terminal_bypass(
     fast_args.stationary_fast_terminal_active = True
     fast_args.stationary_fast_terminal_polyline = polyline
     fast_args.fast_max_ms = remaining_ms
+    fast_args.fast_target_ms = min(total_target_ms, remaining_ms)
     result = base_fast(
         fast_args, config, model, q_now=np.asarray(q_start), qd_now=np.zeros(6),
         center=np.asarray(fresh["center"]), velocity=np.zeros(3),
@@ -1219,6 +1225,7 @@ def plan_stationary_fast_terminal_bypass(
         "base_fast_elapsed_ms": result.get("fast_elapsed_ms"),
         "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
         "stationary_terminal_total_budget_ms": total_max_ms,
+        "stationary_terminal_target_ms": total_target_ms,
         "total_budget_met": bool(total_elapsed_ms <= total_max_ms),
         "virtual_rollout": rollout_audit,
         "side_audit": side_audit,
