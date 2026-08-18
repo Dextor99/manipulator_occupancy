@@ -3124,6 +3124,28 @@ def test_stationary_clearance_recovery_is_side_only_and_topology_gated():
     assert "side_only_clearance_recovery" in source
 
 
+def test_confirmed_stationary_forecast_is_frozen_and_long_horizon():
+    centers = np.asarray([[0.5, -0.1, 0.35]], dtype=np.float64)
+    radii = np.asarray([0.10], dtype=np.float64)
+    forecast = dynamic_nubs_v3.v3_confirmed_stationary_multisphere_forecast(
+        centers, radii, valid_horizon_s=10.0
+    )
+    assert forecast.valid_horizon == pytest.approx(10.0)
+    p0 = forecast.occupancy_at(0.0)
+    p5 = forecast.occupancy_at(5.0)
+    p10 = forecast.occupancy_at(10.0)
+    assert np.allclose(p0.spheres[0].center, p5.spheres[0].center)
+    assert np.allclose(p0.spheres[0].center, p10.spheres[0].center)
+    assert p0.spheres[0].radius == pytest.approx(p10.spheres[0].radius)
+    assert not p0.extrapolated and not p5.extrapolated and not p10.extrapolated
+
+
+def test_remaining_clearance_supports_bounded_lookahead():
+    source = inspect.getsource(dynamic_nubs_v3._remaining_clearance)
+    assert "max_lookahead_s" in source
+    assert "remaining = min(remaining, horizon)" in source
+
+
 def test_joint_polyline_resampling_preserves_endpoints():
     points = np.array([[0.0] * 6, [1.0] * 6, [1.0, 2.0, 1.0, 1.0, 1.0, 1.0]])
     sampled = event_replan.resample_joint_polyline(points, 5)

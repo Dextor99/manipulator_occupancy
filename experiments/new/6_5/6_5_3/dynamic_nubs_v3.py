@@ -19,7 +19,11 @@ from typing import Any
 
 import numpy as np
 
-from planning.obstacle_forecast import CompositeForecast, ConstantVelocitySphereForecast
+from planning.obstacle_forecast import (
+    CompositeForecast,
+    ConstantVelocitySphereForecast,
+    FrozenSphereForecast,
+)
 from risk.prediction import RiskSphere
 
 trial = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
@@ -171,6 +175,26 @@ def v3_execution_multisphere_forecast(
         for center, radius in zip(center_values, radius_values)
     ]
     return CompositeForecast(forecasts)
+
+
+def v3_confirmed_stationary_multisphere_forecast(
+    centers: np.ndarray,
+    radii: np.ndarray,
+    *,
+    valid_horizon_s: float,
+    object_id: int = 1,
+) -> FrozenSphereForecast:
+    """Freeze a geometry snapshot after explicit stationary confirmation."""
+    horizon = float(valid_horizon_s)
+    if not np.isfinite(horizon) or horizon <= 0.0:
+        raise ValueError("valid_horizon_s must be finite and positive")
+    source = v3_execution_multisphere_forecast(
+        np.asarray(centers, dtype=np.float64),
+        np.asarray(radii, dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+        object_id=int(object_id),
+    )
+    return FrozenSphereForecast(source, valid_horizon=horizon)
 
 
 @dataclass
@@ -940,9 +964,15 @@ def _remaining_clearance(
     *,
     playback_time_s: float,
     sample_step_s: float = 0.05,
+    max_lookahead_s: float | None = None,
 ) -> dict[str, Any]:
     start = float(np.clip(playback_time_s, 0.0, trajectory.total_duration))
     remaining = float(trajectory.total_duration) - start
+    if max_lookahead_s is not None:
+        horizon = float(max_lookahead_s)
+        if not np.isfinite(horizon) or horizon <= 0.0:
+            raise ValueError("max_lookahead_s must be finite and positive")
+        remaining = min(remaining, horizon)
     taus = np.arange(0.0, remaining + 0.5 * sample_step_s, sample_step_s)
     if len(taus) == 0 or taus[-1] < remaining - 1.0e-9:
         taus = np.r_[taus, remaining]

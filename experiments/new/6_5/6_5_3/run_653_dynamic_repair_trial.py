@@ -60,6 +60,12 @@ def v3_execution_multisphere_forecast(*args: Any, **kwargs: Any) -> Any:
     """Lazy-load V3 execution geometry to avoid the trial/V3 import cycle."""
     module = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
     return module.v3_execution_multisphere_forecast(*args, **kwargs)
+
+
+def v3_confirmed_stationary_multisphere_forecast(*args: Any, **kwargs: Any) -> Any:
+    """Lazy-load the confirmed-stationary terminal forecast."""
+    module = importlib.import_module("experiments.new.6_5.6_5_3.dynamic_nubs_v3")
+    return module.v3_confirmed_stationary_multisphere_forecast(*args, **kwargs)
 from execute_652_planar_y_guarded import (  # noqa: E402
     call_cartesian_motion,
     check_pose_limits,
@@ -2244,14 +2250,25 @@ def run_fast_repair(
             constant_forecast, "__name__", type(constant_forecast).__name__
         )
     else:
-        forecast = v3_execution_multisphere_forecast(
-            np.asarray(multisphere_geometry["component_centers"], dtype=np.float64),
-            np.asarray(multisphere_geometry["component_base_radii"], dtype=np.float64),
-            velocity,
-            object_id=int(obstacle_audit.get("track_id") or 1),
-        )
-        geometry_mode = "fresh_pca_multisphere"
-        forecast_builder = "v3_execution_multisphere_forecast"
+        stationary_terminal = bool(getattr(args, "stationary_fast_terminal_active", False))
+        if stationary_terminal:
+            forecast = v3_confirmed_stationary_multisphere_forecast(
+                np.asarray(multisphere_geometry["component_centers"], dtype=np.float64),
+                np.asarray(multisphere_geometry["component_base_radii"], dtype=np.float64),
+                valid_horizon_s=float(args.local_horizon_s),
+                object_id=int(obstacle_audit.get("track_id") or 1),
+            )
+            geometry_mode = "confirmed_stationary_pca_multisphere"
+            forecast_builder = "v3_confirmed_stationary_multisphere_forecast"
+        else:
+            forecast = v3_execution_multisphere_forecast(
+                np.asarray(multisphere_geometry["component_centers"], dtype=np.float64),
+                np.asarray(multisphere_geometry["component_base_radii"], dtype=np.float64),
+                velocity,
+                object_id=int(obstacle_audit.get("track_id") or 1),
+            )
+            geometry_mode = "fresh_pca_multisphere"
+            forecast_builder = "v3_execution_multisphere_forecast"
     head, tail, durations, p_inner, q_goal = make_local_reference(
         q_now, qd_now, args, reference_goal=reference_goal
     )
