@@ -2950,6 +2950,8 @@ def test_final_precommand_retries_mildly_old_newer_state():
     assert "final_precommand_state_too_old_retry" in source
     assert "cursor_seq = seq" in source
     assert "final_precommand_freshness_timeout" in source
+    wrapper_source = inspect.getsource(simple_live.copy_wrapper_runtime_parameters)
+    assert '("final_precommand_max_state_age_s", 0.35)' in wrapper_source
 
 
 def test_monitor_stop_classifies_final_precommand_hold():

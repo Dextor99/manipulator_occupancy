@@ -590,7 +590,7 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("rolling_preplan_clearance_m", 0.12),
         ("rolling_preplan_min_lead_s", 0.25),
         ("final_precommand_fresh_timeout_s", 0.35),
-        ("final_precommand_max_state_age_s", 0.25),
+        ("final_precommand_max_state_age_s", 0.35),
         ("boundary_qd_tol_rad_s", 0.03),
         ("boundary_qdd_tol_rad_s2", 0.30),
         # Initial STRO early warning only; execution remains 0.5 s.
