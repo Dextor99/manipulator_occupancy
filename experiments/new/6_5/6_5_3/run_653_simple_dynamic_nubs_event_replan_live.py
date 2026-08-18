@@ -1031,6 +1031,39 @@ def bounded_joint_goal_step(q_now: np.ndarray, q_goal: np.ndarray, *, max_delta_
     return q_now + (float(max_delta_rad) / peak) * delta
 
 
+def plan_stationary_joint_goal_progress(
+    base_fast: Any, runtime_args: argparse.Namespace, config: dict[str, Any], model: Any,
+    *, q_now: np.ndarray, q_step: np.ndarray, fresh: dict[str, Any], geometry: dict[str, Any],
+    risk_links: set[str], trial_dir: Path, artifacts_out: dict[str, Any],
+) -> dict[str, Any]:
+    """Run production Fast directly toward one bounded joint-goal step."""
+    zero = np.zeros(6, dtype=np.float64)
+    args = copy.copy(runtime_args)
+    args.local_horizon_s = float(getattr(runtime_args, "local_horizon_s", 1.0))
+    args.local_segments = int(getattr(runtime_args, "local_segments", 5))
+    args.max_joint_delta_rad = float(getattr(runtime_args, "max_joint_delta_rad", 0.12))
+    result = base_fast(
+        args, config, model, q_now=np.asarray(q_now), qd_now=zero,
+        center=np.asarray(fresh["center"]), velocity=np.asarray(fresh["velocity"]),
+        radius=float(fresh["radius"]), risk_links=risk_links, trial_dir=trial_dir,
+        reference_goal=(np.asarray(q_step), zero, zero), rejoin_goals=None,
+        obstacle_audit={"track_id": int(fresh.get("track_id", 1)), "phase": "stationary_joint_goal_progress"},
+        multisphere_geometry=geometry, artifacts_out=artifacts_out,
+        accept_verified_seed_without_fast_step=True,
+        original_task_reference_goal=(np.asarray(q_step), zero, zero),
+    )
+    forecast = v3.v3_execution_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+    )
+    return live.apply_tabletop_height_shape_policy(
+        result=result, artifacts_out=artifacts_out, runtime_args=args, config=config,
+        model=model, forecast=forecast, q_now=np.asarray(q_now), qd_now=zero,
+        trial_dir=trial_dir, max_drop_m=0.005,
+    )
+
+
 def probe_stationary_goal_connection(
     config: dict[str, Any], model: Any, forecast: Any,
     q_now: np.ndarray, q_goal: np.ndarray, *, tcp_link: str,
@@ -1353,44 +1386,80 @@ def build_stationary_virtual_fast_route(
         joint_seed_ok = float(joint_screen["min_distance_m"]) >= float(
             getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)
         )
-        progress_goal = q_joint_step if joint_seed_ok else q_goal
         step_dir = trial_dir / f"virtual_fast_{virtual_index:02d}"
-        artifacts: dict[str, Any] = {}
         virtual_args = copy.copy(runtime_args)
         # Keep virtual primitives identical to the frozen production local
         # Fast protocol; only the final assembled route is long-horizon.
         virtual_args.local_horizon_s = float(getattr(runtime_args, "local_horizon_s", 1.0))
         virtual_args.local_segments = int(getattr(runtime_args, "local_segments", 5))
         virtual_args.max_joint_delta_rad = float(getattr(runtime_args, "max_joint_delta_rad", 0.12))
-        candidate = plan_goal_directed_continuation(
-            base_fast, virtual_args, config, model,
-            q_escape_start=np.asarray(q_escape_start), q_now=q_virtual, q_final=progress_goal,
-            fresh=fresh_static, geometry=geometry, risk_links=risk_links, trial_dir=step_dir,
-            nominal_reference_goal=(progress_goal, zero, zero), artifacts_out=artifacts,
-            forward_m=float(getattr(runtime_args, "forward_m", 0.05)),
-            side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
-            robust_target_m=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
-            max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
-            tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
-            robust_target_is_diagnostic=True, allow_unestablished_side_fallback=False,
-            locked_bypass_side=locked_bypass_side,
-        )
-        trajectory = artifacts.get("candidate_trajectory")
+        artifacts: dict[str, Any] = {}
+        candidate: dict[str, Any] | None = None
+        trajectory = None
+        selected_mode = None
+        joint_step_is_final = bool(np.max(np.abs(q_joint_step - q_goal)) <= 1.0e-9)
+        if joint_seed_ok:
+            candidate = plan_stationary_joint_goal_progress(
+                base_fast, virtual_args, config, model,
+                q_now=q_virtual, q_step=q_joint_step, fresh=fresh_static,
+                geometry=geometry, risk_links=risk_links,
+                trial_dir=step_dir / "joint_goal_progress", artifacts_out=artifacts,
+            )
+            trajectory = artifacts.get("candidate_trajectory")
+            if candidate.get("local_repair_ready", False) and trajectory is not None:
+                selected_mode = "joint_goal_progress"
+        if trajectory is None:
+            artifacts = {}
+            candidate = plan_goal_directed_continuation(
+                base_fast, virtual_args, config, model,
+                q_escape_start=np.asarray(q_escape_start), q_now=q_virtual, q_final=q_goal,
+                fresh=fresh_static, geometry=geometry, risk_links=risk_links,
+                trial_dir=step_dir / "locked_side_bypass",
+                nominal_reference_goal=(q_goal, zero, zero), artifacts_out=artifacts,
+                forward_m=float(getattr(runtime_args, "forward_m", 0.05)),
+                side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
+                robust_target_m=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
+                max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
+                tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
+                robust_target_is_diagnostic=True, allow_unestablished_side_fallback=False,
+                locked_bypass_side=locked_bypass_side,
+            )
+            trajectory = artifacts.get("candidate_trajectory")
+            if candidate.get("local_repair_ready", False) and trajectory is not None:
+                selected_mode = "locked_side_bypass"
         if not candidate.get("local_repair_ready", False) or trajectory is None:
-            return None, {"connected_to_goal": False, "reason": "virtual_fast_local_failed", "failed_virtual_index": virtual_index, "candidate": candidate, "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]), "steps": step_audit}
+            return None, {"connected_to_goal": False, "reason": "joint_goal_and_bypass_failed", "failed_virtual_index": virtual_index, "candidate": candidate, "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]), "joint_goal_seed_ok": bool(joint_seed_ok), "steps": step_audit}
         sampled = sample_trajectory_shape_points(trajectory, samples=samples_per_local)
         for point in sampled:
             append_unique_route_point(route_points, point)
-        q_virtual = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
+        goal_error_before = float(np.max(np.abs(q_goal - q_virtual)))
+        q_new = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
+        goal_error_after = float(np.max(np.abs(q_goal - q_new)))
+        goal_error_improvement = goal_error_before - goal_error_after
+        if selected_mode == "joint_goal_progress" and goal_error_improvement <= 1.0e-6:
+            return None, {"connected_to_goal": False, "reason": "joint_goal_progress_not_converging", "failed_virtual_index": virtual_index, "goal_error_before_rad": goal_error_before, "goal_error_after_rad": goal_error_after, "steps": step_audit}
+        q_virtual = q_new
         step_audit.append({
             "virtual_index": virtual_index, "action": "virtual_fast_progress",
+            "selected_mode": selected_mode,
             "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]),
             "joint_goal_seed_ok": bool(joint_seed_ok),
             "locked_bypass_side": locked_bypass_side.tolist(),
+            "goal_error_before_rad": goal_error_before,
+            "goal_error_after_rad": goal_error_after,
+            "goal_error_improvement_rad": goal_error_improvement,
             "fast_elapsed_ms": candidate.get("fast_elapsed_ms"),
             "verification_min_distance_m": candidate.get("verification_min_distance_m"),
             "q_virtual_tail_rad": q_virtual.tolist(), "sampled_shape_point_count": len(sampled),
         })
+        if selected_mode == "joint_goal_progress" and joint_step_is_final:
+            append_unique_route_point(route_points, q_goal)
+            return np.asarray(route_points, dtype=np.float64), {
+                "connected_to_goal": True, "planner": "virtual_fast_chain",
+                "connection_mode": "final_joint_goal_fast",
+                "virtual_fast_step_count": sum(row.get("action") == "virtual_fast_progress" for row in step_audit),
+                "route_point_count": len(route_points), "steps": step_audit,
+            }
     return None, {"connected_to_goal": False, "reason": "max_virtual_fast_steps_without_terminal_connection", "virtual_fast_step_count": len(step_audit), "steps": step_audit}
 
 
