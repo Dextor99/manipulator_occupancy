@@ -2940,9 +2940,25 @@ def test_final_precommand_barrier_and_boundary_audit_are_installed():
 def test_final_precommand_defaults_are_conservative():
     args = event_replan.build_parser().parse_args(["--repeat", "1"])
     assert args.final_precommand_fresh_timeout_s == pytest.approx(0.35)
-    assert args.final_precommand_max_state_age_s == pytest.approx(0.25)
+    assert args.final_precommand_max_state_age_s == pytest.approx(0.35)
     assert args.boundary_qd_tol_rad_s == pytest.approx(0.03)
     assert args.boundary_qdd_tol_rad_s2 == pytest.approx(0.30)
+
+
+def test_final_precommand_retries_mildly_old_newer_state():
+    source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    assert "final_precommand_state_too_old_retry" in source
+    assert "cursor_seq = seq" in source
+    assert "final_precommand_freshness_timeout" in source
+
+
+def test_monitor_stop_classifies_final_precommand_hold():
+    info = event_replan.classify_monitor_stop({
+        "status": "FINAL_PRECOMMAND_HOLD_PRECOMMAND",
+        "final_precommand_barrier": {"reason": "final_precommand_freshness_not_ready"},
+    })
+    assert info["precommand_hold"] is True
+    assert info["reason"] == "final_precommand_freshness_not_ready"
 
 
 def test_rolling_preplan_hooks_are_present_and_non_authoritative():

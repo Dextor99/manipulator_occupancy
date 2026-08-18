@@ -145,14 +145,19 @@ def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
     goal_check = execution.get("goal_check") or {}
     motion_monitor = goal_check.get("motion_monitor") or {}
     command_time = execution.get("command_time_revalidation") or {}
-    reason = motion_monitor.get(
-        "reason", command_time.get("reason", goal_check.get("monitor_stop_reason"))
+    final_barrier = execution.get("final_precommand_barrier") or {}
+    reason = (
+        motion_monitor.get("reason")
+        or final_barrier.get("reason")
+        or command_time.get("reason")
+        or goal_check.get("monitor_stop_reason")
     )
     monitor_stopped = bool(
         execution_status == "STOPPED_BY_MOTION_MONITOR"
         and goal_check.get("monitor_stopped", False)
     )
     command_time_replan = execution_status == COMMAND_TIME_REPLAN_STATUS
+    precommand_hold = execution_status == "FINAL_PRECOMMAND_HOLD_PRECOMMAND"
     monitor_stopped = bool(monitor_stopped or command_time_replan)
     rolling_replan_stop = bool(
         command_time_replan
@@ -167,6 +172,7 @@ def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
         "monitor_stopped": monitor_stopped,
         "rolling_replan_stop": rolling_replan_stop,
         "precommand_replan": command_time_replan,
+        "precommand_hold": precommand_hold,
         "reason": reason,
         "replan_requested": bool(
             command_time_replan
@@ -321,15 +327,17 @@ def make_mid_execution_monitor(**context: Any):
         }
 
     def wait_for_final_fresh_snapshot(*, after_seq: int) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        """Require a newer persistent state immediately before startup."""
+        """Require a newer valid state, retrying mildly old samples until timeout."""
         if worker is None:
             return {"ready": False, "reason": "persistent_tracker_unavailable", "after_seq": int(after_seq)}, None
         started = time.monotonic()
         deadline = started + max(0.0, float(args.final_precommand_fresh_timeout_s))
         latest = worker.snapshot()
+        cursor_seq = int(after_seq)
+        samples: list[dict[str, Any]] = []
         while time.monotonic() < deadline:
             seq = int(v3._state_seq(latest))
-            if seq <= int(after_seq):
+            if seq <= cursor_seq:
                 remaining = max(0.0, deadline - time.monotonic())
                 newer = worker.wait_for_newer_state(after_seq=seq, timeout_s=min(0.10, remaining))
                 if newer is None:
@@ -340,13 +348,25 @@ def make_mid_execution_monitor(**context: Any):
             age = float(aligned["propagation_dt_s"])
             reasons = list(v3._persistent_state_reasons(latest, aligned, args, raw_guard_reason="raw_hard_guard_not_safe"))
             raw = float(latest.get("raw_guard_distance_m", float("-inf")))
+            sample = {"state_seq": seq, "state_age_s": age, "raw_guard_distance_m": raw, "base_reasons": list(reasons)}
+            samples.append(sample)
+            # Physical hard guard and genuine state invalidity fail closed
+            # immediately.  A newer sample that is only mildly old is retried.
+            if raw <= float(args.guided_hard_stop_m):
+                reasons = list(reasons) or ["raw_hard_guard_not_safe"]
+                return {"ready": False, "reason": reasons, "after_seq": int(after_seq), "state_seq": seq, "state_age_s": age, "raw_guard_distance_m": raw, "samples": samples, "wait_elapsed_s": time.monotonic() - started}, None
+            if reasons:
+                return {"ready": False, "reason": reasons, "after_seq": int(after_seq), "state_seq": seq, "state_age_s": age, "raw_guard_distance_m": raw, "samples": samples, "wait_elapsed_s": time.monotonic() - started}, None
             if age > float(args.final_precommand_max_state_age_s):
-                reasons.append("final_precommand_state_too_old")
-            if raw <= float(args.guided_hard_stop_m) and "raw_hard_guard_not_safe" not in reasons:
-                reasons.append("raw_hard_guard_not_safe")
-            audit = {"ready": not reasons, "reason": reasons or None, "after_seq": int(after_seq), "state_seq": seq, "state_age_s": age, "raw_guard_distance_m": raw, "wait_elapsed_s": time.monotonic() - started}
-            return (audit, None) if reasons else (audit, latest)
-        return {"ready": False, "reason": "final_precommand_freshness_timeout", "after_seq": int(after_seq), "wait_elapsed_s": time.monotonic() - started}, None
+                sample["reason"] = "final_precommand_state_too_old_retry"
+                cursor_seq = seq
+                remaining = max(0.0, deadline - time.monotonic())
+                newer = worker.wait_for_newer_state(after_seq=cursor_seq, timeout_s=min(0.10, remaining))
+                if newer is not None:
+                    latest = newer
+                continue
+            return {"ready": True, "reason": None, "after_seq": int(after_seq), "state_seq": seq, "state_age_s": age, "raw_guard_distance_m": raw, "samples": samples, "wait_elapsed_s": time.monotonic() - started}, latest
+        return {"ready": False, "reason": "final_precommand_freshness_timeout", "after_seq": int(after_seq), "samples": samples, "wait_elapsed_s": time.monotonic() - started}, None
 
     def boundary_dynamics_audit(trajectory_obj: Any, q_actual: np.ndarray) -> dict[str, Any]:
         """Reject startup/stop discontinuities; never clip a verified trajectory."""
@@ -595,7 +615,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="fail-safe watchdog for one continuous dynamic-replan episode; not a local-segment limit",
     )
     parser.add_argument("--final-precommand-fresh-timeout-s", type=float, default=0.35)
-    parser.add_argument("--final-precommand-max-state-age-s", type=float, default=0.25)
+    parser.add_argument("--final-precommand-max-state-age-s", type=float, default=0.35)
     parser.add_argument("--boundary-qd-tol-rad-s", type=float, default=0.03)
     parser.add_argument("--boundary-qdd-tol-rad-s2", type=float, default=0.30)
     parser.add_argument("--rolling-preplan-trigger-s", type=float, default=0.40)
