@@ -1,0 +1,47 @@
+{
+  "scene_id": "D2_APPROACH_HOLD_V1_FIXED_X_XP00",
+  "classification": "dynamic_approach_then_hold",
+  "robot_task_direction": "approximately base -Y",
+  "obstacle_nominal_direction_unit_base": [
+    0.0,
+    1.0,
+    0.0
+  ],
+  "opposing_condition": "obstacle velocity dot robot task velocity < 0",
+  "stro_trigger_policy": {
+    "horizon_s": 1.2,
+    "risk_distance_m": 0.14,
+    "trigger_must_precede_hold": true,
+    "trigger_requires_dynamic_track": true
+  },
+  "approach_hold_policy": {
+    "fixed_x_lane": true,
+    "recommended_hold_center_y_m": -0.126,
+    "recommended_hold_half_width_m": 0.01,
+    "hold_position_is_authorization_gate": false,
+    "hold_speed_threshold_m_s": 0.04,
+    "hold_confirm_frames": 3,
+    "hold_center_span_max_m": 0.02,
+    "manual_adjustment_after_hold": false
+  },
+  "candidate_acceptance_policy": {
+    "online_clearance_m": 0.09,
+    "clearance_improvement_preference_m": 0.003,
+    "clearance_improvement_is_hard_gate": false,
+    "accepted_steps_is_hard_gate": false,
+    "candidate_delta_is_hard_gate": false
+  },
+  "execution_safety_policy": {
+    "raw_hard_guard_m": 0.1,
+    "raw_hard_guard_debounce": false,
+    "final_fresh_authorization": true,
+    "terminal_full_verification": true
+  },
+  "terminal_recovery_policy": {
+    "stationary_hold_safe_is_goal_path_clear": false,
+    "direct_terminal_distance_blocked_reenters_local": true,
+    "terminal_non_distance_failure_is_fail_closed": true,
+    "continuous_replan_watchdog_s": 10.0
+  },
+  "operator_rule": "move mainly along base +Y with fixed X to the pre-marked stop line; after STRO, hold the obstacle completely still and do not adjust it"
+}
