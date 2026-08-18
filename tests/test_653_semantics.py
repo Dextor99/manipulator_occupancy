@@ -3011,6 +3011,29 @@ def test_stationary_terminal_uses_full_ccro_optimizer_hooks():
     assert callable(stationary_terminal_replay.main)
 
 
+def test_stationary_terminal_high_fidelity_config_is_private_and_non_mutating():
+    cfg = {"risk": {"d_safe": 0.11, "risk_samples_per_segment": 4},
+           "optimizer": {"max_iterations": 60}, "validation": {"d_accept": 0.09}}
+    out = stationary_terminal_ccro._make_stationary_full_config(cfg, min_clearance_m=0.09)
+    assert cfg["risk"]["risk_samples_per_segment"] == 4
+    assert out["risk"]["risk_samples_per_segment"] == 12
+    assert out["risk"]["optimizer_density"] == "medium"
+    assert out["risk"]["d_safe"] == pytest.approx(0.12)
+    assert out["optimizer"]["max_iterations"] >= 400
+    assert out["validation"]["d_accept"] == pytest.approx(0.09)
+
+
+def test_stationary_terminal_route_families_and_replay_geometry_are_explicit():
+    source = inspect.getsource(stationary_terminal_ccro.plan_stationary_terminal_ccro)
+    assert '("free", "none")' in source
+    assert '("base_side", "base_side")' in source
+    assert '("outer_side", "outer_side")' in source
+    replay_source = inspect.getsource(stationary_terminal_replay.main)
+    assert '"--geometry-json"' in replay_source
+    assert '"--use-local1-tail"' in replay_source
+    assert 'event_local_05' not in replay_source
+
+
 def test_d2_approach_hold_execute_requires_calibrated_stop_line():
     args = d2_approach_hold.build_parser().parse_args([
         "--repeat", "1",
