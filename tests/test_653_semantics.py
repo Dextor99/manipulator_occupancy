@@ -2969,6 +2969,14 @@ def test_monitor_stop_classifies_final_precommand_hold():
     assert info["reason"] == "final_precommand_freshness_not_ready"
 
 
+def test_startup_watchdog_grace_is_single_narrow_guarded_exception():
+    source = inspect.getsource(trial)
+    assert "startup_freshness_grace_used" in source
+    assert "startup_freshness_handoff_grace" in source
+    assert "(now - started) < 0.10" in source
+    assert 'reason == "perception_watchdog_expired"' in source
+
+
 def test_rolling_preplan_hooks_are_present_and_non_authoritative():
     source = inspect.getsource(event_replan.make_mid_execution_monitor)
     assert "rolling_preplan_trigger_s" in source

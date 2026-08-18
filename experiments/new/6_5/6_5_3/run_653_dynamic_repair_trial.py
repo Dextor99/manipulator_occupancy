@@ -1407,6 +1407,7 @@ def wait_for_candidate_goal_guarded(
     last = initial.copy()
     max_motion = 0.0
     minimum_guard_distance = math.inf
+    startup_freshness_grace_used = False
     while time.perf_counter() - started <= motion_timeout_s:
         now = time.perf_counter()
         last = np.asarray(robot.get_joint(), dtype=np.float64)
@@ -1479,9 +1480,28 @@ def wait_for_candidate_goal_guarded(
                 },
                 samples,
             )
-        if motion_monitor is not None and not bool(
-            motion_monitor.get("motion_safe", False)
-        ):
+        if motion_monitor is not None and not bool(motion_monitor.get("motion_safe", False)):
+            # AUBO's waypoint/start handoff can make the first feedback sample
+            # appear just over the 0.5 s perception watchdog despite a newer
+            # persistent sequence and a very safe independent raw guard.  Allow
+            # exactly one startup-only grace sample; every later stale sample
+            # remains fail-closed.
+            reason = motion_monitor.get("reason", "")
+            final_seq = motion_monitor.get("final_precommand_state_seq")
+            state_seq = motion_monitor.get("state_seq")
+            startup_grace = bool(
+                not startup_freshness_grace_used
+                and (now - started) < 0.10
+                and reason == "perception_watchdog_expired"
+                and final_seq is not None
+                and state_seq is not None
+                and int(state_seq) > int(final_seq)
+                and guard_distance > float(args.guided_hard_stop_m)
+            )
+            if startup_grace:
+                startup_freshness_grace_used = True
+                samples[-1]["motion_monitor"]["startup_freshness_handoff_grace"] = True
+                continue
             stop_return = maybe_move_stop(robot)
             return (
                 {
