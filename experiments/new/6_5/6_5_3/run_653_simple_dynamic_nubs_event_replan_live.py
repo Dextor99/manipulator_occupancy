@@ -1298,8 +1298,10 @@ def build_stationary_virtual_fast_route(
         step_dir = trial_dir / f"virtual_fast_{virtual_index:02d}"
         artifacts: dict[str, Any] = {}
         virtual_args = copy.copy(runtime_args)
-        virtual_args.local_horizon_s = 1.0
-        virtual_args.local_segments = 8
+        # Keep virtual primitives identical to the frozen production local
+        # Fast protocol; only the final assembled route is long-horizon.
+        virtual_args.local_horizon_s = float(getattr(runtime_args, "local_horizon_s", 1.0))
+        virtual_args.local_segments = int(getattr(runtime_args, "local_segments", 5))
         virtual_args.max_joint_delta_rad = float(getattr(runtime_args, "max_joint_delta_rad", 0.12))
         candidate = plan_goal_directed_continuation(
             base_fast, virtual_args, config, model,
