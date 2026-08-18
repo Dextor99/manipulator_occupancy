@@ -611,6 +611,8 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("stationary_fast_terminal_target_ms", 500.0),
         ("stationary_fast_terminal_max_ms", 1000.0),
         ("stationary_fast_terminal_virtual_max_joint_delta_rad", 0.30),
+        ("stationary_fast_terminal_virtual_fast_steps", 6),
+        ("stationary_fast_terminal_samples_per_local", 3),
         ("stationary_virtual_topology_floor_m", 0.08),
     ):
         setattr(core_args, name, getattr(wrapper_args, name, default))

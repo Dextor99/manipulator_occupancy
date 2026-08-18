@@ -3073,11 +3073,11 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_center_span_m == pytest.approx(0.02)
     assert core_args.shadow_hold_observation_s == pytest.approx(3.0)
     assert core_args.stationary_fast_terminal_bypass is True
-    assert core_args.stationary_fast_terminal_duration_s == pytest.approx(6.0)
-    assert core_args.stationary_fast_terminal_segments == 8
+    assert core_args.stationary_fast_terminal_duration_s == pytest.approx(8.0)
+    assert core_args.stationary_fast_terminal_segments == 12
     assert core_args.stationary_fast_terminal_rollout_steps == 8
-    assert core_args.stationary_fast_terminal_target_ms == pytest.approx(500.0)
-    assert core_args.stationary_fast_terminal_max_ms == pytest.approx(1000.0)
+    assert core_args.stationary_fast_terminal_target_ms == pytest.approx(800.0)
+    assert core_args.stationary_fast_terminal_max_ms == pytest.approx(1500.0)
     assert core_args.stationary_fast_terminal_virtual_max_joint_delta_rad == pytest.approx(0.30)
     assert core_args.stationary_virtual_topology_floor_m == pytest.approx(0.08)
 
@@ -3094,16 +3094,12 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     planner_source = inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert 'fast_args.fast_max_ms = remaining_ms' in planner_source
     assert 'stationary_terminal_total_elapsed_ms' in planner_source
-    rollout_source = inspect.getsource(event_replan._stationary_virtual_anchors)
-    assert "release_forward" in rollout_source
-    assert "release_forward_half" in rollout_source
-    assert "side_only_clearance_recovery" in rollout_source
-    assert "_stationary_recovery_side" in rollout_source
-    assert "accepted_as_virtual_seed" in rollout_source
-    assert "remainder_seed_connectable" in rollout_source
-    assert "sampled_joint_segment_clearance" in rollout_source
-    assert "connected_to_goal" in rollout_source
-    assert "no_safe_virtual_forward_edge" in rollout_source
+    route_source = inspect.getsource(event_replan.build_stationary_virtual_fast_route)
+    assert "plan_goal_directed_continuation" in route_source
+    assert "sample_trajectory_shape_points" in route_source
+    assert "append_unique_route_point" in route_source
+    assert "connected_to_goal" in route_source
+    assert "execute_authorized_trajectory_offline_track" not in route_source
 
 
 def test_joint_polyline_resampling_preserves_endpoints():

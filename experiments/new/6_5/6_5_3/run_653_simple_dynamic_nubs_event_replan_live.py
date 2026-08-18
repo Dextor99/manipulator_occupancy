@@ -647,6 +647,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stationary-fast-terminal-target-ms", type=float, default=500.0)
     parser.add_argument("--stationary-fast-terminal-max-ms", type=float, default=1000.0)
     parser.add_argument("--stationary-fast-terminal-virtual-max-joint-delta-rad", type=float, default=0.30)
+    parser.add_argument("--stationary-fast-terminal-virtual-fast-steps", type=int, default=6)
+    parser.add_argument("--stationary-fast-terminal-samples-per-local", type=int, default=3)
     parser.add_argument(
         "--stationary-virtual-topology-floor-m", type=float, default=0.08,
         help="internal stationary seed floor; final authorization remains online_accept_m",
@@ -1000,6 +1002,24 @@ def resample_joint_polyline(points: np.ndarray, count: int) -> np.ndarray:
     return result
 
 
+def sample_trajectory_shape_points(trajectory: Any, *, samples: int = 3) -> list[np.ndarray]:
+    """Sample a verified trajectory for shape only; never an execution stop."""
+    total = float(trajectory.total_duration)
+    if total <= 0.0:
+        raise ValueError("trajectory duration must be positive")
+    fractions = np.linspace(0.0, 1.0, int(samples) + 1)[1:]
+    return [
+        np.asarray(trajectory.evaluate(float(fraction) * total), dtype=np.float64)
+        for fraction in fractions
+    ]
+
+
+def append_unique_route_point(route: list[np.ndarray], q: np.ndarray, *, tol_rad: float = 1.0e-5) -> None:
+    q_value = np.asarray(q, dtype=np.float64)
+    if not route or np.max(np.abs(q_value - route[-1])) > float(tol_rad):
+        route.append(q_value.copy())
+
+
 def sampled_joint_segment_clearance(
     evaluator: Any,
     forecast: Any,
@@ -1228,6 +1248,87 @@ def _stationary_virtual_anchors(
     return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": connected_to_goal, "connected_step": connected_step, "connection_threshold_m": virtual_topology_floor_m, "virtual_topology_floor_m": virtual_topology_floor_m, "final_authorization_clearance_m": authorization_clearance_m, "robust_preference_m": robust_target_m, "max_rollout_steps": int(rollout_steps), "failure_reason": None if connected_to_goal else (break_reason or "max_rollout_steps_without_goal_connection")}
 
 
+def build_stationary_virtual_fast_route(
+    base_fast: Any,
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    q_escape_start: np.ndarray,
+    q_start: np.ndarray,
+    q_goal: np.ndarray,
+    fresh: dict[str, Any],
+    geometry: dict[str, Any],
+    risk_links: set[str],
+    trial_dir: Path,
+    max_virtual_steps: int,
+    samples_per_local: int,
+    deadline_perf: float | None,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Plan Fast local primitives in memory and return one continuous route shape."""
+    q_virtual = np.asarray(q_start, dtype=np.float64).copy()
+    q_goal = np.asarray(q_goal, dtype=np.float64)
+    route_points: list[np.ndarray] = [q_virtual.copy()]
+    step_audit: list[dict[str, Any]] = []
+    fresh_static = dict(fresh)
+    fresh_static["velocity"] = [0.0, 0.0, 0.0]
+    forecast = v3.v3_execution_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+    )
+    zero = np.zeros(6, dtype=np.float64)
+    for virtual_index in range(1, int(max_virtual_steps) + 1):
+        if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+            return None, {"connected_to_goal": False, "reason": "stationary_virtual_fast_budget_exhausted", "steps": step_audit}
+        direct_dir = trial_dir / f"virtual_fast_{virtual_index:02d}" / "direct_terminal_probe"
+        direct_payload, direct_trajectory = authorize_terminal_goal(
+            runtime_args, config, model, q_virtual, q_goal, forecast, (6.0,), direct_dir,
+            stationary_geometry=None, use_stationary_full_plan=False,
+        )
+        if direct_payload.get("authorized", False) and direct_trajectory is not None:
+            for point in sample_trajectory_shape_points(direct_trajectory, samples=4):
+                append_unique_route_point(route_points, point)
+            step_audit.append({"virtual_index": virtual_index, "action": "direct_terminal_connected"})
+            return np.asarray(route_points, dtype=np.float64), {
+                "connected_to_goal": True, "planner": "virtual_fast_chain",
+                "virtual_fast_step_count": sum(row.get("action") == "virtual_fast_progress" for row in step_audit),
+                "route_point_count": len(route_points), "steps": step_audit,
+            }
+        step_dir = trial_dir / f"virtual_fast_{virtual_index:02d}"
+        artifacts: dict[str, Any] = {}
+        virtual_args = copy.copy(runtime_args)
+        virtual_args.local_horizon_s = 1.0
+        virtual_args.local_segments = 8
+        virtual_args.max_joint_delta_rad = float(getattr(runtime_args, "max_joint_delta_rad", 0.12))
+        candidate = plan_goal_directed_continuation(
+            base_fast, virtual_args, config, model,
+            q_escape_start=np.asarray(q_escape_start), q_now=q_virtual, q_final=q_goal,
+            fresh=fresh_static, geometry=geometry, risk_links=risk_links, trial_dir=step_dir,
+            nominal_reference_goal=(q_goal, zero, zero), artifacts_out=artifacts,
+            forward_m=float(getattr(runtime_args, "forward_m", 0.05)),
+            side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
+            robust_target_m=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
+            max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
+            tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
+            robust_target_is_diagnostic=True, allow_unestablished_side_fallback=False,
+        )
+        trajectory = artifacts.get("candidate_trajectory")
+        if not candidate.get("local_repair_ready", False) or trajectory is None:
+            return None, {"connected_to_goal": False, "reason": "virtual_fast_local_failed", "failed_virtual_index": virtual_index, "candidate": candidate, "steps": step_audit}
+        sampled = sample_trajectory_shape_points(trajectory, samples=samples_per_local)
+        for point in sampled:
+            append_unique_route_point(route_points, point)
+        q_virtual = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
+        step_audit.append({
+            "virtual_index": virtual_index, "action": "virtual_fast_progress",
+            "fast_elapsed_ms": candidate.get("fast_elapsed_ms"),
+            "verification_min_distance_m": candidate.get("verification_min_distance_m"),
+            "q_virtual_tail_rad": q_virtual.tolist(), "sampled_shape_point_count": len(sampled),
+        })
+    return None, {"connected_to_goal": False, "reason": "max_virtual_fast_steps_without_terminal_connection", "virtual_fast_step_count": len(step_audit), "steps": step_audit}
+
+
 def plan_stationary_fast_terminal_bypass(
     base_fast: Any,
     runtime_args: argparse.Namespace,
@@ -1252,34 +1353,12 @@ def plan_stationary_fast_terminal_bypass(
         raise ValueError("stationary terminal target/max budget is invalid")
     trial_dir.mkdir(parents=True, exist_ok=True)
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
-    try:
-        side, side_audit = established_bypass_side(
-            model, q_escape_start, q_start, q_goal, tcp_link=tcp_link
-        )
-    except RuntimeError:
-        tcp_now = live.simple.tcp_position(model, q_start, tcp_link)
-        tcp_goal = live.simple.tcp_position(model, q_goal, tcp_link)
-        task = bypass.normalized(tcp_goal - tcp_now)
-        nominal_forecast = v3.v3_execution_multisphere_forecast(
-            geometry["component_centers"], geometry["component_base_radii"], np.zeros(3)
-        )
-        evaluator, _, _ = trial.make_risk_stack(config, model, nominal_forecast)
-        nominal = live.nominal_local_risk(
-            runtime_args, model, evaluator, nominal_forecast, q_start,
-            (q_goal, np.zeros(6), np.zeros(6)),
-        )
-        away = np.asarray(nominal["risk_object"].robot_point) - np.asarray(nominal["risk_object"].obstacle_point)
-        side = bypass.tabletop_parallel_lateral_direction(task, away - task * float(np.dot(task, away)))
-        side_audit = {"semantic": "risk_away_stationary_fallback", "established_bypass_side": side.tolist()}
-    anchors, rollout_audit = _stationary_virtual_anchors(
-        runtime_args, config, model, q_start=q_start, q_goal=q_goal,
-        fresh=fresh, geometry=geometry, side=side,
-        side_already_established=bool(side_audit.get("semantic") != "risk_away_stationary_fallback"),
-        rollout_steps=int(getattr(runtime_args, "stationary_fast_terminal_rollout_steps", 4)),
-        forward_m=float(getattr(runtime_args, "forward_m", 0.05)),
-        side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
-        max_joint_delta_rad=float(getattr(runtime_args, "stationary_fast_terminal_virtual_max_joint_delta_rad", 0.30)),
-        tcp_link=tcp_link,
+    route_points, route_audit = build_stationary_virtual_fast_route(
+        base_fast, runtime_args, config, model, q_escape_start=q_escape_start,
+        q_start=q_start, q_goal=q_goal, fresh=fresh, geometry=geometry,
+        risk_links=risk_links, trial_dir=trial_dir / "virtual_fast_route",
+        max_virtual_steps=int(getattr(runtime_args, "stationary_fast_terminal_virtual_fast_steps", 6)),
+        samples_per_local=int(getattr(runtime_args, "stationary_fast_terminal_samples_per_local", 3)),
         deadline_perf=planner_started + total_max_ms / 1000.0,
     )
     rollout_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
@@ -1295,29 +1374,28 @@ def plan_stationary_fast_terminal_bypass(
         }
         trial.write_json(trial_dir / "authorization_summary.json", payload)
         return payload, None
-    if not bool(rollout_audit.get("connected_to_goal", False)):
+    if route_points is None or not bool(route_audit.get("connected_to_goal", False)):
         total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
         payload = {
             "status": "STATIONARY_FAST_TERMINAL_ROUTE_NOT_CONNECTED_HOLD",
             "authorized": False,
             "planner_mode": "stationary_fast_terminal_bypass",
             "full_optimizer_used": False,
-            "virtual_rollout": rollout_audit,
+            "virtual_fast_route": route_audit,
             "virtual_rollout_elapsed_ms": total_elapsed_ms,
             "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
             "stationary_terminal_total_budget_ms": total_max_ms,
             "stationary_terminal_target_ms": total_target_ms,
             "total_budget_met": total_elapsed_ms <= total_max_ms,
-            "fast_invoked": False,
-            "reason": "virtual_bypass_never_opened_safe_goal_connection",
+            "fast_invoked_for_route": True,
+            "reason": route_audit.get("reason", "virtual_fast_route_not_connected"),
         }
         trial.write_json(trial_dir / "authorization_summary.json", payload)
         return payload, None
-    duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 6.0))
-    segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 8)))
+    duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 8.0))
+    segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 12)))
     durations = np.full(segments, duration / segments, dtype=np.float64)
-    anchor_chain = np.asarray(anchors, dtype=np.float64)
-    polyline = resample_joint_polyline(anchor_chain, segments + 1)
+    polyline = resample_joint_polyline(np.asarray(route_points, dtype=np.float64), segments + 1)
     if np.max(np.abs(polyline[-1] - np.asarray(q_goal, dtype=np.float64))) > 1.0e-9:
         raise RuntimeError("stationary terminal polyline failed to preserve q_goal tail")
     head = trial.NUBSTrajectory6D.make_boundary_state(q_start, np.zeros(6), np.zeros(6))
@@ -1366,7 +1444,7 @@ def plan_stationary_fast_terminal_bypass(
             "stationary_terminal_target_ms": total_target_ms,
             "total_budget_met": bool(authorized),
             "authorized_trajectory_csv": str(seed_path),
-            "virtual_rollout": rollout_audit,
+            "virtual_fast_route": route_audit,
             "seed_first": True,
         }
         trial.write_json(trial_dir / "authorization_summary.json", payload)
@@ -1391,8 +1469,7 @@ def plan_stationary_fast_terminal_bypass(
         original_task_reference_goal=nominal_reference_goal,
     )
     result["planner_mode"] = "stationary_fast_terminal_bypass"
-    result["virtual_rollout"] = rollout_audit
-    result["side_audit"] = side_audit
+    result["virtual_fast_route"] = route_audit
     result["duration_s"] = duration
     result["segments"] = segments
     result["tail_fixed_to_goal"] = True
@@ -1417,8 +1494,7 @@ def plan_stationary_fast_terminal_bypass(
         "stationary_terminal_total_budget_ms": total_max_ms,
         "stationary_terminal_target_ms": total_target_ms,
         "total_budget_met": bool(total_elapsed_ms <= total_max_ms),
-        "virtual_rollout": rollout_audit,
-        "side_audit": side_audit,
+        "virtual_fast_route": route_audit,
         "fast_result": result,
         "authorized_trajectory_csv": str(trial_dir / "candidate" / "fast_ccro_nubs_candidate.csv") if authorized else None,
     }
