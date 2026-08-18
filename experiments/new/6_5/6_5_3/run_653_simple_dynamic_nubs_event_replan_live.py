@@ -646,6 +646,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stationary-fast-terminal-rollout-steps", type=int, default=4)
     parser.add_argument("--stationary-fast-terminal-target-ms", type=float, default=500.0)
     parser.add_argument("--stationary-fast-terminal-max-ms", type=float, default=1000.0)
+    parser.add_argument("--stationary-fast-terminal-virtual-max-joint-delta-rad", type=float, default=0.30)
     return parser
 
 
@@ -1038,6 +1039,7 @@ def _stationary_virtual_anchors(
     fresh: dict[str, Any],
     geometry: dict[str, Any],
     side: np.ndarray,
+    side_already_established: bool,
     rollout_steps: int,
     forward_m: float,
     side_m: float,
@@ -1057,18 +1059,13 @@ def _stationary_virtual_anchors(
     audit: list[dict[str, Any]] = []
     hard_clearance_m = float(getattr(runtime_args, "online_accept_m", 0.09))
     robust_target_m = float(getattr(runtime_args, "planning_robust_target_m", 0.11))
-    phase_weights = ((1.0, 0.5), (0.5,), (0.5,), (0.5,))
     connected_to_goal = False
     connected_step = None
+    break_reason = None
     for index in range(max(1, int(rollout_steps))):
         if deadline_perf is not None and time.perf_counter() >= deadline_perf:
-            return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": False, "connected_step": None, "failure_reason": "virtual_rollout_budget_exhausted", "max_rollout_steps": int(rollout_steps)}
-        weights = phase_weights[min(index, len(phase_weights) - 1)]
-        # The phase schedule is also a bounded-computation policy: evaluate
-        # one phase-appropriate seed instead of all 3 seeds at every step.
-        # The full verifier remains the sole execution authority.
-        target_weight = (1.0, 0.5, 0.5, 0.5)[min(index, 3)]
-        nominal_goal = (np.asarray(q_goal), np.zeros(6), np.zeros(6))
+            break_reason = "virtual_rollout_budget_exhausted"
+            break
         # Stationary rollout is intentionally a bounded seed screen.  Use a
         # dense configuration risk query rather than replaying four full
         # one-second trajectories; the final long NUBS still receives the
@@ -1078,61 +1075,44 @@ def _stationary_virtual_anchors(
         )
         nominal = {"risk_object": risk, "nearest_link": risk.nearest_link, "q_risk": q_virtual}
         if risk.robot_point is None or risk.obstacle_point is None:
+            break_reason = "missing_risk_surface_point"
             break
         tcp_now = live.simple.tcp_position(model, q_virtual, tcp_link)
         tcp_goal = live.simple.tcp_position(model, np.asarray(q_goal), tcp_link)
-        goals, direction = bypass.goal_directed_side_continuation_candidates(
-            model, q_virtual, tcp_position=tcp_now, goal_position=tcp_goal,
-            risk_link=str(nominal["nearest_link"]),
-            risk_position=np.asarray(risk.robot_point),
-            risk_point_q=np.asarray(nominal["q_risk"]), established_side=side,
-            forward_m=float(forward_m), side_m=float(side_m),
-            side_weights=weights, tcp_link=tcp_link,
-            max_joint_delta_rad=float(max_joint_delta_rad),
-            tabletop_parallel_side=True, preserve_tcp_height=True,
-        )
-        phase_goals = [
-            item for item in goals
-            if math.isclose(float(item.get("side_weight", -1.0)), target_weight, abs_tol=1.0e-12)
-        ]
-        if phase_goals:
-            goals = phase_goals
-        rows = []
-        for item in goals:
-            q_item = np.asarray(item["q_goal"], dtype=np.float64)
-            risk_item = evaluator.configuration(
-                q_item, forecast, 0.0, density="medium", with_gradient=False
+        direction = None
+        selected = None
+        for policy, side_weight in (
+            (("release_forward", 0.0), ("strong_clearance_recovery", 1.0))
+            if side_already_established or index > 0
+            else (("strong_establish_side", 1.0),)
+        ):
+            goals, direction = bypass.goal_directed_side_continuation_candidates(
+                model, q_virtual, tcp_position=tcp_now, goal_position=tcp_goal,
+                risk_link=str(risk.nearest_link), risk_position=np.asarray(risk.robot_point),
+                risk_point_q=q_virtual, established_side=side, forward_m=float(forward_m),
+                side_m=float(side_m), side_weights=(float(side_weight),), tcp_link=tcp_link,
+                max_joint_delta_rad=float(max_joint_delta_rad), tabletop_parallel_side=True,
+                preserve_tcp_height=True,
             )
+            if not goals:
+                continue
+            item = goals[0]
+            q_item = np.asarray(item["q_goal"], dtype=np.float64)
             edge_screen = sampled_joint_segment_clearance(evaluator, forecast, q_virtual, q_item)
-            minimum = {"distance_m": float(risk_item.min_distance), "tau_s": 0.0, "nearest_link": risk_item.nearest_link}
             guard = trial.gripper_base_workspace_guard(
                 trial.NUBSTrajectory6D().generate(
                     trial.NUBSTrajectory6D.linear_inner_points(q_virtual, q_item, np.ones(2)),
                     trial.NUBSTrajectory6D.make_boundary_state(q_virtual, np.zeros(6), np.zeros(6)),
-                    trial.NUBSTrajectory6D.make_boundary_state(q_item, np.zeros(6), np.zeros(6)),
-                    np.ones(2),
+                    trial.NUBSTrajectory6D.make_boundary_state(q_item, np.zeros(6), np.zeros(6)), np.ones(2)
                 ), model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
             )
-            profile = []
-            rows.append({"item": item, "q_goal": q_item, "minimum": minimum,
-                         "edge_screen": edge_screen, "profile": profile, "tabletop": guard})
-        eligible = [row for row in rows if row["tabletop"].get("passed", False) and float(row["edge_screen"]["min_distance_m"]) >= hard_clearance_m]
-        if not eligible:
+            if guard.get("passed", False) and float(edge_screen["min_distance_m"]) >= hard_clearance_m:
+                selected = {"item": item, "q_goal": q_item, "edge_screen": edge_screen, "tabletop": guard, "policy": policy}
+                break
+        if selected is None:
+            break_reason = "no_safe_virtual_forward_edge"
             break
-        task_direction = np.asarray(direction["task_direction"], dtype=np.float64)
-        for row in eligible:
-            tcp_end = live.simple.tcp_position(model, row["q_goal"], tcp_link)
-            row["task_progress_m"] = float(np.dot(tcp_end - tcp_now, task_direction))
-            row["goal_distance_m"] = float(np.linalg.norm(tcp_goal - tcp_end))
-        selected = max(
-            eligible,
-            key=lambda row: (
-                float(row["edge_screen"]["min_distance_m"]) >= robust_target_m,
-                row["task_progress_m"],
-                -row["goal_distance_m"],
-                float(row["minimum"]["distance_m"]),
-            ),
-        )
+        rows = []
         q_virtual = selected["q_goal"].copy()
         anchors.append(q_virtual.copy())
         remainder_screen = sampled_joint_segment_clearance(evaluator, forecast, q_virtual, q_goal, samples=13)
@@ -1141,12 +1121,11 @@ def _stationary_virtual_anchors(
         audit.append({
             "step": index + 1,
             "candidate": int(selected["item"]["candidate"]),
+            "policy": selected["policy"],
             "phase": selected["item"].get("phase"),
-            "coarse_min_distance_m": float(selected["minimum"]["distance_m"]),
-            "coarse_min_tau_s": float(selected["minimum"]["tau_s"]),
-            "phase_weights": list(weights),
-            "task_progress_m": selected.get("task_progress_m"),
-            "goal_distance_m": selected.get("goal_distance_m"),
+            "edge_min_distance_m": float(selected["edge_screen"]["min_distance_m"]),
+            "task_progress_m": float(np.dot(live.simple.tcp_position(model, q_virtual, tcp_link) - tcp_now, np.asarray(direction["task_direction"]))),
+            "goal_distance_m": float(np.linalg.norm(tcp_goal - live.simple.tcp_position(model, q_virtual, tcp_link))),
             "remainder_to_goal_clear": remainder_clear,
             "remainder_to_goal_feasible": remainder_clear,
             "remainder_to_goal_robust": remainder_min >= robust_target_m,
@@ -1159,7 +1138,7 @@ def _stationary_virtual_anchors(
             connected_to_goal = True
             connected_step = index + 1
             break
-    return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": connected_to_goal, "connected_step": connected_step, "connection_threshold_m": hard_clearance_m, "robust_preference_m": robust_target_m, "max_rollout_steps": int(rollout_steps), "failure_reason": None if connected_to_goal else "remainder_to_goal_not_feasible"}
+    return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": connected_to_goal, "connected_step": connected_step, "connection_threshold_m": hard_clearance_m, "robust_preference_m": robust_target_m, "max_rollout_steps": int(rollout_steps), "failure_reason": None if connected_to_goal else (break_reason or "max_rollout_steps_without_goal_connection")}
 
 
 def plan_stationary_fast_terminal_bypass(
@@ -1208,10 +1187,11 @@ def plan_stationary_fast_terminal_bypass(
     anchors, rollout_audit = _stationary_virtual_anchors(
         runtime_args, config, model, q_start=q_start, q_goal=q_goal,
         fresh=fresh, geometry=geometry, side=side,
+        side_already_established=bool(side_audit.get("semantic") != "risk_away_stationary_fallback"),
         rollout_steps=int(getattr(runtime_args, "stationary_fast_terminal_rollout_steps", 4)),
         forward_m=float(getattr(runtime_args, "forward_m", 0.05)),
         side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
-        max_joint_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
+        max_joint_delta_rad=float(getattr(runtime_args, "stationary_fast_terminal_virtual_max_joint_delta_rad", 0.30)),
         tcp_link=tcp_link,
         deadline_perf=planner_started + total_max_ms / 1000.0,
     )
