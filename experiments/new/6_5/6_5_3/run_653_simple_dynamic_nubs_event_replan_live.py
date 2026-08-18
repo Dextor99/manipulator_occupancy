@@ -1205,9 +1205,10 @@ def authorize_terminal_goal(
     durations: tuple[float, ...],
     output_dir: Path,
     stationary_geometry: dict[str, Any] | None = None,
+    use_stationary_full_plan: bool = False,
 ) -> tuple[dict[str, Any], Any | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    if bool(getattr(args, "stationary_terminal_full_plan", False)) and stationary_geometry is not None:
+    if use_stationary_full_plan and stationary_geometry is not None:
         payload, trajectory = stationary_ccro.plan_stationary_terminal_ccro(
             config=config, model=model, q_start=q_now, q_goal=q_goal,
             geometry=stationary_geometry, output_dir=output_dir,
@@ -1218,6 +1219,15 @@ def authorize_terminal_goal(
         if trajectory is not None:
             trial.save_trajectory_csv(output_dir / "authorized_terminal_goal.csv", trajectory, dt=0.01)
         return payload, trajectory
+    if use_stationary_full_plan:
+        payload = {
+            "status": "STATIONARY_FULL_CCRO_HOLD",
+            "authorized": False,
+            "planner_mode": "full_static_ccro_nubs",
+            "reason": "stationary_geometry_missing",
+        }
+        trial.write_json(output_dir / "authorization_summary.json", payload)
+        return payload, None
     _, verifier, _ = trial.make_risk_stack(config, model, None)
     attempts = []
     selected = None
@@ -1697,12 +1707,30 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             # The measured-tail monitor keeps the accepted geometry in the
             # handler context (fresh3_geometry); it is not exposed as a
             # top-level ``tail_monitor["geometry"]`` field.
-            stationary_geometry=(context.get("fresh3_geometry") if bool(getattr(args, "stationary_terminal_full_plan", False)) else None),
+            stationary_geometry=(context.get("fresh3_geometry") if bool(getattr(event_args, "stationary_terminal_full_plan", False)) else None),
+            use_stationary_full_plan=bool(getattr(event_args, "stationary_terminal_full_plan", False)),
         )
         result["terminal_authorization"] = terminal
+        result["stationary_terminal_full_plan_requested"] = bool(
+            getattr(event_args, "stationary_terminal_full_plan", False)
+        )
+        result["stationary_terminal_full_plan_core"] = bool(
+            getattr(args, "stationary_terminal_full_plan", False)
+        )
+        result["terminal_planner_requested"] = (
+            "full_static_ccro_nubs"
+            if bool(getattr(event_args, "stationary_terminal_full_plan", False))
+            else "linear_terminal_fallback"
+        )
+        if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
+            result["terminal_planner_mode"] = terminal.get("planner_mode")
         terminal_classification = classify_terminal_authorization(terminal)
         result["terminal_authorization_classification"] = terminal_classification
         if not terminal.get("authorized", False):
+            if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
+                result["status"] = "STATIONARY_FULL_CCRO_HOLD"
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
             if can_continue_local_after_terminal_block(tail_monitor, terminal):
                 worker = context.get("persistent_worker")
                 if worker is None:
