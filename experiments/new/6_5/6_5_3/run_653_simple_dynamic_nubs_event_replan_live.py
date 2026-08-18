@@ -1694,7 +1694,10 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             forecast,
             terminal_durations,
             terminal_dir,
-            stationary_geometry=(tail_monitor.get("geometry") if bool(getattr(args, "stationary_terminal_full_plan", False)) else None),
+            # The measured-tail monitor keeps the accepted geometry in the
+            # handler context (fresh3_geometry); it is not exposed as a
+            # top-level ``tail_monitor["geometry"]`` field.
+            stationary_geometry=(context.get("fresh3_geometry") if bool(getattr(args, "stationary_terminal_full_plan", False)) else None),
         )
         result["terminal_authorization"] = terminal
         terminal_classification = classify_terminal_authorization(terminal)

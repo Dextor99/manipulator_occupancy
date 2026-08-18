@@ -2992,6 +2992,8 @@ def test_stationary_terminal_uses_full_ccro_optimizer_hooks():
     assert "_risk_optimizer" in source
     assert "StaticObstacleField.from_points" in source
     assert "verifier.verify" in source
+    handler_source = inspect.getsource(event_replan.make_event_handler)
+    assert 'context.get("fresh3_geometry")' in handler_source
 
 
 def test_d2_approach_hold_execute_requires_calibrated_stop_line():
