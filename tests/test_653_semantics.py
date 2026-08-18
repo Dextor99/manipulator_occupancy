@@ -78,6 +78,9 @@ event_replan_r04 = importlib.import_module(
 d2_complete = importlib.import_module(
     "experiments.new.6_5.6_5_3.run_653_d2_complete_live"
 )
+d2_approach_hold = importlib.import_module(
+    "experiments.new.6_5.6_5_3.run_653_d2_approach_hold_live"
+)
 dynamic_nubs_v3 = importlib.import_module(
     "experiments.new.6_5.6_5_3.dynamic_nubs_v3"
 )
@@ -2949,6 +2952,26 @@ def test_rolling_preplan_hooks_are_present_and_non_authoritative():
     assert "threading.Thread" in source
     assert "rolling_continuation" in source
     assert "authorization_snapshot" in inspect.getsource(event_replan.make_event_handler)
+
+
+def test_d2_approach_hold_freezes_scene_and_requires_dynamic_trigger():
+    assert d2_approach_hold.SCENE_ID == "D2_APPROACH_HOLD_V1_FIXED_X_XP00"
+    assert d2_approach_hold.SCENE_PROTOCOL["stro_trigger_policy"]["trigger_must_precede_hold"]
+    assert d2_approach_hold.SCENE_PROTOCOL["approach_hold_policy"]["manual_adjustment_after_hold"] is False
+    assert d2_approach_hold.HOLD_RAW_GUARD_MIN_M == pytest.approx(0.10)
+    audit = d2_approach_hold.audit_approach_hold({}, execute=False)
+    assert audit["passed"] is False
+    assert audit["reason"] == "core_trial_dir_missing"
+
+
+def test_d2_approach_hold_execute_requires_calibrated_stop_line():
+    args = d2_approach_hold.build_parser().parse_args([
+        "--repeat", "1",
+        "--scene-operator-phrase", d2_approach_hold.SCENE_PHRASE,
+        "--execute",
+    ])
+    with pytest.raises(RuntimeError, match="calibrate and freeze"):
+        d2_approach_hold.validate_frozen_request(args)
 
 
 def test_command_time_revalidation_uses_strict_start_sync_threshold():
