@@ -1047,7 +1047,12 @@ def _stationary_virtual_anchors(
     tcp_link: str,
     deadline_perf: float | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """Create strong/weak/release virtual anchors without invoking Fast."""
+    """Create release-first virtual anchors without invoking Fast.
+
+    Once a real local bypass has established a side, stationary continuation
+    first advances on that side, then tries a half-forward step, and finally
+    uses a side-only clearance recovery edge before attempting forward again.
+    """
     forecast = v3.v3_execution_multisphere_forecast(
         np.asarray(geometry["component_centers"], dtype=np.float64),
         np.asarray(geometry["component_base_radii"], dtype=np.float64),
@@ -1081,20 +1086,35 @@ def _stationary_virtual_anchors(
         tcp_goal = live.simple.tcp_position(model, np.asarray(q_goal), tcp_link)
         direction = None
         selected = None
-        for policy, side_weight in (
-            (("release_forward", 0.0), ("strong_clearance_recovery", 1.0))
-            if side_already_established or index > 0
-            else (("strong_establish_side", 1.0),)
-        ):
+        if side_already_established or index > 0:
+            policy_specs = (
+                ("release_forward", 0.0, float(forward_m)),
+                ("release_forward_half", 0.0, 0.5 * float(forward_m)),
+                ("side_only_clearance_recovery", 1.0, 0.0),
+            )
+        else:
+            policy_specs = (("strong_establish_side", 1.0, 0.0),)
+        attempt_rows: list[dict[str, Any]] = []
+        for policy, side_weight, policy_forward_m in policy_specs:
             goals, direction = bypass.goal_directed_side_continuation_candidates(
                 model, q_virtual, tcp_position=tcp_now, goal_position=tcp_goal,
                 risk_link=str(risk.nearest_link), risk_position=np.asarray(risk.robot_point),
-                risk_point_q=q_virtual, established_side=side, forward_m=float(forward_m),
+                risk_point_q=q_virtual, established_side=side, forward_m=float(policy_forward_m),
                 side_m=float(side_m), side_weights=(float(side_weight),), tcp_link=tcp_link,
                 max_joint_delta_rad=float(max_joint_delta_rad), tabletop_parallel_side=True,
                 preserve_tcp_height=True,
             )
             if not goals:
+                attempt_rows.append({
+                    "policy": policy,
+                    "side_weight": float(side_weight),
+                    "forward_m": float(policy_forward_m),
+                    "edge_min_distance_m": None,
+                    "edge_nearest_link": None,
+                    "tabletop_ok": False,
+                    "accepted": False,
+                    "reason": "no_candidate",
+                })
                 continue
             item = goals[0]
             q_item = np.asarray(item["q_goal"], dtype=np.float64)
@@ -1106,13 +1126,31 @@ def _stationary_virtual_anchors(
                     trial.NUBSTrajectory6D.make_boundary_state(q_item, np.zeros(6), np.zeros(6)), np.ones(2)
                 ), model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
             )
-            if guard.get("passed", False) and float(edge_screen["min_distance_m"]) >= hard_clearance_m:
+            accepted = bool(
+                guard.get("passed", False)
+                and float(edge_screen["min_distance_m"]) >= hard_clearance_m
+            )
+            attempt_rows.append({
+                "policy": policy,
+                "side_weight": float(side_weight),
+                "forward_m": float(policy_forward_m),
+                "edge_min_distance_m": float(edge_screen["min_distance_m"]),
+                "edge_nearest_link": edge_screen.get("nearest_link"),
+                "tabletop_ok": bool(guard.get("passed", False)),
+                "accepted": accepted,
+            })
+            if accepted:
                 selected = {"item": item, "q_goal": q_item, "edge_screen": edge_screen, "tabletop": guard, "policy": policy}
                 break
         if selected is None:
             break_reason = "no_safe_virtual_forward_edge"
+            audit.append({
+                "step": index + 1,
+                "policy": None,
+                "attempts": attempt_rows,
+                "remainder_to_goal_clear": False,
+            })
             break
-        rows = []
         q_virtual = selected["q_goal"].copy()
         anchors.append(q_virtual.copy())
         remainder_screen = sampled_joint_segment_clearance(evaluator, forecast, q_virtual, q_goal, samples=13)
@@ -1122,6 +1160,7 @@ def _stationary_virtual_anchors(
             "step": index + 1,
             "candidate": int(selected["item"]["candidate"]),
             "policy": selected["policy"],
+            "attempts": attempt_rows,
             "phase": selected["item"].get("phase"),
             "edge_min_distance_m": float(selected["edge_screen"]["min_distance_m"]),
             "task_progress_m": float(np.dot(live.simple.tcp_position(model, q_virtual, tcp_link) - tcp_now, np.asarray(direction["task_direction"]))),

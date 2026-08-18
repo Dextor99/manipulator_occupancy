@@ -3095,7 +3095,8 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert 'stationary_terminal_total_elapsed_ms' in planner_source
     rollout_source = inspect.getsource(event_replan._stationary_virtual_anchors)
     assert "release_forward" in rollout_source
-    assert "strong_clearance_recovery" in rollout_source
+    assert "release_forward_half" in rollout_source
+    assert "side_only_clearance_recovery" in rollout_source
     assert "sampled_joint_segment_clearance" in rollout_source
     assert "connected_to_goal" in rollout_source
     assert "no_safe_virtual_forward_edge" in rollout_source
