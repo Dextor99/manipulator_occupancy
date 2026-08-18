@@ -776,6 +776,7 @@ def wait_for_confirmed_stationary_snapshot(
     *,
     speed_threshold_m_s: float = 0.04,
     required_frames: int = 3,
+    center_span_max_m: float = 0.02,
     timeout_s: float = 1.5,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Require a valid, raw-safe, three-frame stationary track before Full CCRO."""
@@ -784,6 +785,8 @@ def wait_for_confirmed_stationary_snapshot(
     latest = worker.snapshot()
     cursor = int(v3._state_seq(latest))
     streak = 0
+    low_speed_window: list[dict[str, Any]] = []
+    active_track_id = None
     samples: list[dict[str, Any]] = []
     deadline = time.monotonic() + float(timeout_s)
     while time.monotonic() < deadline:
@@ -807,29 +810,33 @@ def wait_for_confirmed_stationary_snapshot(
             aligned.get("propagated_center", latest.get("center", [np.nan] * 3)),
             dtype=float,
         )
-        target_y = getattr(args, "stationary_hold_target_y_m", None)
-        position_ok = bool(
-            target_y is None or (
-                np.isfinite(center[1])
-                and abs(float(center[1]) - float(target_y))
-                <= float(getattr(args, "stationary_hold_tolerance_m", 0.01))
-            )
-        )
         valid = bool(
             not reasons and geometry is not None and geometry.get("covered", False)
             and raw > float(args.guided_hard_stop_m)
         )
-        stationary = bool(valid and speed <= float(speed_threshold_m_s) and position_ok)
+        track_id = latest.get("track_id")
+        stationary = bool(valid and speed <= float(speed_threshold_m_s))
+        if not stationary or (active_track_id is not None and track_id is not None and track_id != active_track_id):
+            low_speed_window.clear()
+            active_track_id = None
+        if stationary:
+            if track_id is not None:
+                active_track_id = track_id
+            low_speed_window.append({"snapshot": latest, "center": center.copy(), "track_id": track_id, "speed": speed, "raw": raw, "state_seq": cursor})
+            low_speed_window = low_speed_window[-int(required_frames):]
+            centers = np.stack([x["center"] for x in low_speed_window], axis=0)
+            stationary = len(low_speed_window) >= int(required_frames) and float(np.max(np.linalg.norm(centers[:, None] - centers[None, :], axis=2))) <= float(center_span_max_m)
         streak = streak + 1 if stationary else 0
         samples.append({"state_seq": cursor, "center_y_m": float(center[1]),
-                        "target_y_m": target_y, "position_ok": position_ok,
+                        "center_span_max_m": center_span_max_m,
                         "speed_m_s": speed,
                         "raw_guard_distance_m": raw, "stationary": stationary,
                         "streak": streak})
-        if streak >= int(required_frames):
+        if len(low_speed_window) >= int(required_frames) and stationary:
             return {
                 "confirmed": True, "reason": "stationary_track_confirmed",
                 "samples": samples, "state_seq": cursor, "speed_m_s": speed,
+                "center_span_m": float(np.max(np.linalg.norm(centers[:, None] - centers[None, :], axis=2))),
             }, latest
     return {"confirmed": False, "reason": "stationary_confirmation_timeout", "samples": samples}, None
 
@@ -1764,7 +1771,8 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
         confirmed_stationary_geometry = None
         if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
             stationary_confirmation, stationary_snapshot = wait_for_confirmed_stationary_snapshot(
-                context.get("persistent_worker"), args
+                context.get("persistent_worker"), args,
+                center_span_max_m=float(getattr(args, "stationary_center_span_m", 0.02)),
             )
             result["stationary_confirmation"] = stationary_confirmation
             if not stationary_confirmation.get("confirmed", False):

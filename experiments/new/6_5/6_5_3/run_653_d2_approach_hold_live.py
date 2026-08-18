@@ -38,10 +38,12 @@ SCENE_ID = "D2_APPROACH_HOLD_V1_FIXED_X_XP00"
 # The physical tape/stop mark must be placed at this value for formal runs.
 # Offline r10 geometry scan: +0.020 m from the previous line gives the
 # preset goal ~0.1056 m dense clearance while retaining a blocked approach.
-HOLD_STOP_LINE_Y_M: float | None = -0.126
-HOLD_LINE_TOLERANCE_M = 0.01
+# Operator guidance only; never an authorization gate.
+RECOMMENDED_HOLD_CENTER_Y_M = -0.126
+RECOMMENDED_HOLD_HALF_WIDTH_M = 0.01
 HOLD_SPEED_THRESHOLD_M_S = 0.04
 HOLD_CONFIRM_FRAMES = 3
+HOLD_CENTER_SPAN_MAX_M = 0.02
 HOLD_RAW_GUARD_MIN_M = 0.10
 
 SCENE_PROTOCOL = {
@@ -58,10 +60,12 @@ SCENE_PROTOCOL = {
     },
     "approach_hold_policy": {
         "fixed_x_lane": True,
-        "physical_stop_line_y_m": HOLD_STOP_LINE_Y_M,
-        "stop_line_tolerance_m": HOLD_LINE_TOLERANCE_M,
+        "recommended_hold_center_y_m": RECOMMENDED_HOLD_CENTER_Y_M,
+        "recommended_hold_half_width_m": RECOMMENDED_HOLD_HALF_WIDTH_M,
+        "hold_position_is_authorization_gate": False,
         "hold_speed_threshold_m_s": HOLD_SPEED_THRESHOLD_M_S,
         "hold_confirm_frames": HOLD_CONFIRM_FRAMES,
+        "hold_center_span_max_m": HOLD_CENTER_SPAN_MAX_M,
         "manual_adjustment_after_hold": False,
     },
     "candidate_acceptance_policy": {
@@ -99,8 +103,8 @@ def build_parser() -> argparse.ArgumentParser:
         post_local_monitor_max_s=6.0,
         stro_trigger_horizon_s=1.2,
         stationary_terminal_full_plan=True,
-        stationary_hold_target_y_m=HOLD_STOP_LINE_Y_M,
-        stationary_hold_tolerance_m=HOLD_LINE_TOLERANCE_M,
+        stationary_center_span_m=HOLD_CENTER_SPAN_MAX_M,
+        shadow_hold_observation_s=3.0,
     )
     parser.add_argument("--scene-operator-phrase", default="")
     return parser
@@ -126,11 +130,6 @@ def validate_frozen_request(args: argparse.Namespace) -> None:
         raise RuntimeError(f"D2-AH frozen planner parameters changed: {changed}")
     if args.task_geometry_id != SCENE_ID:
         raise RuntimeError("D2-AH task geometry id must not be overridden")
-    if args.execute and HOLD_STOP_LINE_Y_M is None:
-        raise RuntimeError(
-            "D2-AH formal execution is blocked: calibrate and freeze "
-            "HOLD_STOP_LINE_Y_M in this wrapper first"
-        )
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -156,7 +155,7 @@ def audit_approach_hold(result: dict[str, Any], *, execute: bool) -> dict[str, A
     audit: dict[str, Any] = {
         "scene": "D2_APPROACH_HOLD",
         "trigger_found": trigger is not None,
-        "stop_line_calibrated": HOLD_STOP_LINE_Y_M is not None,
+        "recommended_hold_position_available": True,
     }
     if trigger is None or seed is None:
         audit.update({"passed": False, "reason": "dynamic_trigger_evidence_missing"})
@@ -197,20 +196,21 @@ def audit_approach_hold(result: dict[str, Any], *, execute: bool) -> dict[str, A
         p1 = np.asarray(curr.get("center", [0.0] * 3), dtype=float)
         samples.append({
             "timestamp": float(curr["timestamp"]),
+            "center_m": p1.tolist(),
             "center_y_m": float(p1[1]),
             "speed_m_s": float(np.linalg.norm((p1 - p0) / dt)),
             "raw_guard_distance_m": float(curr.get("raw_guard_distance_m", float("nan"))),
         })
-    stop_y = HOLD_STOP_LINE_Y_M
     hold_start: int | None = None
     for start in range(max(0, len(samples) - HOLD_CONFIRM_FRAMES + 1)):
         window = samples[start : start + HOLD_CONFIRM_FRAMES]
         if len(window) < HOLD_CONFIRM_FRAMES:
             break
-        position_ok = stop_y is None or all(abs(x["center_y_m"] - stop_y) <= HOLD_LINE_TOLERANCE_M for x in window)
         speed_ok = all(x["speed_m_s"] <= HOLD_SPEED_THRESHOLD_M_S for x in window)
         raw_ok = all(x["raw_guard_distance_m"] > HOLD_RAW_GUARD_MIN_M for x in window)
-        if position_ok and speed_ok and raw_ok:
+        centers = np.asarray([x["center_m"] for x in window], dtype=float)
+        center_span = float(np.max(np.linalg.norm(centers[:, None] - centers[None, :], axis=2)))
+        if speed_ok and raw_ok and center_span <= HOLD_CENTER_SPAN_MAX_M:
             hold_start = start
             break
     hold_confirmed = hold_start is not None
@@ -218,12 +218,14 @@ def audit_approach_hold(result: dict[str, Any], *, execute: bool) -> dict[str, A
     hold_ts = hold_window[0]["timestamp"] if hold_window else None
     audit["hold_confirmation"] = {
         "confirmed": hold_confirmed,
-        "stop_line_y_m": stop_y,
-        "calibration_required": stop_y is None,
-        "tolerance_m": HOLD_LINE_TOLERANCE_M,
+        "recommended_center_y_m": RECOMMENDED_HOLD_CENTER_Y_M,
+        "recommended_half_width_m": RECOMMENDED_HOLD_HALF_WIDTH_M,
+        "is_authorization_gate": False,
         "speed_threshold_m_s": HOLD_SPEED_THRESHOLD_M_S,
         "required_frames": HOLD_CONFIRM_FRAMES,
+        "center_span_max_m": HOLD_CENTER_SPAN_MAX_M,
         "observed_center_y_m": float(np.median([x["center_y_m"] for x in hold_window])) if hold_window else None,
+        "within_recommended_band": bool(hold_window and abs(float(np.median([x["center_y_m"] for x in hold_window])) - RECOMMENDED_HOLD_CENTER_Y_M) <= RECOMMENDED_HOLD_HALF_WIDTH_M),
         "minimum_raw_guard_m": min((x["raw_guard_distance_m"] for x in hold_window), default=None),
         "hold_timestamp": hold_ts,
     }

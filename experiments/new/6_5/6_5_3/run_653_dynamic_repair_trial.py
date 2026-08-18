@@ -5434,6 +5434,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         full_path_authorized = candidate_summary["execution_authorized"]
                         local_path_authorized = candidate_summary["local_execution_authorized"]
                     if not args.allow_live_candidate_execution:
+                        observation_s = float(getattr(args, "shadow_hold_observation_s", 0.0))
+                        if observation_s > 0.0 and persistent_worker is not None:
+                            started = time.monotonic()
+                            initial = persistent_worker.snapshot()
+                            initial_seq = int(v3._state_seq(initial))
+                            while time.monotonic() - started < observation_s:
+                                time.sleep(0.05)
+                            final = persistent_worker.snapshot()
+                            final_seq = int(v3._state_seq(final))
+                            log["events"].append({
+                                "type": "SHADOW_HOLD_OBSERVATION_COMPLETE",
+                                "observation_s": observation_s,
+                                "initial_state_seq": initial_seq,
+                                "final_state_seq": final_seq,
+                                "state_seq_delta": final_seq - initial_seq,
+                                "final_center_m": final.get("center"),
+                                "final_raw_guard_distance_m": final.get("raw_guard_distance_m"),
+                            })
                         log["events"].append(
                             {
                                 "type": "LIVE_CANDIDATE_EXECUTION_BLOCKED_BY_DEFAULT",
