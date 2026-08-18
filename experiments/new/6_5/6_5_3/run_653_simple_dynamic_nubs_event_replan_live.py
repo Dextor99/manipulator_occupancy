@@ -159,14 +159,12 @@ def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
     )
     command_time_replan = execution_status == COMMAND_TIME_REPLAN_STATUS
     precommand_hold = execution_status == "FINAL_PRECOMMAND_HOLD_PRECOMMAND"
-    monitor_stopped = bool(monitor_stopped or command_time_replan)
+    # Command-time stale occurs before any waypoint is sent.  It is not an
+    # in-motion stop and must not be counted as a rolling interruption.
     rolling_replan_stop = bool(
-        command_time_replan
-        or (
-            monitor_stopped
-            and isinstance(reason, str)
-            and reason in ROLLING_REPLAN_MONITOR_REASONS
-        )
+        monitor_stopped
+        and isinstance(reason, str)
+        and reason in ROLLING_REPLAN_MONITOR_REASONS
     )
     return {
         "execution_status": execution_status,
@@ -1544,6 +1542,12 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             if live.ACTIVE_BASE_FAST_REPAIR is None:
                 raise RuntimeError("validated base Fast implementation is unavailable")
             if not use_preplanned:
+                fresh_for_plan = dict(monitor1["fresh"])
+                if (
+                    force_goal_directed_local
+                    and bool(getattr(event_args, "stationary_fast_goal_directed", False))
+                ):
+                    fresh_for_plan["velocity"] = [0.0, 0.0, 0.0]
                 candidate = plan_goal_directed_continuation(
                 live.ACTIVE_BASE_FAST_REPAIR,
                 args,
@@ -1555,7 +1559,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 ),
                 q_now=q_actual,
                 q_final=q_goal,
-                fresh=monitor1["fresh"],
+                fresh=fresh_for_plan,
                 geometry=monitor1["geometry"],
                 risk_links=set(context["risk_links"]),
                 trial_dir=local2_dir,
@@ -1727,6 +1731,60 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             result[f"local_{local_index}_execution"] = execution
             execution_status = execution.get("status")
             stop_info = classify_monitor_stop(execution)
+            actually_commanded = bool(execution.get("robot_commanded", False))
+            continuation_precommand_stale = bool(
+                stop_info.get("precommand_replan", False)
+                and not actually_commanded
+            )
+            if continuation_precommand_stale:
+                # This candidate never executed.  Retry the same physical
+                # local segment from the latest real state; do not mark it as
+                # an interrupted tail or consume a segment index.
+                result.setdefault("rolling_events", []).append({
+                    "type": "LOCAL_NOT_EXECUTED_COMMAND_TIME_STALE",
+                    "local_index": int(local_index),
+                    "robot_commanded": False,
+                    "action": "REPLAN_SAME_LOCAL_FROM_LATEST_STATE",
+                })
+                if worker is None:
+                    result["status"] = "COMMAND_TIME_STALE_TRACKER_UNAVAILABLE"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                latest_snapshot = worker.snapshot()
+                raw_latest = raw_guard_from_persistent_snapshot(latest_snapshot)
+                if raw_latest <= float(args.guided_hard_stop_m):
+                    result["status"] = "COMMAND_TIME_STALE_RAW_GUARD_HOLD"
+                    result["raw_guard_distance_m"] = raw_latest
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                fresh_retry, frames_retry, _points_retry, geometry_retry = fresh_from_persistent_snapshot(
+                    latest_snapshot
+                )
+                if not fresh_retry.get("accepted", False) or geometry_retry is None:
+                    result["status"] = "COMMAND_TIME_STALE_LATEST_STATE_NOT_READY"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                next_context = dict(context)
+                next_context.update({
+                    "local_artifacts": artifacts,
+                    "fresh3": fresh_retry,
+                    "fresh3_frames": frames_retry,
+                    "fresh3_geometry": geometry_retry,
+                    "fresh3_guard_distance": raw_latest,
+                    "execution_summary": execution,
+                    "local1_interrupted": False,
+                    "local_execution_state": "NOT_EXECUTED_COMMAND_TIME_STALE",
+                    "replan_depth": int(local_index - 1),
+                    "replan_started_monotonic": replan_started,
+                    "failed_replans": failed_replans,
+                    "force_goal_directed_local": force_goal_directed_local,
+                    "rolling_preplan": None,
+                })
+                next_result = handler(**next_context)
+                result["command_time_stale_retry"] = next_result
+                result["status"] = next_result.get("status", "COMMAND_TIME_STALE_FAST_RETRY")
+                trial.write_json(trial_dir / "event_replan_summary.json", result)
+                return result
             completed_execution = execution_status == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
             rolling_interruption = bool(stop_info["rolling_replan_stop"])
             current_local_artifacts = artifacts

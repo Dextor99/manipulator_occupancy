@@ -2905,10 +2905,28 @@ def test_command_time_revalidation_statuses_classify_as_replan_or_hold():
     hold = event_replan.classify_monitor_stop(
         {"status": event_replan.COMMAND_TIME_HOLD_STATUS}
     )
-    assert replan["rolling_replan_stop"] is True
+    assert replan["rolling_replan_stop"] is False
     assert replan["precommand_replan"] is True
     assert hold["rolling_replan_stop"] is False
     assert hold["precommand_replan"] is False
+
+
+def test_command_time_stale_is_not_an_in_motion_interruption():
+    info = event_replan.classify_monitor_stop({
+        "status": event_replan.COMMAND_TIME_REPLAN_STATUS,
+        "robot_commanded": False,
+    })
+    assert info["precommand_replan"] is True
+    assert info["monitor_stopped"] is False
+    assert info["rolling_replan_stop"] is False
+
+
+def test_continuation_stale_retries_same_local_without_terminal_handoff():
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "continuation_precommand_stale" in source
+    assert "REPLAN_SAME_LOCAL_FROM_LATEST_STATE" in source
+    assert '"replan_depth": int(local_index - 1)' in source
+    assert '"local_execution_state": "NOT_EXECUTED_COMMAND_TIME_STALE"' in source
 
 
 def test_monitor_uses_supplied_terminal_trajectory():
