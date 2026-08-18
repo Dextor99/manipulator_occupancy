@@ -1439,6 +1439,12 @@ def wait_for_candidate_goal_guarded(
             else None
         )
         minimum_guard_distance = min(minimum_guard_distance, guard_distance)
+        elapsed = now - started
+        endpoint_reached = bool(
+            err["max_abs_rad"] <= goal_tolerance_rad
+            and elapsed >= min_execution_wait_s
+            and max_motion >= min_motion_rad
+        )
         samples.append(
             {
                 "t_s": now - started,
@@ -1481,6 +1487,27 @@ def wait_for_candidate_goal_guarded(
                 samples,
             )
         if motion_monitor is not None and not bool(motion_monitor.get("motion_safe", False)):
+            # At the end of a commanded segment, a single freshness expiry
+            # must not overwrite an already-reached endpoint.  This is a
+            # narrow completion race exception: raw guard and every genuine
+            # predictive-risk/monitor failure still take priority.
+            if endpoint_reached and motion_monitor.get("reason") == "obstacle_track_stale":
+                samples[-1]["motion_monitor"]["segment_end_stale_completion"] = True
+                return (
+                    {
+                        "reached": True,
+                        "elapsed_s": elapsed,
+                        "goal_error": err,
+                        "actual_joint_rad": last.tolist(),
+                        "sample_count": len(samples),
+                        "max_motion_from_start_rad": max_motion,
+                        "min_motion_required_rad": min_motion_rad,
+                        "guard_stopped": False,
+                        "monitor_stale_at_completed_endpoint": True,
+                        "minimum_hard_guard_distance_m": minimum_guard_distance,
+                    },
+                    samples,
+                )
             # AUBO's waypoint/start handoff can make the first feedback sample
             # appear just over the 0.5 s perception watchdog despite a newer
             # persistent sequence and a very safe independent raw guard.  Allow
@@ -1525,12 +1552,7 @@ def wait_for_candidate_goal_guarded(
                 },
                 samples,
             )
-        elapsed = now - started
-        if (
-            err["max_abs_rad"] <= goal_tolerance_rad
-            and elapsed >= min_execution_wait_s
-            and max_motion >= min_motion_rad
-        ):
+        if endpoint_reached:
             return (
                 {
                     "reached": True,
