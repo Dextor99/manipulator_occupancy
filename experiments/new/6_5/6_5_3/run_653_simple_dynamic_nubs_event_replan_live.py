@@ -2836,6 +2836,23 @@ def plan_stationary_fast_terminal_bypass(
     fast_args.stationary_fast_terminal_active = True
     fast_args.stationary_fast_terminal_polyline = polyline
     fast_args.stationary_fast_terminal_durations_s = durations.copy()
+    elapsed_before_fast_ms = (time.perf_counter() - planner_started) * 1000.0
+    remaining_ms = max(0.0, total_max_ms - elapsed_before_fast_ms)
+    if remaining_ms <= 100.0:
+        payload = {
+            "status": "STATIONARY_FAST_TERMINAL_BYPASS_TIMEOUT_HOLD",
+            "authorized": False,
+            "planner_mode": "stationary_fast_terminal_bypass",
+            "full_optimizer_used": False,
+            "virtual_fast_route": route_audit,
+            "stationary_terminal_total_elapsed_ms": elapsed_before_fast_ms,
+            "stationary_terminal_total_budget_ms": total_max_ms,
+            "total_budget_met": False,
+            "fast_invoked_for_route": False,
+            "reason": "insufficient_remaining_budget_before_fast",
+        }
+        trial.write_json(trial_dir / "authorization_summary.json", payload)
+        return payload, None
     fast_args.fast_max_ms = remaining_ms
     fast_args.fast_target_ms = min(total_target_ms, remaining_ms)
     result = base_fast(
@@ -2870,6 +2887,9 @@ def plan_stationary_fast_terminal_bypass(
         "full_optimizer_used": False,
         "virtual_rollout_elapsed_ms": rollout_elapsed_ms,
         "base_fast_elapsed_ms": result.get("fast_elapsed_ms"),
+        "fast_candidate_verify_ms": result.get("candidate_verification_ms"),
+        "fast_diagnostic_ms": result.get("diagnostic_reference_verification_ms", 0.0),
+        "elapsed_before_fast_ms": elapsed_before_fast_ms,
         "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
         "stationary_terminal_total_budget_ms": total_max_ms,
         "stationary_terminal_target_ms": total_target_ms,

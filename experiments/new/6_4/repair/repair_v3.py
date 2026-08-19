@@ -64,6 +64,8 @@ def run_repair_v3(
     elastic_tail_position: bool = False,
     cheap_scale_screening: bool = False,
     minimum_distance_improvement: float = 0.0,
+    max_iterations_override: int | None = None,
+    skip_reference_diagnostic: bool = False,
 ) -> RepairV3Result:
     def deadline_reached(stage: str) -> bool:
         if deadline_perf is None or time.perf_counter() < deadline_perf:
@@ -91,7 +93,11 @@ def run_repair_v3(
     messages: list[str] = []
     budget_exhausted = False
     active_distance_profile: list[dict[str, object]] = []
-    max_iterations = cfg.FAST_V4_MAX_ITERATIONS if v4_mode else cfg.FAST_V3_MAX_ITERATIONS
+    max_iterations = (
+        int(max_iterations_override)
+        if max_iterations_override is not None
+        else (cfg.FAST_V4_MAX_ITERATIONS if v4_mode else cfg.FAST_V3_MAX_ITERATIONS)
+    )
     for iteration in range(max_iterations):
         if deadline_reached("risk scan"):
             budget_exhausted = True

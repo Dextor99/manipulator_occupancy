@@ -3348,6 +3348,8 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "refine_failed_connected_polyline" in inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert "stationary_fast_terminal_durations_s" in inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert "invalid stationary terminal duration override" in inspect.getsource(trial.run_fast_repair)
+    assert "max_iterations_override" in inspect.getsource(trial.run_fast_repair)
+    assert "skip_reference_diagnostic" in inspect.getsource(trial.run_fast_repair)
     assert "curvature_weight" in seed_source
     connector_source = inspect.getsource(event_replan.build_bounded_bidirectional_connector_route)
     routes_source = inspect.getsource(event_replan.build_stationary_boundary_routes)

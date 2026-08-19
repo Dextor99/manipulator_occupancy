@@ -2364,6 +2364,8 @@ def run_fast_repair(
         # A small linearization buffer compensates for the finite-distance
         # model; the externally reported/accepted requirement remains 3 mm.
         minimum_distance_improvement=1.10 * args.min_clearance_improvement_m,
+        max_iterations_override=(2 if bool(getattr(args, "stationary_fast_terminal_active", False)) else None),
+        skip_reference_diagnostic=bool(getattr(args, "stationary_fast_terminal_active", False)),
     )
     repair_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
     repair_step_ok = int(result.accepted_steps) > 0
@@ -2417,7 +2419,7 @@ def run_fast_repair(
             # verifier.  Comparing it with the optimization seed is useful
             # diagnostics, but cannot consume the 150 ms execution budget.
             online_elapsed_ms = (time.perf_counter() - online_started) * 1000.0
-        if repair_step_ok:
+        if repair_step_ok and not bool(getattr(args, "stationary_fast_terminal_active", False)):
             reference_verify_started = time.perf_counter()
             reference_verification = verifier.verify(
                 reference_full_trajectory,
@@ -2436,6 +2438,12 @@ def run_fast_repair(
                 reference_verification_ms = 0.0
             else:
                 reference_verification_ms = measured_reference_ms
+        elif repair_step_ok:
+            # Stationary terminal authorization does not need the paired
+            # reference verifier; it is diagnostic-only and would consume
+            # the terminal wall-clock budget.
+            reference_verification = verification
+            reference_verification_ms = 0.0
         else:
             # The bypass seed is the final candidate.  Its one complete
             # verification is part of the online decision; duplicating it as
