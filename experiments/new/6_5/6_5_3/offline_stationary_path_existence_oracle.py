@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 import importlib
 import sys
@@ -21,7 +22,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def _edge(event, evaluator, forecast, model, q0, q1, *, floor, min_z, samples):
+def _edge(event, evaluator, forecast, model, q0, q1, *, floor, min_z, samples, stats=None):
+    if stats is not None:
+        stats["edge_screen_calls"] += 1
     q0 = np.asarray(q0, dtype=np.float64)
     q1 = np.asarray(q1, dtype=np.float64)
     screen = event.sampled_joint_segment_clearance(evaluator, forecast, q0, q1, samples=samples)
@@ -41,16 +44,18 @@ def _nearest(nodes, q):
     return min(range(len(nodes)), key=lambda i: float(np.linalg.norm(nodes[i]["q"] - q)))
 
 
-def _extend(event, nodes, target, *, evaluator, forecast, model, limits, floor, min_z, step, edge_samples):
+def _extend(event, nodes, target, *, evaluator, forecast, model, limits, floor, min_z, step, edge_samples, stats):
     index = _nearest(nodes, target)
     q0 = nodes[index]["q"]
     delta = np.asarray(target, dtype=np.float64) - q0
     norm = float(np.linalg.norm(delta))
     q1 = np.asarray(target, dtype=np.float64) if norm <= step else q0 + delta * (float(step) / norm)
     q1 = np.clip(q1, limits.q_min, limits.q_max)
-    ok, audit = _edge(event, evaluator, forecast, model, q0, q1, floor=floor, min_z=min_z, samples=edge_samples)
+    ok, audit = _edge(event, evaluator, forecast, model, q0, q1, floor=floor, min_z=min_z, samples=edge_samples, stats=stats)
     if not ok:
+        stats["rejected_extensions"] += 1
         return None
+    stats["accepted_extensions"] += 1
     nodes.append({"q": q1, "parent": index, "edge": audit})
     return len(nodes) - 1
 
@@ -81,14 +86,19 @@ def run_trial(source_trial: Path, *, seed: int, iterations: int, step: float, ed
     # make_risk_stack returns evaluator, verifier, limits; the oracle needs
     # evaluator and limits, and deliberately never calls the verifier.
     evaluator, _, limits = core.make_risk_stack(config, model, forecast)
+    started = time.perf_counter()
     rng = np.random.default_rng(int(seed))
+    stats = {"edge_screen_calls": 0, "accepted_extensions": 0, "rejected_extensions": 0}
     start_nodes = [{"q": q_start.copy(), "parent": None, "edge": None}]
     goal_nodes = [{"q": q_goal.copy(), "parent": None, "edge": None}]
     best_gap = float(np.linalg.norm(q_start - q_goal))
     connected = False
     start_goal_edge = _edge(event, evaluator, forecast, model, q_start, q_goal,
-                            floor=floor, min_z=min_z, samples=edge_samples)
+                            floor=floor, min_z=min_z, samples=edge_samples, stats=stats)
+    actual_iterations = 0
+    connected_iteration = None
     for iteration in range(int(iterations)):
+        actual_iterations = iteration + 1
         # Alternating goal bias makes this diagnostic finite and reproducible.
         if iteration % 7 == 0:
             sample = q_goal.copy()
@@ -96,19 +106,20 @@ def run_trial(source_trial: Path, *, seed: int, iterations: int, step: float, ed
             sample = rng.uniform(limits.q_min, limits.q_max)
         ia = _extend(event, start_nodes, sample, evaluator=evaluator, forecast=forecast,
                      model=model, limits=limits, floor=floor, min_z=min_z,
-                     step=step, edge_samples=edge_samples)
+                     step=step, edge_samples=edge_samples, stats=stats)
         if ia is None:
             continue
         q_new = start_nodes[ia]["q"]
         best_gap = min(best_gap, float(np.linalg.norm(q_new - q_goal)))
         ib = _extend(event, goal_nodes, q_new, evaluator=evaluator, forecast=forecast,
                      model=model, limits=limits, floor=floor, min_z=min_z,
-                     step=step, edge_samples=edge_samples)
+                     step=step, edge_samples=edge_samples, stats=stats)
         if ib is not None and float(np.linalg.norm(goal_nodes[ib]["q"] - q_new)) <= float(step) + 1.0e-9:
             ok, join = _edge(event, evaluator, forecast, model, q_new, goal_nodes[ib]["q"],
-                             floor=floor, min_z=min_z, samples=edge_samples)
+                             floor=floor, min_z=min_z, samples=edge_samples, stats=stats)
             if ok:
                 connected = True
+                connected_iteration = iteration + 1
                 break
     path = None
     if connected:
@@ -119,6 +130,12 @@ def run_trial(source_trial: Path, *, seed: int, iterations: int, step: float, ed
         "min_tcp_z_m": float(min_z), "goal_tolerance_rad": float(goal_tolerance),
         "q_start": q_start.tolist(), "q_goal": q_goal.tolist(),
         "direct_edge": start_goal_edge[0], "connected": bool(connected),
+        "elapsed_ms": float((time.perf_counter() - started) * 1000.0),
+        "iterations_attempted": int(actual_iterations),
+        "connected_iteration": connected_iteration,
+        "edge_screen_calls": int(stats["edge_screen_calls"]),
+        "accepted_extensions": int(stats["accepted_extensions"]),
+        "rejected_extensions": int(stats["rejected_extensions"]),
         "best_joint_goal_gap_rad": float(best_gap),
         "node_count_start": len(start_nodes), "node_count_goal": len(goal_nodes),
         "path_points": int(len(path)) if path is not None else 0,

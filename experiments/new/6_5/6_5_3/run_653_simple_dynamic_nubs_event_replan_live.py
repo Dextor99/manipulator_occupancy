@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import importlib
 import inspect
@@ -2027,15 +2026,10 @@ def build_bounded_bidirectional_connector_route(
             q_new = trees[0][new_index]["q"]
             audit["best_gap_rad"] = min(audit["best_gap_rad"], float(np.linalg.norm(q_new - q_goal)))
             other_index = None
-            # Bounded RRT-Connect: continue extending the opposite tree
-            # toward q_new, while every edge retains the same screen.
-            for _ in range(8):
-                candidate_index = extend(trees[1], q_new)
-                if candidate_index is None:
-                    break
-                other_index = candidate_index
-                if float(np.linalg.norm(trees[1][other_index]["q"] - q_new)) <= step * 1.05:
-                    break
+            # Keep the validated oracle primitive: one opposite-tree
+            # extension per sampled iteration.  This preserves the measured
+            # search throughput and avoids making one iteration expensive.
+            other_index = extend(trees[1], q_new)
             if other_index is not None:
                 q_other = trees[1][other_index]["q"]
                 join = screen_boundary_edge(evaluator, forecast, model, q_new, q_other,
@@ -2143,27 +2137,22 @@ def build_stationary_boundary_routes(
         }
         routes.append(graph_row)
     connector_route = None
-    connector_audit = {"connector": True, "attempts": [], "parallel_seeds": [11, 23, 47]}
-    # Give every validated deterministic seed the same absolute deadline;
-    # running them concurrently prevents seed 11 from starving 23/47.
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="stationary_connector") as pool:
-        futures = {
-            pool.submit(build_bounded_bidirectional_connector_route,
-                runtime_args, config, model, q_start=q_start, q_goal=q_goal,
-                geometry=geometry, deadline_perf=deadline_perf, seed=seed): seed
-            for seed in (11, 23, 47)
-        }
-        for future in as_completed(futures):
-            connector_seed = futures[future]
-            try:
-                candidate_route, candidate_audit = future.result()
-            except Exception as exc:
-                candidate_route, candidate_audit = None, {"seed": int(connector_seed),
-                    "failure_reason": "connector_exception", "error": str(exc)}
-            connector_audit["attempts"].append(candidate_audit)
-            if candidate_route is not None and connector_route is None:
-                connector_route, connector_audit = candidate_route, {**connector_audit,
-                    "selected_seed": int(connector_seed)}
+    connector_audit = {"connector": True, "attempts": [],
+                       "serial_seeds": [23, 11, 47]}
+    # Use the empirically fastest validated oracle seed first.  Later seeds
+    # remain deterministic fallbacks under the same absolute deadline.
+    for connector_seed in (23, 11, 47):
+        if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+            break
+        candidate_route, candidate_audit = build_bounded_bidirectional_connector_route(
+            runtime_args, config, model, q_start=q_start, q_goal=q_goal,
+            geometry=geometry, deadline_perf=deadline_perf, seed=connector_seed,
+        )
+        connector_audit["attempts"].append(candidate_audit)
+        if candidate_route is not None:
+            connector_route, connector_audit = candidate_route, {**connector_audit,
+                "selected_seed": int(connector_seed)}
+            break
     if connector_route is not None:
         if np.max(np.abs(connector_route[0] - np.asarray(q_start))) > 1.0e-9:
             if np.max(np.abs(connector_route[-1] - np.asarray(q_start))) <= 1.0e-9:
