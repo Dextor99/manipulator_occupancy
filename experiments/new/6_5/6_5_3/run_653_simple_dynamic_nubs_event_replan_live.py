@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import importlib
 import inspect
@@ -1981,21 +1982,27 @@ def build_bounded_bidirectional_connector_route(
     edge_samples = 7
     trees = [[{"q": np.asarray(q_start, dtype=np.float64).copy(), "parent": None}],
              [{"q": np.asarray(q_goal, dtype=np.float64).copy(), "parent": None}]]
-    audit = {"connector": True, "seed": 653, "step_rad": step, "edge_samples": edge_samples,
+    audit = {"connector": True, "seed": int(seed), "step_rad": step, "edge_samples": edge_samples,
              "iterations": 0, "connected": False, "best_gap_rad": math.inf,
-             "failure_reason": None, "best_edge_min_distance_m": math.inf}
+             "failure_reason": None, "best_edge_min_distance_m": math.inf,
+             "edge_screen_calls": 0, "accepted_extensions": 0,
+             "rejected_extensions": 0, "connected_iteration": None}
 
     def extend(tree, target):
-        index = min(range(len(tree)), key=lambda i: float(np.linalg.norm(tree[i]["q"] - target)))
+        matrix = np.asarray([node["q"] for node in tree], dtype=np.float64)
+        index = int(np.argmin(np.linalg.norm(matrix - np.asarray(target), axis=1)))
         q0 = tree[index]["q"]
         delta = np.asarray(target) - q0
         norm = float(np.linalg.norm(delta))
         q1 = np.asarray(target, dtype=np.float64) if norm <= step else q0 + delta * (step / norm)
         q1 = np.clip(q1, limits.q_min, limits.q_max)
+        audit["edge_screen_calls"] += 1
         screen = screen_boundary_edge(evaluator, forecast, model, q0, q1,
             tcp_link=tcp_link, topology_floor_m=floor, min_tcp_z_m=min_z, samples=edge_samples)
         if not screen["accepted"]:
+            audit["rejected_extensions"] += 1
             return None
+        audit["accepted_extensions"] += 1
         tree.append({"q": q1, "parent": index})
         audit["best_edge_min_distance_m"] = min(float(audit["best_edge_min_distance_m"]), float(screen["min_distance_m"]))
         return len(tree) - 1
@@ -2018,7 +2025,16 @@ def build_bounded_bidirectional_connector_route(
         if new_index is not None:
             q_new = trees[0][new_index]["q"]
             audit["best_gap_rad"] = min(audit["best_gap_rad"], float(np.linalg.norm(q_new - q_goal)))
-            other_index = extend(trees[1], q_new)
+            other_index = None
+            # Bounded RRT-Connect: continue extending the opposite tree
+            # toward q_new, while every edge retains the same screen.
+            for _ in range(8):
+                candidate_index = extend(trees[1], q_new)
+                if candidate_index is None:
+                    break
+                other_index = candidate_index
+                if float(np.linalg.norm(trees[1][other_index]["q"] - q_new)) <= step * 1.05:
+                    break
             if other_index is not None:
                 q_other = trees[1][other_index]["q"]
                 join = screen_boundary_edge(evaluator, forecast, model, q_new, q_other,
@@ -2028,6 +2044,7 @@ def build_bounded_bidirectional_connector_route(
                     right = trace(trees[1], other_index)
                     route = np.asarray(left + right[::-1], dtype=np.float64)
                     audit.update({"connected": True, "failure_reason": None})
+                    audit["connected_iteration"] = iteration + 1
                     return route, audit
         # Keep the start/goal roots stable; this matches the validated
         # offline oracle and makes returned route orientation unambiguous.
@@ -2088,7 +2105,7 @@ def build_stationary_boundary_routes(
         )["min_distance_m"]) for index in range(len(route) - 1)), default=math.inf)
     # Once the bounded oracle has established that the safe C-space can be
     # connected, use the direction-biased graph as the primary initializer.
-    graph_deadline = (min(deadline_perf, time.perf_counter() + 1.0)
+    graph_deadline = (min(deadline_perf, time.perf_counter() + 0.5)
                       if deadline_perf is not None else None)
     graph_route, graph_audit = build_stationary_boundary_graph_route(
         runtime_args, config, model, q_start=q_start, q_goal=q_goal,
@@ -2121,19 +2138,29 @@ def build_stationary_boundary_routes(
         }
         routes.append(graph_row)
     connector_route = None
-    connector_audit = {"connector": True, "attempts": []}
-    for connector_seed in (11, 23, 47):
-        if deadline_perf is not None and time.perf_counter() >= deadline_perf:
-            break
-        candidate_route, candidate_audit = build_bounded_bidirectional_connector_route(
-            runtime_args, config, model, q_start=q_start, q_goal=q_goal,
-            geometry=geometry, deadline_perf=deadline_perf, seed=connector_seed,
-        )
-        connector_audit["attempts"].append(candidate_audit)
-        if candidate_route is not None:
-            connector_route, connector_audit = candidate_route, {**candidate_audit,
-                "attempts": connector_audit["attempts"], "selected_seed": connector_seed}
-            break
+    connector_audit = {"connector": True, "attempts": [], "parallel_seeds": [11, 23, 47]}
+    # Give every validated deterministic seed the same absolute deadline;
+    # running them concurrently prevents seed 11 from starving 23/47.
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="stationary_connector") as pool:
+        futures = {
+            pool.submit(build_bounded_bidirectional_connector_route,
+                runtime_args, config, model, q_start=q_start, q_goal=q_goal,
+                geometry=geometry, deadline_perf=deadline_perf, seed=seed): seed
+            for seed in (11, 23, 47)
+        }
+        for future in as_completed(futures):
+            connector_seed = futures[future]
+            seed_started = time.perf_counter()
+            try:
+                candidate_route, candidate_audit = future.result()
+            except Exception as exc:
+                candidate_route, candidate_audit = None, {"seed": int(connector_seed),
+                    "failure_reason": "connector_exception", "error": str(exc)}
+            candidate_audit["seed_elapsed_ms"] = (time.perf_counter() - seed_started) * 1000.0
+            connector_audit["attempts"].append(candidate_audit)
+            if candidate_route is not None and connector_route is None:
+                connector_route, connector_audit = candidate_route, {**connector_audit,
+                    "selected_seed": int(connector_seed)}
     if connector_route is not None:
         if np.max(np.abs(connector_route[0] - np.asarray(q_start))) > 1.0e-9:
             if np.max(np.abs(connector_route[-1] - np.asarray(q_start))) <= 1.0e-9:

@@ -3349,7 +3349,7 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     routes_source = inspect.getsource(event_replan.build_stationary_boundary_routes)
     assert "edge_samples = 7" in connector_source
     assert "np.random.default_rng(int(seed))" in connector_source
-    assert "for connector_seed in (11, 23, 47)" in routes_source
+    assert "parallel_seeds" in routes_source
     assert "route[0]" in routes_source and "route[-1]" in routes_source
     assert "fast_fallback_invoked" in planner_source
     assert "max_qd_actual_rad_s" in seed_source
