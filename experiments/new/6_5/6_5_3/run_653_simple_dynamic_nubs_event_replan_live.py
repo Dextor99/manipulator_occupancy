@@ -2962,6 +2962,15 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             if stationary_points is not None:
                 stationary_points_path = trial_dir / "stationary_confirmed_cluster_points.npy"
                 np.save(stationary_points_path, np.asarray(stationary_points, dtype=np.float64))
+                stationary_points_csv = trial_dir / "stationary_confirmed_cluster_points.csv"
+                trial.write_csv(
+                    stationary_points_csv,
+                    [
+                        {"x_m": float(point[0]), "y_m": float(point[1]), "z_m": float(point[2])}
+                        for point in np.asarray(stationary_points, dtype=np.float64)
+                    ],
+                    ["x_m", "y_m", "z_m"],
+                )
                 result["stationary_confirmed_cluster_points_file"] = stationary_points_path.name
             if bool(getattr(event_args, "stationary_fast_goal_directed", False)):
                 # Once the three-frame stationary confirmation succeeds, do
@@ -3000,6 +3009,9 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                         "snapshot_file": "stationary_confirmed_snapshot.json",
                         "planning_cluster_points_file": (
                             stationary_points_path.name if stationary_points_path is not None else None
+                        ),
+                        "planning_cluster_points_csv_file": (
+                            stationary_points_csv.name if stationary_points_path is not None else None
                         ),
                     }
                     trial.write_json(trial_dir / "stationary_terminal_replay_bundle.json", bundle)

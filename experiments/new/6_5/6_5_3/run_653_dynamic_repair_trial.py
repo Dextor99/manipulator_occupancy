@@ -3830,7 +3830,10 @@ def associate_fresh_cluster(
     }
 
 
-def fit_pca_multisphere(points: np.ndarray, *, fit_margin_m: float = 0.005, max_components: int = 4) -> dict[str, Any]:
+def fit_pca_multisphere(
+    points: np.ndarray, *, fit_margin_m: float = 0.005, max_components: int = 4,
+    forced_components: int | None = None,
+) -> dict[str, Any]:
     """Cover one fresh cluster by consecutive PCA-axis spheres with a coverage audit."""
     values = np.asarray(points, dtype=np.float64)
     if values.ndim != 2 or values.shape[1] != 3 or len(values) < 3 or not np.all(np.isfinite(values)):
@@ -3843,7 +3846,19 @@ def fit_pca_multisphere(points: np.ndarray, *, fit_margin_m: float = 0.005, max_
     axial_length = float(np.ptp(projection))
     transverse = centered - projection[:, None] * axis[None, :]
     transverse_radius = max(float(np.percentile(np.linalg.norm(transverse, axis=1), 90)), 1.0e-3)
-    component_count = int(np.clip(np.ceil(axial_length / max(2.0 * transverse_radius, 1.0e-6)), 1, max_components))
+    if forced_components is not None:
+        component_count = int(forced_components)
+        if component_count < 1 or component_count > int(max_components):
+            raise ValueError("forced_components must be within [1, max_components]")
+    else:
+        # Keep the validated production selection rule.  More aggressive
+        # forced 3/4-way splits are available to the offline geometry audit,
+        # but are not promoted without a benchmark showing tighter coverage
+        # *and* non-regressive robot clearance.
+        component_count = int(np.clip(
+            np.ceil(axial_length / max(2.0 * transverse_radius, 1.0e-6)),
+            1, max_components,
+        ))
     component_count = min(component_count, len(values))
     ordered_groups = np.array_split(np.argsort(projection), component_count)
     centers = []
@@ -3866,6 +3881,7 @@ def fit_pca_multisphere(points: np.ndarray, *, fit_margin_m: float = 0.005, max_
     return {
         "source_point_count": int(len(values)),
         "component_count": int(component_count),
+        "component_selection": "forced" if forced_components is not None else "validated_axis_ratio",
         "component_centers": center_values,
         "component_base_radii": radius_values,
         "pca_axis": axis,

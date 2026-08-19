@@ -42,7 +42,7 @@ def _load(args):
         np.asarray(geometry["component_base_radii"], dtype=float),
         valid_horizon_s=10.0,
     )
-    return event, core, model, q_goal, forecast
+    return event, core, model, q_goal, forecast, geometry
 
 
 def _spheres(forecast):
@@ -123,7 +123,7 @@ def main() -> None:
     if args.output.exists() and any(args.output.iterdir()):
         raise RuntimeError(f"AUDIT_OUTPUT_NOT_EMPTY:{args.output}")
     args.output.mkdir(parents=True, exist_ok=True)
-    event, core, model, q_goal, forecast = _load(args)
+    event, core, model, q_goal, forecast, source_geometry = _load(args)
     raw_points_path = args.source_trial / "stationary_confirmed_cluster_points.npy"
     raw_points = None
     if raw_points_path.exists():
@@ -141,12 +141,37 @@ def main() -> None:
         if raw_points is not None:
             row["raw_point_cloud"] = _evaluate_raw(model, q_goal, raw_points, finger)
         rows.append(row)
+    forced_benchmark = []
+    if raw_points is not None:
+        for count in (2, 3, 4):
+            fitted = core.fit_pca_multisphere(
+                raw_points, fit_margin_m=0.005, max_components=4,
+                forced_components=count,
+            )
+            forced_forecast = event.v3.v3_confirmed_stationary_multisphere_forecast(
+                np.asarray(fitted["component_centers"], dtype=float),
+                np.asarray(fitted["component_base_radii"], dtype=float),
+                valid_horizon_s=10.0,
+            )
+            evaluated = _evaluate(model, q_goal, forced_forecast, 0.0)
+            raw_evaluated = _evaluate_raw(model, q_goal, raw_points, 0.0)
+            forced_benchmark.append({
+                "forced_components": count,
+                "coverage_ratio": float(fitted["coverage_ratio"]),
+                "fit_margin_m": float(fitted["fit_margin_m"]),
+                "max_sphere_radius_m": float(fitted["multi_sphere_max_radius"]),
+                "goal_clearance_m": float(evaluated["minimum"]["clearance_m"]),
+                "nearest_link": evaluated["minimum"]["nearest_link"],
+                "raw_point_clearance_diagnostic_m": float(raw_evaluated["minimum"]["clearance_m"]),
+                "geometry": fitted,
+            })
     payload = {
         "status": "GOAL_CLEARANCE_GEOMETRY_AUDIT_COMPLETE",
         "source_trial": str(args.source_trial.resolve()),
         "q_goal_rad": q_goal,
         "production_zero_auxiliary_joint_check": production,
         "auxiliary_joint_sweep": rows,
+        "forced_component_benchmark": forced_benchmark,
         "raw_cluster_points": {
             "available": raw_points is not None,
             "path": str(raw_points_path) if raw_points is not None else None,
