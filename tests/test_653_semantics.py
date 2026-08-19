@@ -3378,6 +3378,18 @@ def test_stationary_path_existence_oracle_is_offline_only():
 def test_stationary_capture_and_replay_contract_is_fail_closed():
     args = d2_approach_hold.build_parser().parse_args(["--repeat", "1", "--stationary-capture-only"])
     assert args.stationary_capture_only is True
+
+
+def test_empty_scene_return_diagnostic_keeps_safety_gates():
+    source = (Path(__file__).resolve().parents[1] /
+              "experiments/new/6_5/6_5_3/empty_scene_return_to_goal_diagnostic.py").read_text(encoding="utf-8")
+    assert "strict_empty_scene_confirmed" in source
+    assert "v3_execution_multisphere_forecast" in source
+    assert "gripper_base_workspace_guard" in source
+    assert "execute_authorized_trajectory_offline_track" in source
+    assert "require_split_offline_track" in source
+    assert "final_precommand_barrier" in source
+    assert "external_obstacle_reappeared" in source
     loader_source = inspect.getsource(event_replan.load_stationary_terminal_replay_source)
     assert "REPLAY_SOURCE_STATIONARY_BUNDLE_MISSING" in loader_source
     assert "stationary_terminal_replay_bundle.json" in loader_source
