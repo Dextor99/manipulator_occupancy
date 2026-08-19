@@ -1968,6 +1968,7 @@ def build_bounded_bidirectional_connector_route(
     seed: int = 11,
 ) -> tuple[np.ndarray | None, dict[str, Any]]:
     """Oracle-derived bounded bidirectional joint-space connector."""
+    search_started = time.perf_counter()
     floor = float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08))
     min_z = float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
@@ -2043,11 +2044,15 @@ def build_bounded_bidirectional_connector_route(
                     left = trace(trees[0], new_index)
                     right = trace(trees[1], other_index)
                     route = np.asarray(left + right[::-1], dtype=np.float64)
-                    audit.update({"connected": True, "failure_reason": None})
+                    audit.update({"connected": True, "failure_reason": None,
+                        "elapsed_ms": (time.perf_counter() - search_started) * 1000.0,
+                        "node_count_start": len(trees[0]), "node_count_goal": len(trees[1])})
                     audit["connected_iteration"] = iteration + 1
                     return route, audit
         # Keep the start/goal roots stable; this matches the validated
         # offline oracle and makes returned route orientation unambiguous.
+    audit.update({"elapsed_ms": (time.perf_counter() - search_started) * 1000.0,
+        "node_count_start": len(trees[0]), "node_count_goal": len(trees[1])})
     return None, audit
 
 
@@ -2150,13 +2155,11 @@ def build_stationary_boundary_routes(
         }
         for future in as_completed(futures):
             connector_seed = futures[future]
-            seed_started = time.perf_counter()
             try:
                 candidate_route, candidate_audit = future.result()
             except Exception as exc:
                 candidate_route, candidate_audit = None, {"seed": int(connector_seed),
                     "failure_reason": "connector_exception", "error": str(exc)}
-            candidate_audit["seed_elapsed_ms"] = (time.perf_counter() - seed_started) * 1000.0
             connector_audit["attempts"].append(candidate_audit)
             if candidate_route is not None and connector_route is None:
                 connector_route, connector_audit = candidate_route, {**connector_audit,
@@ -2226,7 +2229,9 @@ def build_stationary_boundary_routes(
             row["coarse_min_clearance_m"] = float(min((x.get("edge_min_distance_m", math.inf) for x in audit.get("steps", [])), default=math.inf))
             routes.append(row)
     routes.sort(key=lambda row: (-float(row["coarse_min_clearance_m"]), float(row["joint_arclength"])))
-    return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()}, "direction_candidates": direction_audit, "connected_route_count": len(routes)}
+    return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()},
+        "direction_candidates": direction_audit, "graph_audit": graph_audit,
+        "connector_audit": connector_audit, "connected_route_count": len(routes)}
 
 
 def build_and_verify_stationary_boundary_seed(
