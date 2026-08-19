@@ -3265,6 +3265,13 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     connection_source = inspect.getsource(event_replan.confirmed_stationary_goal_connection)
     assert "coarse_samples" in connection_source
     assert "confirm_samples" in connection_source
+    probe_source = inspect.getsource(event_replan.probe_stationary_goal_connection)
+    assert "start_clearance_m" in probe_source
+    assert "goal_clearance_m" in probe_source
+    assert "goal_configuration_infeasible" in probe_source
+    handler_source = inspect.getsource(event_replan.make_event_handler)
+    assert "stationary_confirmed_multisphere.json" in handler_source
+    assert "stationary_confirmed_snapshot.json" in handler_source
     assert "route_hard_budget_ms" in inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert "execute_authorized_trajectory_offline_track" not in route_source
 

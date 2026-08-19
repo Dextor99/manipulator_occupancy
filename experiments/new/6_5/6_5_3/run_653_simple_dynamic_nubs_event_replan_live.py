@@ -152,12 +152,13 @@ def classify_local_authorization(authorization: dict[str, Any]) -> dict[str, Any
     checks = dict(authorization.get("verification_checks") or {})
     failed_checks = [key for key, passed in checks.items() if not bool(passed)]
     distance_only = set(failed_checks) == {"distance_ok"}
-    return {
+    result = {
         "kind": "distance_only_replan" if distance_only else "other_failure",
         "distance_only": bool(distance_only),
         "failed_checks": failed_checks,
         "verification_min_distance_m": authorization.get("verification_min_distance_m"),
     }
+    return result
 
 
 def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
@@ -187,7 +188,7 @@ def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
         and isinstance(reason, str)
         and reason in ROLLING_REPLAN_MONITOR_REASONS
     )
-    return {
+    result = {
         "execution_status": execution_status,
         "monitor_stopped": monitor_stopped,
         "rolling_replan_stop": rolling_replan_stop,
@@ -199,6 +200,7 @@ def classify_monitor_stop(execution: dict[str, Any]) -> dict[str, Any]:
             or motion_monitor.get("replan_requested", goal_check.get("replan_requested", False))
         ),
     }
+    return result
 
 
 def resolve_monitor_trajectory(context: dict[str, Any]) -> Any:
@@ -1266,19 +1268,27 @@ def probe_stationary_goal_connection(
     screen = sampled_joint_segment_clearance(
         evaluator, forecast, q_now, q_goal, samples=int(samples), density="medium"
     )
+    start_eval = evaluator.configuration(q_now, forecast, 0.0, density="medium", with_gradient=False)
+    goal_eval = evaluator.configuration(q_goal, forecast, 0.0, density="medium", with_gradient=False)
     min_z = math.inf
     for alpha in np.linspace(0.0, 1.0, int(samples)):
         q = (1.0 - float(alpha)) * q_now + float(alpha) * q_goal
         min_z = min(min_z, float(live.simple.tcp_position(model, q, tcp_link)[2]))
-    return {
+    result = {
+        "start_clearance_m": float(start_eval.min_distance),
+        "goal_clearance_m": float(goal_eval.min_distance),
         "connectable": bool(
             float(screen["min_distance_m"]) >= float(min_clearance_m)
             and min_z >= float(min_tcp_z_m)
+            and float(goal_eval.min_distance) >= float(min_clearance_m)
         ),
         "min_distance_m": float(screen["min_distance_m"]),
         "nearest_link": screen.get("nearest_link"),
         "min_tcp_z_m": float(min_z),
     }
+    if float(goal_eval.min_distance) < float(min_clearance_m):
+        result["reason"] = "goal_configuration_infeasible"
+    return result
 
 
 def confirmed_stationary_goal_connection(
@@ -2911,6 +2921,23 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
             confirmed_stationary_geometry = geometry_latest
+            # Freeze the exact geometry used by the stationary terminal
+            # planner.  Later replays must not substitute an earlier moving
+            # post-plan geometry for this confirmed stationary state.
+            trial.write_json(
+                trial_dir / "stationary_confirmed_multisphere.json",
+                geometry_latest,
+            )
+            trial.write_json(
+                trial_dir / "stationary_confirmed_snapshot.json",
+                {
+                    "fresh": fresh_latest,
+                    "state_seq": int(stationary_confirmation["state_seq"]),
+                    "speed_m_s": float(stationary_confirmation["speed_m_s"]),
+                    "center_span_m": float(stationary_confirmation["center_span_m"]),
+                    "geometry": geometry_latest,
+                },
+            )
             if bool(getattr(event_args, "stationary_fast_goal_directed", False)):
                 # Once the three-frame stationary confirmation succeeds, do
                 # not extrapolate tracker jitter through the terminal/local
