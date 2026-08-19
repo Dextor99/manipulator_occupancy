@@ -2145,17 +2145,28 @@ def build_stationary_boundary_routes(
             min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
             preferred_floor=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
         )
-        graph_min_clearance = selected_route_clearance(graph_route)
-        graph_row = {
-            "index": -1, "theta_deg": 0.0,
-            "direction": np.asarray(frame["lateral"], dtype=np.float64).tolist(),
-            "graph_route": True, "connected_to_goal": True,
-            "route_points": graph_route,
-            "joint_arclength": float(np.sum(np.linalg.norm(np.diff(graph_route, axis=0), axis=1))),
-            "coarse_min_clearance_m": graph_min_clearance,
-            "audit": graph_audit,
-        }
-        routes.append(graph_row)
+        # A shortcut can fail closed with a partial prefix.  Never label that
+        # prefix as connected to q_goal or spend a full-verifier slot on it.
+        graph_endpoint_ok = bool(
+            len(graph_route) >= 2
+            and np.max(np.abs(graph_route[0] - np.asarray(q_start))) <= 1.0e-9
+            and np.max(np.abs(graph_route[-1] - np.asarray(q_goal))) <= 1.0e-9
+        )
+        if graph_endpoint_ok:
+            graph_min_clearance = selected_route_clearance(graph_route)
+            graph_row = {
+                "index": -1, "theta_deg": 0.0,
+                "direction": np.asarray(frame["lateral"], dtype=np.float64).tolist(),
+                "graph_route": True, "connected_to_goal": True,
+                "route_points": graph_route,
+                "joint_arclength": float(np.sum(np.linalg.norm(np.diff(graph_route, axis=0), axis=1))),
+                "coarse_min_clearance_m": graph_min_clearance,
+                "audit": graph_audit,
+            }
+            routes.append(graph_row)
+        else:
+            graph_audit = {**graph_audit, "shortcut_endpoint_valid": False,
+                           "failure_reason": "graph_shortcut_q_goal_endpoint_lost"}
     connector_route = None
     connector_candidates: list[dict[str, Any]] = []
     connector_audit = {"connector": True, "attempts": [],
@@ -2200,40 +2211,37 @@ def build_stationary_boundary_routes(
                 # terminal budget for NUBS verification and Fast repair.
                 break
     if connector_candidates:
-        selected_connector = max(
-            connector_candidates,
+        connector_candidates.sort(
             key=lambda row: (float(row["coarse_min_clearance_m"]), -float(row["joint_arclength"])),
+            reverse=True,
         )
-        connector_route = selected_connector["route"]
         connector_audit = {**connector_audit,
-            "selected_seed": int(selected_connector["seed"]),
             "candidate_count": len(connector_candidates),
             "candidate_scores": [
                 {key: value for key, value in row.items() if key not in {"route", "audit"}}
                 for row in connector_candidates
             ],
-            "selected_coarse_min_clearance_m": float(selected_connector["coarse_min_clearance_m"]),
+            "selected_seed": int(connector_candidates[0]["seed"]),
+            "selected_coarse_min_clearance_m": float(connector_candidates[0]["coarse_min_clearance_m"]),
         }
-    if connector_route is not None:
-        if np.max(np.abs(connector_route[0] - np.asarray(q_start))) > 1.0e-9:
-            if np.max(np.abs(connector_route[-1] - np.asarray(q_start))) <= 1.0e-9:
-                connector_route = connector_route[::-1]
-            else:
-                connector_route = None
-        if connector_route is not None and np.max(np.abs(connector_route[-1] - np.asarray(q_goal))) > 1.0e-9:
-            connector_route = None
-    if connector_route is not None:
-        # Candidate routes were shortened and scored in the seed loop.
-        connector_row = {
-            "index": -2, "theta_deg": 0.0,
-            "direction": np.asarray(frame["lateral"], dtype=np.float64).tolist(),
-            "graph_route": False, "connector_route": True, "connected_to_goal": True,
-            "route_points": connector_route,
-            "joint_arclength": float(np.sum(np.linalg.norm(np.diff(connector_route, axis=0), axis=1))),
-            "coarse_min_clearance_m": selected_route_clearance(connector_route),
-            "audit": connector_audit,
-        }
-        routes.append(connector_row)
+        # Preserve the top three connector topologies for the downstream
+        # full NUBS verifier; coarse clearance is only a ranking screen.
+        for rank, candidate in enumerate(connector_candidates[:3]):
+            routes.append({
+                "index": -20 - rank, "theta_deg": 0.0,
+                "direction": np.asarray(frame["lateral"], dtype=np.float64).tolist(),
+                "graph_route": False, "connector_route": True,
+                "connector_seed": int(candidate["seed"]),
+                "connected_to_goal": True,
+                "route_points": candidate["route"],
+                "joint_arclength": float(candidate["joint_arclength"]),
+                "coarse_min_clearance_m": float(candidate["coarse_min_clearance_m"]),
+                "audit": candidate["audit"],
+            })
+        routes.sort(key=lambda row: (
+            -float(row.get("coarse_min_clearance_m", -math.inf)),
+            float(row.get("joint_arclength", math.inf)),
+        ))
         return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()},
             "direction_candidates": direction_audit, "graph_audit": graph_audit,
             "connector_audit": connector_audit, "connected_route_count": len(routes)}
