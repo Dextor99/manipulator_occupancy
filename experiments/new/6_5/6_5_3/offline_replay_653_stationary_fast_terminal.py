@@ -54,7 +54,10 @@ def main() -> None:
     else:
         core_args.stationary_fast_terminal_target_ms = 5000.0
         core_args.stationary_fast_terminal_max_ms = 7000.0
-        core_args.stationary_fast_terminal_route_max_ms = 0.0
+        # Match the D2 wrapper's explicit route-phase budget.  Zero here
+        # would otherwise be interpreted as an immediate route deadline once
+        # the production planner enforces this existing parameter.
+        core_args.stationary_fast_terminal_route_max_ms = 5000.0
         core_args.stationary_fast_terminal_virtual_fast_steps = 0
         # Keep replay aligned with the D2 production boundary-terminal
         # defaults; core's generic parser intentionally does not own these

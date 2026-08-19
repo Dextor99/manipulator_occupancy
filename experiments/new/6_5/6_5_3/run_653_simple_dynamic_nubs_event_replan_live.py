@@ -2051,7 +2051,7 @@ def build_bounded_bidirectional_connector_route(
 
 
 def shortcut_stationary_route(route, evaluator, forecast, model, *, tcp_link, floor, min_z,
-                              preferred_floor=0.11):
+                              preferred_floor=0.11, deadline_perf=None):
     """Greedy shortcut with a robust-clearance preference.
 
     The topology floor remains the hard feasibility floor.  When no chord
@@ -2059,20 +2059,36 @@ def shortcut_stationary_route(route, evaluator, forecast, model, *, tcp_link, fl
     measured clearance (then task progress), rather than the longest chord;
     this avoids shortening a route into a barely-feasible segment.
     """
+    started = time.perf_counter()
     points = [np.asarray(route[0], dtype=np.float64)]
+    edge_screen_calls = 0
+    selected_edge_clearances = []
     index = 0
     while index < len(route) - 1:
         accepted = []
         for candidate in range(len(route) - 1, index, -1):
+            if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+                return None, {"completed": False, "reason": "shortcut_deadline_exhausted",
+                               "edge_screen_calls": edge_screen_calls,
+                               "elapsed_ms": (time.perf_counter() - started) * 1000.0}
             screen = screen_boundary_edge(evaluator, forecast, model, route[index], route[candidate],
                 tcp_link=tcp_link, topology_floor_m=floor, min_tcp_z_m=min_z, samples=7)
+            edge_screen_calls += 1
             if not screen["accepted"]:
                 continue
-            accepted.append((candidate, float(screen["min_distance_m"])))
+            clearance = float(screen["min_distance_m"])
+            accepted.append((candidate, clearance))
+            # Candidates are scanned from farthest to nearest.  The first
+            # robust chord is therefore the maximum-progress robust choice;
+            # avoid screening the remaining O(N) chords.
+            if clearance >= float(preferred_floor):
+                break
         if not accepted:
             # The adjacent edge should normally be valid; preserve the old
             # fail-closed behavior if a malformed route reaches this point.
-            return np.asarray(points, dtype=np.float64)
+            return None, {"completed": False, "reason": "shortcut_no_accepted_edge",
+                           "edge_screen_calls": edge_screen_calls,
+                           "elapsed_ms": (time.perf_counter() - started) * 1000.0}
         preferred = [row for row in accepted if row[1] >= float(preferred_floor)]
         if preferred:
             # Among robust chords, retain as much forward route progress as
@@ -2081,9 +2097,17 @@ def shortcut_stationary_route(route, evaluator, forecast, model, *, tcp_link, fl
         else:
             # No robust chord: maximize clearance first, then progress.
             chosen, _ = max(accepted, key=lambda row: (row[1], row[0]))
+        chosen_clearance = next(clearance for candidate, clearance in accepted if candidate == chosen)
         points.append(np.asarray(route[chosen], dtype=np.float64))
+        selected_edge_clearances.append(float(chosen_clearance))
         index = chosen
-    return np.asarray(points, dtype=np.float64)
+    return np.asarray(points, dtype=np.float64), {
+        "completed": True,
+        "min_clearance_m": float(min(selected_edge_clearances, default=math.inf)),
+        "selected_edge_clearances_m": selected_edge_clearances,
+        "edge_screen_calls": edge_screen_calls,
+        "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+    }
 
 
 def build_stationary_boundary_routes(
@@ -2139,11 +2163,12 @@ def build_stationary_boundary_routes(
         if graph_route is not None and np.max(np.abs(graph_route[-1] - np.asarray(q_goal))) > 1.0e-9:
             graph_route = None
     if graph_route is not None:
-        graph_route = shortcut_stationary_route(
+        graph_route, graph_shortcut_audit = shortcut_stationary_route(
             graph_route, evaluator, forecast, model, tcp_link=tcp_link,
             floor=float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)),
             min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
             preferred_floor=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
+            deadline_perf=deadline_perf,
         )
         # A shortcut can fail closed with a partial prefix.  Never label that
         # prefix as connected to q_goal or spend a full-verifier slot on it.
@@ -2153,7 +2178,7 @@ def build_stationary_boundary_routes(
             and np.max(np.abs(graph_route[-1] - np.asarray(q_goal))) <= 1.0e-9
         )
         if graph_endpoint_ok:
-            graph_min_clearance = selected_route_clearance(graph_route)
+            graph_min_clearance = float(graph_shortcut_audit["min_clearance_m"])
             graph_row = {
                 "index": -1, "theta_deg": 0.0,
                 "direction": np.asarray(frame["lateral"], dtype=np.float64).tolist(),
@@ -2161,7 +2186,7 @@ def build_stationary_boundary_routes(
                 "route_points": graph_route,
                 "joint_arclength": float(np.sum(np.linalg.norm(np.diff(graph_route, axis=0), axis=1))),
                 "coarse_min_clearance_m": graph_min_clearance,
-                "audit": graph_audit,
+                "audit": {**graph_audit, "shortcut": graph_shortcut_audit},
             }
             routes.append(graph_row)
         else:
@@ -2192,15 +2217,18 @@ def build_stationary_boundary_routes(
                 else:
                     normalized = None
             if normalized is not None and np.max(np.abs(normalized[-1] - np.asarray(q_goal))) <= 1.0e-9:
-                shortened = shortcut_stationary_route(
+                shortened, shortcut_audit = shortcut_stationary_route(
                     normalized, evaluator, forecast, model,
                     tcp_link=tcp_link,
                     floor=float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)),
                     min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
                     preferred_floor=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
+                    deadline_perf=deadline_perf,
                 )
                 connector_endpoint_ok = bool(
-                    len(shortened) >= 2
+                    shortened is not None
+                    and shortcut_audit.get("completed", False)
+                    and len(shortened) >= 2
                     and np.max(np.abs(shortened[0] - np.asarray(q_start))) <= 1.0e-9
                     and np.max(np.abs(shortened[-1] - np.asarray(q_goal))) <= 1.0e-9
                 )
@@ -2208,15 +2236,17 @@ def build_stationary_boundary_routes(
                     connector_candidates.append({
                         "seed": int(connector_seed),
                         "route": shortened,
-                        "coarse_min_clearance_m": selected_route_clearance(shortened),
+                        "coarse_min_clearance_m": float(shortcut_audit["min_clearance_m"]),
                         "joint_arclength": float(np.sum(np.linalg.norm(np.diff(shortened, axis=0), axis=1))),
-                        "audit": candidate_audit,
+                        "audit": {**candidate_audit, "shortcut": shortcut_audit},
                     })
                 else:
                     connector_audit["attempts"][-1] = {
                         **candidate_audit,
                         "shortcut_endpoint_valid": False,
-                        "failure_reason": "connector_shortcut_q_goal_endpoint_lost",
+                        "failure_reason": shortcut_audit.get(
+                            "reason", "connector_shortcut_q_goal_endpoint_lost"
+                        ),
                     }
             if connector_candidates and float(connector_candidates[-1]["coarse_min_clearance_m"]) >= float(getattr(runtime_args, "planning_robust_target_m", 0.11)):
                 # A robust route is good enough; preserve the remaining
@@ -2672,7 +2702,10 @@ def plan_stationary_fast_terminal_bypass(
     # The route target is a performance diagnostic, not a hard stop.  Reserve
     # one second for polyline construction and final verification, then use
     # the remaining terminal budget as the actual route deadline.
-    route_budget_ms = max(0.0, total_max_ms - 1000.0)
+    configured_route_max_ms = float(getattr(
+        runtime_args, "stationary_fast_terminal_route_max_ms", total_max_ms - 1000.0
+    ))
+    route_budget_ms = min(configured_route_max_ms, max(0.0, total_max_ms - 1000.0))
     boundary_routes: list[dict[str, Any]] = []
     if bool(getattr(runtime_args, "stationary_boundary_terminal", True)):
         boundary_routes, boundary_audit = build_stationary_boundary_routes(
@@ -2735,6 +2768,8 @@ def plan_stationary_fast_terminal_bypass(
             "virtual_rollout_elapsed_ms": rollout_elapsed_ms,
             "total_fast_budget_ms": total_max_ms,
             "full_optimizer_used": False,
+            "virtual_fast_route": route_audit,
+            "route_hard_budget_ms": route_budget_ms,
         }
         trial.write_json(trial_dir / "authorization_summary.json", payload)
         return payload, None
