@@ -144,6 +144,8 @@ def make_trajectory(q_start, q_goal, duration_s, segments):
 
 def run(ns):
     args = make_args()
+    args.operator_confirmed_obstacle_safe_away = bool(ns.operator_confirmed_obstacle_safe_away)
+    args.safe_away_raw_guard_m = float(ns.safe_away_raw_guard_m)
     reference = trial.RecordedReference.load(ns.reference_feedback_csv.resolve())
     config = trial.load_stage4_config(args.stage4_config)
     model = trial.load_stage4_surface_model(config)
