@@ -2302,6 +2302,7 @@ def run_fast_repair(
         q_now, qd_now, args, reference_goal=reference_goal
     )
     virtual_polyline = getattr(args, "stationary_fast_terminal_polyline", None)
+    virtual_durations = getattr(args, "stationary_fast_terminal_durations_s", None)
     if virtual_polyline is not None:
         virtual_polyline = np.asarray(virtual_polyline, dtype=np.float64)
         if virtual_polyline.ndim == 2 and virtual_polyline.shape[1] == 6 and virtual_polyline.shape[0] >= 2:
@@ -2310,6 +2311,15 @@ def run_fast_repair(
             # and let the same Fast/verifier repair this long seed once.
             p_inner = virtual_polyline[1:-1].copy()
             q_goal = np.asarray(reference_goal[0], dtype=np.float64).copy()
+            if virtual_durations is not None:
+                virtual_durations = np.asarray(virtual_durations, dtype=np.float64)
+                if (virtual_durations.shape != durations.shape
+                        or not np.all(np.isfinite(virtual_durations))
+                        or np.any(virtual_durations <= 0.0)
+                        or not np.isclose(float(np.sum(virtual_durations)),
+                                          float(args.local_horizon_s), atol=1.0e-6)):
+                    raise RuntimeError("invalid stationary terminal duration override")
+                durations = virtual_durations.copy()
     reference_trajectory = NUBSTrajectory6D().generate(p_inner, head, tail, durations)
     original_task_reference_trajectory: Any = reference_trajectory
     if original_task_reference_goal is not None:

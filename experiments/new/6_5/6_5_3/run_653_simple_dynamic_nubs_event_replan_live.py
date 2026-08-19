@@ -2050,18 +2050,25 @@ def build_bounded_bidirectional_connector_route(
     return None, audit
 
 
-def shortcut_stationary_route(route, evaluator, forecast, model, *, tcp_link, floor, min_z):
-    """Greedy farthest-visible shortcut preserving the topology floor."""
+def shortcut_stationary_route(route, evaluator, forecast, model, *, tcp_link, floor, min_z,
+                              preferred_floor=0.09):
+    """Greedy shortcut, preferring chords with execution-level clearance."""
     points = [np.asarray(route[0], dtype=np.float64)]
     index = 0
     while index < len(route) - 1:
-        chosen = index + 1
+        preferred = None
+        fallback = index + 1
         for candidate in range(len(route) - 1, index, -1):
             screen = screen_boundary_edge(evaluator, forecast, model, route[index], route[candidate],
                 tcp_link=tcp_link, topology_floor_m=floor, min_tcp_z_m=min_z, samples=7)
-            if screen["accepted"]:
-                chosen = candidate
+            if not screen["accepted"]:
+                continue
+            if float(screen["min_distance_m"]) >= float(preferred_floor):
+                preferred = candidate
                 break
+            if fallback == index + 1:
+                fallback = candidate
+        chosen = preferred if preferred is not None else fallback
         points.append(np.asarray(route[chosen], dtype=np.float64))
         index = chosen
     return np.asarray(points, dtype=np.float64)
@@ -2285,10 +2292,11 @@ def build_and_verify_stationary_boundary_seed(
             candidate, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
         )
         candidates.append((bool(verification_candidate.accepted and tabletop_candidate.get("passed", False)),
-                           float(verification_candidate.min_distance), curvature_weight, candidate,
+                           float(verification_candidate.min_distance), curvature_weight,
+                           np.asarray(durations, dtype=np.float64).copy(), candidate,
                            verification_candidate, tabletop_candidate))
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    _, _, selected_weight, seed, verification, tabletop = candidates[0]
+    _, _, selected_weight, selected_durations, seed, verification, tabletop = candidates[0]
     checks = {key: bool(value) for key, value in verification.checks.items()}
     seed_safe = bool(verification.accepted and all(checks.values()) and tabletop.get("passed", False))
     _, _, limits = trial.make_risk_stack(config, model, None)
@@ -2304,6 +2312,7 @@ def build_and_verify_stationary_boundary_seed(
         "direction": np.asarray(route_row["direction"]).tolist(),
         "trajectory": seed,
         "polyline": polyline,
+        "segment_durations_s": selected_durations.tolist(),
         "verification_accepted": bool(verification.accepted),
         "verification_min_distance_m": float(verification.min_distance),
         "max_qd_violation_rad_s": float(verification.max_qd_violation),
@@ -2320,6 +2329,10 @@ def build_and_verify_stationary_boundary_seed(
         "tabletop_passed": bool(tabletop.get("passed", False)),
         "tabletop_workspace_guard": tabletop,
         "joint_arclength": float(route_row.get("joint_arclength", 0.0)),
+        "connector_raw_route_min_clearance_m": route_row.get("connector_raw_route_min_clearance_m"),
+        "shortcut_route_min_clearance_m": route_row.get("coarse_min_clearance_m"),
+        "resampled_polyline_min_clearance_m": route_row.get("coarse_min_clearance_m"),
+        "nubs_min_clearance_m": float(verification.min_distance),
         "seed_safe": seed_safe,
     }
 
@@ -2677,6 +2690,7 @@ def plan_stationary_fast_terminal_bypass(
     # Verify the best few topology routes independently.  Coarse clearance is
     # only a screen; smoothing can change the limiting point, so final route
     # selection is made from complete NUBS verification results.
+    fallback_seed_durations = None
     if boundary_routes:
         verified_routes: list[dict[str, Any]] = []
         for route_index, route_row in enumerate(boundary_routes[:3]):
@@ -2726,39 +2740,36 @@ def plan_stationary_fast_terminal_bypass(
             }
             trial.write_json(trial_dir / "authorization_summary.json", payload)
             return payload, selected["trajectory"] if authorized else None
-        # A connected coarse route that fails every deterministic retiming
-        # profile is not a valid terminal seed.  Do not fall through with its
-        # stale polyline and risk a q_goal-tail/runtime mismatch.
-        # A real failed route is allowed one explicit production-Fast
-        # fallback, but only with a fresh budget and an actual q_start/q_goal
-        # route object.  Never fall through with a stale/empty polyline.
-        remaining_deadline = planner_started + total_max_ms / 1000.0
-        route_points, fast_route_audit = build_stationary_virtual_fast_route(
-            base_fast, runtime_args, config, model,
-            q_escape_start=q_escape_start, q_start=q_start, q_goal=q_goal,
-            fresh=fresh, geometry=geometry, risk_links=risk_links,
-            trial_dir=trial_dir / "stationary_boundary_fast_fallback",
-            max_virtual_steps=1,
-            samples_per_local=3,
-            deadline_perf=remaining_deadline,
-        )
-        route_audit = {**route_audit, "connected_to_goal": bool(route_points is not None),
-                       "reason": "boundary_routes_full_verifier_failed",
-                       "fast_fallback_invoked": True,
-                       "fast_fallback_audit": fast_route_audit}
-        if route_points is None or not bool(fast_route_audit.get("connected_to_goal", False)):
+        repairable_routes = [row for row in verified_routes
+            if row.get("tabletop_passed")
+            and all(bool(row.get("verification_checks", {}).get(key, False))
+                    for key in ("position_ok", "velocity_ok", "acceleration_ok",
+                                "continuity_q_ok", "continuity_qd_ok", "continuity_qdd_ok"))]
+        if not repairable_routes:
             total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
             payload = {"status": "STATIONARY_FAST_TERMINAL_BYPASS_HOLD", "authorized": False,
                 "planner_mode": "stationary_fast_terminal_bypass", "full_optimizer_used": False,
                 "virtual_fast_route": route_audit, "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
                 "stationary_terminal_total_budget_ms": total_max_ms,
                 "total_budget_met": total_elapsed_ms <= total_max_ms,
-                "fast_invoked_for_route": True, "reason": "boundary_routes_full_verifier_failed"}
+                "fast_invoked_for_route": False, "reason": "boundary_routes_full_verifier_failed_no_repairable_route"}
             trial.write_json(trial_dir / "authorization_summary.json", payload)
             return payload, None
+        best_failed = max(repairable_routes,
+            key=lambda row: (float(row.get("verification_min_distance_m", -math.inf)),
+                             -float(row.get("joint_arclength", math.inf))))
+        route_points = np.asarray(best_failed["polyline"], dtype=np.float64)
+        fallback_seed_durations = np.asarray(best_failed["segment_durations_s"], dtype=np.float64)
+        route_audit = {**route_audit, "connected_to_goal": True,
+                       "reason": "boundary_routes_full_verifier_failed",
+                       "fast_fallback_invoked": True,
+                       "fast_fallback_mode": "refine_failed_connected_polyline",
+                       "fast_fallback_route_index": int(best_failed["route_index"]),
+                       "fast_fallback_input_min_clearance_m": float(best_failed["verification_min_distance_m"])}
     duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 8.0))
     segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 12)))
-    durations = np.full(segments, duration / segments, dtype=np.float64)
+    durations = (fallback_seed_durations.copy() if fallback_seed_durations is not None
+                 else np.full(segments, duration / segments, dtype=np.float64))
     polyline = resample_joint_polyline(np.asarray(route_points, dtype=np.float64), segments + 1)
     if np.max(np.abs(polyline[-1] - np.asarray(q_goal, dtype=np.float64))) > 1.0e-9:
         raise RuntimeError("stationary terminal polyline failed to preserve q_goal tail")
@@ -2824,6 +2835,7 @@ def plan_stationary_fast_terminal_bypass(
     fast_args.local_segments = segments
     fast_args.stationary_fast_terminal_active = True
     fast_args.stationary_fast_terminal_polyline = polyline
+    fast_args.stationary_fast_terminal_durations_s = durations.copy()
     fast_args.fast_max_ms = remaining_ms
     fast_args.fast_target_ms = min(total_target_ms, remaining_ms)
     result = base_fast(

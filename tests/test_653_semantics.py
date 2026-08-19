@@ -3344,6 +3344,10 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "best_by_cell" in graph_source
     assert "connector_deadline_exhausted" in connector_source
     assert "shortcut_stationary_route" in inspect.getsource(event_replan.build_stationary_boundary_routes)
+    assert "preferred_floor" in inspect.getsource(event_replan.shortcut_stationary_route)
+    assert "refine_failed_connected_polyline" in inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
+    assert "stationary_fast_terminal_durations_s" in inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
+    assert "invalid stationary terminal duration override" in inspect.getsource(trial.run_fast_repair)
     assert "curvature_weight" in seed_source
     connector_source = inspect.getsource(event_replan.build_bounded_bidirectional_connector_route)
     routes_source = inspect.getsource(event_replan.build_stationary_boundary_routes)
