@@ -1611,6 +1611,7 @@ def build_one_stationary_boundary_route(
     tcp_link: str,
     max_escape_steps: int,
     max_pass_steps: int,
+    deadline_perf: float | None = None,
 ) -> tuple[np.ndarray | None, dict[str, Any]]:
     """Build one fixed-topology escape/pass route without repeated Fast calls."""
     q = np.asarray(q_start, dtype=np.float64).copy()
@@ -1633,8 +1634,15 @@ def build_one_stationary_boundary_route(
     route = [q.copy()]
     audit: list[dict[str, Any]] = []
     escaped = False
-    total_steps = max(1, int(max_escape_steps)) + max(1, int(max_pass_steps))
-    for step_index in range(total_steps):
+    phase_steps = (
+        [(index, "escape") for index in range(max(1, int(max_escape_steps)))]
+        + [(max(1, int(max_escape_steps)) + index, "pass") for index in range(max(1, int(max_pass_steps)))]
+    )
+    for step_index, phase in phase_steps:
+        if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+            return None, {"connected_to_goal": False, "reason": "boundary_route_deadline_exhausted", "steps": audit, "escaped": escaped}
+        if phase == "pass" and not escaped:
+            return None, {"connected_to_goal": False, "reason": "escape_phase_not_completed", "steps": audit, "escaped": False}
         risk = evaluator.configuration(q, forecast, 0.0, density="medium", with_gradient=False)
         if risk.robot_point is None:
             return None, {"connected_to_goal": False, "reason": "missing_limiting_robot_point", "steps": audit}
@@ -1650,10 +1658,9 @@ def build_one_stationary_boundary_route(
             return np.asarray(route), {"connected_to_goal": True, "steps": audit, "connection": connection}
         projection = float(np.dot(np.asarray(risk.robot_point), d))
         required = max(0.0, support_upper + robust - projection)
-        phase = "escape" if not escaped else "pass"
         if not escaped and required <= 0.0:
             escaped = True
-            phase = "pass"
+            continue
         side_step = min(required, side_limit)
         remaining_forward = max(0.0, float(np.dot(tcp_goal - tcp_now, task_frame["task"])))
         forward_step = min(forward_limit, remaining_forward) if escaped else 0.0
@@ -1694,8 +1701,13 @@ def build_one_stationary_boundary_route(
             "min_tcp_z_m": float(screen["min_tcp_z_m"]), "task_progress_m": task_progress,
             "attempts": attempts,
         })
-        if not escaped and float(np.dot(live.simple.tcp_position(model, q, tcp_link), d)) >= support_upper + robust:
-            escaped = True
+        if not escaped:
+            risk_after = evaluator.configuration(q, forecast, 0.0, density="medium", with_gradient=False)
+            if risk_after.robot_point is not None:
+                projection_after = float(np.dot(np.asarray(risk_after.robot_point), d))
+                required_after = max(0.0, support_upper + robust - projection_after)
+                audit[-1]["required_escape_after_m"] = required_after
+                escaped = required_after <= 1.0e-6
     return None, {"connected_to_goal": False, "reason": "boundary_route_step_limit", "steps": audit, "escaped": escaped}
 
 
@@ -1710,6 +1722,7 @@ def build_stationary_boundary_routes(
     direction_count: int,
     max_escape_steps: int,
     max_pass_steps: int,
+    deadline_perf: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Search task-relative topology candidates independently."""
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
@@ -1731,6 +1744,7 @@ def build_stationary_boundary_routes(
             geometry=geometry, q_start=q_start, q_goal=q_goal,
             direction=item["direction"], task_frame=frame, tcp_link=tcp_link,
             max_escape_steps=max_escape_steps, max_pass_steps=max_pass_steps,
+            deadline_perf=deadline_perf,
         )
         row = {**item, "connected_to_goal": route is not None, "audit": audit}
         direction_audit.append(row)
@@ -2017,6 +2031,7 @@ def plan_stationary_fast_terminal_bypass(
             direction_count=int(getattr(runtime_args, "stationary_boundary_direction_count", 8)),
             max_escape_steps=int(getattr(runtime_args, "stationary_boundary_max_escape_steps", 4)),
             max_pass_steps=int(getattr(runtime_args, "stationary_boundary_max_pass_steps", 4)),
+            deadline_perf=planner_started + route_budget_ms / 1000.0,
         )
         if boundary_routes:
             selected_route = boundary_routes[0]

@@ -3315,6 +3315,11 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "max_escape_steps" in one_source
     assert "max_pass_steps" in one_source
     assert "topology_floor_m" in one_source
+    assert "risk_after" in one_source
+    assert "required_escape_after_m" in one_source
+    assert "boundary_route_deadline_exhausted" in one_source
+    assert "escape_phase_not_completed" in one_source
+    assert "deadline_perf" in route_source
 
 
 def test_stationary_capture_and_replay_contract_is_fail_closed():
