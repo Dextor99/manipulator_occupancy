@@ -744,7 +744,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stationary-fast-terminal-rollout-steps", type=int, default=4)
     parser.add_argument("--stationary-fast-terminal-target-ms", type=float, default=500.0)
     parser.add_argument("--stationary-fast-terminal-max-ms", type=float, default=1000.0)
-    parser.add_argument("--stationary-fast-terminal-route-max-ms", type=float, default=5000.0)
+    parser.add_argument("--stationary-fast-terminal-route-max-ms", type=float, default=0.0)
     parser.add_argument("--stationary-fast-terminal-virtual-max-joint-delta-rad", type=float, default=0.30)
     parser.add_argument("--stationary-fast-terminal-virtual-fast-steps", type=int, default=6)
     parser.add_argument("--stationary-fast-terminal-samples-per-local", type=int, default=3)
@@ -1167,15 +1167,18 @@ def plan_stationary_clearance_recovery(
     *, q_now: np.ndarray, q_goal: np.ndarray, fresh: dict[str, Any], geometry: dict[str, Any],
     locked_bypass_side: np.ndarray, risk_links: set[str], trial_dir: Path,
     artifacts_out: dict[str, Any], side_m: float,
+    evaluator: Any | None = None, forecast: Any | None = None,
 ) -> dict[str, Any]:
     """Use side-only Fast seeds to reopen the next joint-goal corridor."""
     zero = np.zeros(6, dtype=np.float64)
-    forecast = v3.v3_execution_multisphere_forecast(
-        np.asarray(geometry["component_centers"], dtype=np.float64),
-        np.asarray(geometry["component_base_radii"], dtype=np.float64),
-        np.zeros(3, dtype=np.float64),
-    )
-    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    if forecast is None:
+        forecast = v3.v3_execution_multisphere_forecast(
+            np.asarray(geometry["component_centers"], dtype=np.float64),
+            np.asarray(geometry["component_base_radii"], dtype=np.float64),
+            np.zeros(3, dtype=np.float64),
+        )
+    if evaluator is None:
+        evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
     tcp_now = live.simple.tcp_position(model, np.asarray(q_now), str(getattr(runtime_args, "tcp_link", "gripper_base_link")))
     tcp_goal = live.simple.tcp_position(model, np.asarray(q_goal), str(getattr(runtime_args, "tcp_link", "gripper_base_link")))
     risk = evaluator.configuration(np.asarray(q_now), forecast, 0.0, density="medium", with_gradient=False)
@@ -1250,12 +1253,11 @@ def plan_stationary_clearance_recovery(
 
 
 def probe_stationary_goal_connection(
-    config: dict[str, Any], model: Any, forecast: Any,
+    evaluator: Any, model: Any, forecast: Any,
     q_now: np.ndarray, q_goal: np.ndarray, *, tcp_link: str,
     min_clearance_m: float, min_tcp_z_m: float, samples: int = 25,
 ) -> dict[str, Any]:
     """Lightweight stationary topology probe; not an execution authorization."""
-    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
     q_now = np.asarray(q_now, dtype=np.float64)
     q_goal = np.asarray(q_goal, dtype=np.float64)
     screen = sampled_joint_segment_clearance(
@@ -1533,6 +1535,9 @@ def build_stationary_virtual_fast_route(
         np.asarray(geometry["component_base_radii"], dtype=np.float64),
         np.zeros(3, dtype=np.float64),
     )
+    # Build the stationary risk evaluator once and reuse it for every
+    # connection probe, joint screen, and recovery seed in this route.
+    route_evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
     try:
         locked_bypass_side, locked_side_audit = established_bypass_side(
@@ -1544,13 +1549,36 @@ def build_stationary_virtual_fast_route(
     for virtual_index in range(1, int(max_virtual_steps) + 1):
         if deadline_perf is not None and time.perf_counter() >= deadline_perf:
             return None, {"connected_to_goal": False, "reason": "stationary_virtual_fast_budget_exhausted", "steps": step_audit}
+        step_started = time.perf_counter()
+        coarse_started = time.perf_counter()
         connection = probe_stationary_goal_connection(
-            config, model, forecast, q_virtual, q_goal,
+            route_evaluator, model, forecast, q_virtual, q_goal,
             tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
             min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
             min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
-            samples=25,
+            samples=9,
         )
+        coarse_ms = (time.perf_counter() - coarse_started) * 1000.0
+        confirm_ms = 0.0
+        connection["coarse_samples"] = 9
+        connection["coarse_elapsed_ms"] = coarse_ms
+        if connection["connectable"]:
+            confirm_started = time.perf_counter()
+            connection = probe_stationary_goal_connection(
+                route_evaluator, model, forecast, q_virtual, q_goal,
+                tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
+                min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
+                min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+                samples=25,
+            )
+            confirm_ms = (time.perf_counter() - confirm_started) * 1000.0
+            connection["coarse_samples"] = 9
+            connection["coarse_elapsed_ms"] = coarse_ms
+            connection["confirm_samples"] = 25
+            connection["confirm_elapsed_ms"] = confirm_ms
+        else:
+            connection["confirm_samples"] = 0
+            connection["confirm_elapsed_ms"] = 0.0
         if connection["connectable"]:
             append_unique_route_point(route_points, q_goal)
             step_audit.append({"virtual_index": virtual_index, "action": "goal_spatially_connected", "connection_probe": connection})
@@ -1563,11 +1591,12 @@ def build_stationary_virtual_fast_route(
             q_virtual, q_goal,
             max_delta_rad=float(getattr(runtime_args, "max_joint_delta_rad", 0.12)),
         )
-        joint_evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+        joint_started = time.perf_counter()
         joint_screen = sampled_joint_segment_clearance(
-            joint_evaluator, forecast, q_virtual, q_joint_step,
+            route_evaluator, forecast, q_virtual, q_joint_step,
             samples=9, density="medium",
         )
+        joint_screen_ms = (time.perf_counter() - joint_started) * 1000.0
         joint_seed_ok = float(joint_screen["min_distance_m"]) >= float(
             getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)
         )
@@ -1595,6 +1624,7 @@ def build_stationary_virtual_fast_route(
                 selected_mode = "joint_goal_progress"
         if trajectory is None and not joint_seed_ok:
             artifacts = {}
+            recovery_started = time.perf_counter()
             candidate = plan_stationary_clearance_recovery(
                 base_fast, virtual_args, config, model,
                 q_now=q_virtual, q_goal=q_goal, fresh=fresh_static, geometry=geometry,
@@ -1602,7 +1632,9 @@ def build_stationary_virtual_fast_route(
                 trial_dir=step_dir / "side_only_clearance_recovery",
                 artifacts_out=artifacts,
                 side_m=float(getattr(runtime_args, "continuation_side_m", 0.04)),
+                evaluator=route_evaluator, forecast=forecast,
             )
+            recovery_seed_ms = (time.perf_counter() - recovery_started) * 1000.0
             trajectory = artifacts.get("candidate_trajectory")
             if candidate.get("local_repair_ready", False) and trajectory is not None:
                 selected_mode = "side_only_clearance_recovery"
@@ -1649,6 +1681,14 @@ def build_stationary_virtual_fast_route(
             "fast_elapsed_ms": candidate.get("fast_elapsed_ms"),
             "verification_min_distance_m": candidate.get("verification_min_distance_m"),
             "q_virtual_tail_rad": q_virtual.tolist(), "sampled_shape_point_count": len(sampled),
+            "timing_ms": {
+                "connection_coarse_ms": coarse_ms,
+                "connection_confirm_ms": confirm_ms,
+                "joint_screen_ms": joint_screen_ms,
+                "recovery_seed_ms": recovery_seed_ms if selected_mode == "side_only_clearance_recovery" else 0.0,
+                "fast_elapsed_ms": float(candidate.get("fast_elapsed_ms") or 0.0),
+                "step_total_ms": (time.perf_counter() - step_started) * 1000.0,
+            },
         })
         if selected_mode == "joint_goal_progress" and joint_step_is_final:
             append_unique_route_point(route_points, q_goal)
@@ -1685,8 +1725,13 @@ def plan_stationary_fast_terminal_bypass(
         raise ValueError("stationary terminal target/max budget is invalid")
     trial_dir.mkdir(parents=True, exist_ok=True)
     tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
-    route_max_ms = float(getattr(runtime_args, "stationary_fast_terminal_route_max_ms", 5000.0))
-    route_budget_ms = min(route_max_ms, max(0.0, total_max_ms - 1500.0))
+    # The route target is a performance diagnostic, not a hard stop.  Reserve
+    # one second for polyline construction and final verification, then use
+    # the remaining terminal budget as the actual route deadline.
+    route_max_ms = float(getattr(runtime_args, "stationary_fast_terminal_route_max_ms", 0.0))
+    route_budget_ms = max(0.0, total_max_ms - 1000.0)
+    if route_max_ms > 0.0:
+        route_budget_ms = max(route_budget_ms, min(route_max_ms, total_max_ms - 1000.0))
     route_points, route_audit = build_stationary_virtual_fast_route(
         base_fast, runtime_args, config, model, q_escape_start=q_escape_start,
         q_start=q_start, q_goal=q_goal, fresh=fresh, geometry=geometry,
@@ -1696,6 +1741,10 @@ def plan_stationary_fast_terminal_bypass(
         deadline_perf=planner_started + route_budget_ms / 1000.0,
     )
     rollout_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+    route_audit["route_elapsed_ms"] = rollout_elapsed_ms
+    route_audit["route_target_ms"] = total_target_ms
+    route_audit["route_hard_budget_ms"] = route_budget_ms
+    route_audit["route_target_met"] = bool(rollout_elapsed_ms <= total_target_ms)
     remaining_ms = max(0.0, total_max_ms - rollout_elapsed_ms)
     if remaining_ms <= 1.0:
         payload = {

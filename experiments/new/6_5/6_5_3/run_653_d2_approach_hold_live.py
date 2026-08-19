@@ -123,7 +123,9 @@ def build_parser() -> argparse.ArgumentParser:
         stationary_fast_terminal_virtual_max_joint_delta_rad=0.30,
         stationary_fast_terminal_virtual_fast_steps=20,
         stationary_fast_terminal_samples_per_local=3,
-        stationary_fast_terminal_route_max_ms=5000.0,
+        # route target is diagnostic; terminal max budget supplies the hard
+        # route deadline while reserving time for finalization/verifier.
+        stationary_fast_terminal_route_max_ms=0.0,
         stationary_virtual_topology_floor_m=0.08,
         stationary_center_span_m=HOLD_CENTER_SPAN_MAX_M,
         shadow_hold_observation_s=3.0,
