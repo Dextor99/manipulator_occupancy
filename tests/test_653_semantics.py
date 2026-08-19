@@ -3358,6 +3358,9 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "serial_seeds" in routes_source
     assert "for connector_seed in (23, 11, 47)" in routes_source
     assert "route[0]" in routes_source and "route[-1]" in routes_source
+    assert "connector_endpoint_ok" in routes_source
+    assert "connector_shortcut_q_goal_endpoint_lost" in routes_source
+    assert "len(shortened) >= 2" in routes_source
     assert "fast_fallback_invoked" in planner_source
     assert "max_qd_actual_rad_s" in seed_source
     assert "max_qdd_actual_rad_s2" in seed_source

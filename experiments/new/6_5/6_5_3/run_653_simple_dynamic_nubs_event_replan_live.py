@@ -2199,13 +2199,25 @@ def build_stationary_boundary_routes(
                     min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
                     preferred_floor=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
                 )
-                connector_candidates.append({
-                    "seed": int(connector_seed),
-                    "route": shortened,
-                    "coarse_min_clearance_m": selected_route_clearance(shortened),
-                    "joint_arclength": float(np.sum(np.linalg.norm(np.diff(shortened, axis=0), axis=1))),
-                    "audit": candidate_audit,
-                })
+                connector_endpoint_ok = bool(
+                    len(shortened) >= 2
+                    and np.max(np.abs(shortened[0] - np.asarray(q_start))) <= 1.0e-9
+                    and np.max(np.abs(shortened[-1] - np.asarray(q_goal))) <= 1.0e-9
+                )
+                if connector_endpoint_ok:
+                    connector_candidates.append({
+                        "seed": int(connector_seed),
+                        "route": shortened,
+                        "coarse_min_clearance_m": selected_route_clearance(shortened),
+                        "joint_arclength": float(np.sum(np.linalg.norm(np.diff(shortened, axis=0), axis=1))),
+                        "audit": candidate_audit,
+                    })
+                else:
+                    connector_audit["attempts"][-1] = {
+                        **candidate_audit,
+                        "shortcut_endpoint_valid": False,
+                        "failure_reason": "connector_shortcut_q_goal_endpoint_lost",
+                    }
             if connector_candidates and float(connector_candidates[-1]["coarse_min_clearance_m"]) >= float(getattr(runtime_args, "planning_robust_target_m", 0.11)):
                 # A robust route is good enough; preserve the remaining
                 # terminal budget for NUBS verification and Fast repair.
