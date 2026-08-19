@@ -1641,6 +1641,9 @@ def build_one_stationary_boundary_route(
     for step_index, phase in phase_steps:
         if deadline_perf is not None and time.perf_counter() >= deadline_perf:
             return None, {"connected_to_goal": False, "reason": "boundary_route_deadline_exhausted", "steps": audit, "escaped": escaped}
+        if phase == "escape" and escaped:
+            # The phase cap is a hard upper bound, not extra pass work.
+            continue
         if phase == "pass" and not escaped:
             return None, {"connected_to_goal": False, "reason": "escape_phase_not_completed", "steps": audit, "escaped": False}
         risk = evaluator.configuration(q, forecast, 0.0, density="medium", with_gradient=False)
@@ -1755,6 +1758,58 @@ def build_stationary_boundary_routes(
             routes.append(row)
     routes.sort(key=lambda row: (-float(row["coarse_min_clearance_m"]), float(row["joint_arclength"])))
     return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()}, "direction_candidates": direction_audit, "connected_route_count": len(routes)}
+
+
+def build_and_verify_stationary_boundary_seed(
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    route_row: dict[str, Any],
+    q_start: np.ndarray,
+    q_goal: np.ndarray,
+    geometry: dict[str, Any],
+    fresh: dict[str, Any],
+    trial_dir: Path,
+) -> dict[str, Any]:
+    """Convert one coarse boundary route into a fully verified NUBS seed."""
+    duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 8.0))
+    segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 12)))
+    polyline = resample_joint_polyline(np.asarray(route_row["route_points"], dtype=np.float64), segments + 1)
+    head = trial.NUBSTrajectory6D.make_boundary_state(q_start, np.zeros(6), np.zeros(6))
+    tail = trial.NUBSTrajectory6D.make_boundary_state(q_goal, np.zeros(6), np.zeros(6))
+    durations = np.full(segments, duration / segments, dtype=np.float64)
+    seed = trial.NUBSTrajectory6D().generate(polyline[1:-1], head, tail, durations)
+    forecast = v3.v3_confirmed_stationary_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        valid_horizon_s=float(seed.total_duration),
+        object_id=int(fresh.get("track_id", 1)),
+    )
+    _, verifier, _ = trial.make_risk_stack(config, model, None)
+    verification = verifier.verify(
+        seed, forecast, current_q=np.asarray(q_start), current_qd=np.zeros(6),
+        current_qdd=np.zeros(6), q_goal=np.asarray(q_goal), solver_success=True,
+    )
+    tabletop = trial.gripper_base_workspace_guard(
+        seed, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
+    )
+    checks = {key: bool(value) for key, value in verification.checks.items()}
+    seed_safe = bool(verification.accepted and all(checks.values()) and tabletop.get("passed", False))
+    return {
+        "route_index": int(route_row["index"]),
+        "theta_deg": float(route_row["theta_deg"]),
+        "direction": np.asarray(route_row["direction"]).tolist(),
+        "trajectory": seed,
+        "polyline": polyline,
+        "verification_accepted": bool(verification.accepted),
+        "verification_min_distance_m": float(verification.min_distance),
+        "verification_checks": checks,
+        "tabletop_passed": bool(tabletop.get("passed", False)),
+        "tabletop_workspace_guard": tabletop,
+        "joint_arclength": float(route_row.get("joint_arclength", 0.0)),
+        "seed_safe": seed_safe,
+    }
 
 
 def build_stationary_virtual_fast_route(
@@ -2024,6 +2079,7 @@ def plan_stationary_fast_terminal_bypass(
     # one second for polyline construction and final verification, then use
     # the remaining terminal budget as the actual route deadline.
     route_budget_ms = max(0.0, total_max_ms - 1000.0)
+    boundary_routes: list[dict[str, Any]] = []
     if bool(getattr(runtime_args, "stationary_boundary_terminal", True)):
         boundary_routes, boundary_audit = build_stationary_boundary_routes(
             runtime_args, config, model, q_start=np.asarray(q_start), q_goal=np.asarray(q_goal),
@@ -2106,6 +2162,58 @@ def plan_stationary_fast_terminal_bypass(
         }
         trial.write_json(trial_dir / "authorization_summary.json", payload)
         return payload, None
+    # Verify the best few topology routes independently.  Coarse clearance is
+    # only a screen; smoothing can change the limiting point, so final route
+    # selection is made from complete NUBS verification results.
+    if boundary_routes:
+        verified_routes: list[dict[str, Any]] = []
+        for route_index, route_row in enumerate(boundary_routes[:3]):
+            if time.perf_counter() >= planner_started + total_max_ms / 1000.0:
+                break
+            verified = build_and_verify_stationary_boundary_seed(
+                runtime_args, config, model, route_row=route_row,
+                q_start=np.asarray(q_start), q_goal=np.asarray(q_goal),
+                geometry=geometry, fresh=fresh,
+                trial_dir=trial_dir / f"boundary_full_verify_{route_index + 1:02d}",
+            )
+            verified_routes.append(verified)
+        safe_routes = [row for row in verified_routes if row["seed_safe"]]
+        route_audit["full_verify_candidate_count_requested"] = min(3, len(boundary_routes))
+        route_audit["full_verify_candidate_count_attempted"] = len(verified_routes)
+        route_audit["full_verified_routes"] = [
+            {key: value for key, value in row.items() if key not in {"trajectory", "polyline", "tabletop_workspace_guard"}}
+            for row in verified_routes
+        ]
+        if safe_routes:
+            selected = max(safe_routes, key=lambda row: (row["verification_min_distance_m"], -row["joint_arclength"]))
+            seed_path = trial_dir / "authorized_terminal_goal.csv"
+            trial.save_trajectory_csv(seed_path, selected["trajectory"], dt=0.01)
+            total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+            authorized = total_elapsed_ms <= total_max_ms
+            payload = {
+                "status": "TERMINAL_GOAL_AUTHORIZED" if authorized else "STATIONARY_FAST_TERMINAL_BYPASS_HOLD",
+                "authorized": authorized, "planner_mode": "stationary_fast_terminal_bypass",
+                "full_optimizer_used": False, "duration_s": float(selected["trajectory"].total_duration),
+                "segments": int(getattr(runtime_args, "stationary_fast_terminal_segments", 12)),
+                "candidate_total_duration_s": float(selected["trajectory"].total_duration),
+                "tail_fixed_to_goal": True,
+                "verification_min_distance_m": selected["verification_min_distance_m"],
+                "verification_checks": selected["verification_checks"],
+                "tabletop_workspace_guard": selected["tabletop_workspace_guard"],
+                "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
+                "stationary_terminal_total_budget_ms": total_max_ms,
+                "stationary_terminal_target_ms": total_target_ms,
+                "total_budget_met": bool(authorized),
+                "authorized_trajectory_csv": str(seed_path),
+                "virtual_fast_route": route_audit,
+                "selected_direction_index": selected["route_index"],
+                "selected_direction": selected["direction"],
+                "selected_theta_deg": selected["theta_deg"],
+                "selection_reason": "full_verified_best_clearance",
+                "forecast_semantics": "confirmed_stationary_frozen_occupancy",
+            }
+            trial.write_json(trial_dir / "authorization_summary.json", payload)
+            return payload, selected["trajectory"] if authorized else None
     duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 8.0))
     segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 12)))
     durations = np.full(segments, duration / segments, dtype=np.float64)

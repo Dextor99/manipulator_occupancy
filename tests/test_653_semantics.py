@@ -3320,6 +3320,13 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "boundary_route_deadline_exhausted" in one_source
     assert "escape_phase_not_completed" in one_source
     assert "deadline_perf" in route_source
+    seed_source = inspect.getsource(event_replan.build_and_verify_stationary_boundary_seed)
+    assert "verification_checks" in seed_source
+    assert "seed_safe" in seed_source
+    plan_source = inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
+    assert "boundary_routes[:3]" in plan_source
+    assert "full_verify_candidate_count_attempted" in plan_source
+    assert "selection_reason" in plan_source
 
 
 def test_stationary_capture_and_replay_contract_is_fail_closed():
