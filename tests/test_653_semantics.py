@@ -3337,6 +3337,14 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "build_stationary_boundary_graph_route" in route_source
     assert "retreat" in inspect.getsource(event_replan.build_stationary_boundary_graph_route)
     assert "bypass_forward" in inspect.getsource(event_replan.build_stationary_boundary_graph_route)
+    graph_source = inspect.getsource(event_replan.build_stationary_boundary_graph_route)
+    connector_source = inspect.getsource(event_replan.build_bounded_bidirectional_connector_route)
+    seed_source = inspect.getsource(event_replan.build_and_verify_stationary_boundary_seed)
+    assert "min_clearance_m=floor" in graph_source
+    assert "best_by_cell" in graph_source
+    assert "connector_deadline_exhausted" in connector_source
+    assert "shortcut_stationary_route" in inspect.getsource(event_replan.build_stationary_boundary_routes)
+    assert "curvature_weight" in seed_source
     assert "max_qd_actual_rad_s" in seed_source
     assert "max_qdd_actual_rad_s2" in seed_source
 
