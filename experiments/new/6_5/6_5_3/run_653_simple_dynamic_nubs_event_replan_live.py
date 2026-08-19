@@ -23,6 +23,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -1963,6 +1964,7 @@ def build_bounded_bidirectional_connector_route(
     q_goal: np.ndarray,
     geometry: dict[str, Any],
     deadline_perf: float | None,
+    seed: int = 11,
 ) -> tuple[np.ndarray | None, dict[str, Any]]:
     """Oracle-derived bounded bidirectional joint-space connector."""
     floor = float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08))
@@ -1974,9 +1976,9 @@ def build_bounded_bidirectional_connector_route(
         np.zeros(3, dtype=np.float64),
     )
     evaluator, _, limits = trial.make_risk_stack(config, model, forecast)
-    rng = np.random.default_rng(653)
+    rng = np.random.default_rng(int(seed))
     step = 0.10
-    edge_samples = 5
+    edge_samples = 7
     trees = [[{"q": np.asarray(q_start, dtype=np.float64).copy(), "parent": None}],
              [{"q": np.asarray(q_goal, dtype=np.float64).copy(), "parent": None}]]
     audit = {"connector": True, "seed": 653, "step_rad": step, "edge_samples": edge_samples,
@@ -2027,7 +2029,8 @@ def build_bounded_bidirectional_connector_route(
                     route = np.asarray(left + right[::-1], dtype=np.float64)
                     audit.update({"connected": True, "failure_reason": None})
                     return route, audit
-        trees[0], trees[1] = trees[1], trees[0]
+        # Keep the start/goal roots stable; this matches the validated
+        # offline oracle and makes returned route orientation unambiguous.
     return None, audit
 
 
@@ -2075,9 +2078,17 @@ def build_stationary_boundary_routes(
     evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
     routes = []
     direction_audit = []
+    def selected_route_clearance(route):
+        return min((float(screen_boundary_edge(
+            evaluator, forecast, model, route[index], route[index + 1],
+            tcp_link=tcp_link,
+            topology_floor_m=float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)),
+            min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+            samples=7,
+        )["min_distance_m"]) for index in range(len(route) - 1)), default=math.inf)
     # Once the bounded oracle has established that the safe C-space can be
     # connected, use the direction-biased graph as the primary initializer.
-    graph_deadline = (min(deadline_perf, time.perf_counter() + 1.5)
+    graph_deadline = (min(deadline_perf, time.perf_counter() + 1.0)
                       if deadline_perf is not None else None)
     graph_route, graph_audit = build_stationary_boundary_graph_route(
         runtime_args, config, model, q_start=q_start, q_goal=q_goal,
@@ -2085,12 +2096,20 @@ def build_stationary_boundary_routes(
         tcp_link=tcp_link, deadline_perf=graph_deadline,
     )
     if graph_route is not None:
+        if np.max(np.abs(graph_route[0] - np.asarray(q_start))) > 1.0e-9:
+            if np.max(np.abs(graph_route[-1] - np.asarray(q_start))) <= 1.0e-9:
+                graph_route = graph_route[::-1]
+            else:
+                graph_route = None
+        if graph_route is not None and np.max(np.abs(graph_route[-1] - np.asarray(q_goal))) > 1.0e-9:
+            graph_route = None
+    if graph_route is not None:
         graph_route = shortcut_stationary_route(
             graph_route, evaluator, forecast, model, tcp_link=tcp_link,
             floor=float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)),
             min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
         )
-        graph_min_clearance = float(graph_audit.get("best_edge_min_distance_m", math.inf))
+        graph_min_clearance = selected_route_clearance(graph_route)
         graph_row = {
             "index": -1, "theta_deg": 0.0,
             "direction": np.asarray(frame["lateral"], dtype=np.float64).tolist(),
@@ -2101,13 +2120,28 @@ def build_stationary_boundary_routes(
             "audit": graph_audit,
         }
         routes.append(graph_row)
-        return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()},
-                        "direction_candidates": direction_audit,
-                        "graph_audit": graph_audit, "connected_route_count": len(routes)}
-    connector_route, connector_audit = build_bounded_bidirectional_connector_route(
-        runtime_args, config, model, q_start=q_start, q_goal=q_goal,
-        geometry=geometry, deadline_perf=deadline_perf,
-    )
+    connector_route = None
+    connector_audit = {"connector": True, "attempts": []}
+    for connector_seed in (11, 23, 47):
+        if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+            break
+        candidate_route, candidate_audit = build_bounded_bidirectional_connector_route(
+            runtime_args, config, model, q_start=q_start, q_goal=q_goal,
+            geometry=geometry, deadline_perf=deadline_perf, seed=connector_seed,
+        )
+        connector_audit["attempts"].append(candidate_audit)
+        if candidate_route is not None:
+            connector_route, connector_audit = candidate_route, {**candidate_audit,
+                "attempts": connector_audit["attempts"], "selected_seed": connector_seed}
+            break
+    if connector_route is not None:
+        if np.max(np.abs(connector_route[0] - np.asarray(q_start))) > 1.0e-9:
+            if np.max(np.abs(connector_route[-1] - np.asarray(q_start))) <= 1.0e-9:
+                connector_route = connector_route[::-1]
+            else:
+                connector_route = None
+        if connector_route is not None and np.max(np.abs(connector_route[-1] - np.asarray(q_goal))) > 1.0e-9:
+            connector_route = None
     if connector_route is not None:
         connector_route = shortcut_stationary_route(
             connector_route, evaluator, forecast, model,
@@ -2121,12 +2155,17 @@ def build_stationary_boundary_routes(
             "graph_route": False, "connector_route": True, "connected_to_goal": True,
             "route_points": connector_route,
             "joint_arclength": float(np.sum(np.linalg.norm(np.diff(connector_route, axis=0), axis=1))),
-            "coarse_min_clearance_m": float(connector_audit.get("best_edge_min_distance_m", math.inf)),
+            "coarse_min_clearance_m": selected_route_clearance(connector_route),
             "audit": connector_audit,
         }
-        return [connector_row], {"task_frame": {key: value.tolist() for key, value in frame.items()},
+        routes.append(connector_row)
+        return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()},
             "direction_candidates": direction_audit, "graph_audit": graph_audit,
-            "connector_audit": connector_audit, "connected_route_count": 1}
+            "connector_audit": connector_audit, "connected_route_count": len(routes)}
+    if routes:
+        return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()},
+            "direction_candidates": direction_audit, "graph_audit": graph_audit,
+            "connector_audit": connector_audit, "connected_route_count": len(routes)}
     direction_audit.append({"graph_route": False, "connected_to_goal": False, "audit": graph_audit})
     for direction_index, item in enumerate(directions):
         direction_started = time.perf_counter()
@@ -2200,10 +2239,27 @@ def build_and_verify_stationary_boundary_seed(
     candidates = []
     for curvature_weight, durations in profiles:
         candidate = trial.NUBSTrajectory6D().generate(polyline[1:-1], head, tail, durations)
-        verification_candidate = verifier.verify(
-            candidate, forecast, current_q=np.asarray(q_start), current_qd=np.zeros(6),
-            current_qdd=np.zeros(6), q_goal=np.asarray(q_goal), solver_success=True,
+        quick_samples = candidate.sample(np.linspace(0.0, candidate.total_duration,
+            max(2, int(np.ceil(candidate.total_duration / 0.04)) + 1)))
+        dynamic_ok = bool(
+            np.all(np.abs(quick_samples.qd) <= np.asarray(verifier.limits.qd_max)[None, :])
+            and np.all(np.abs(quick_samples.qdd) <= np.asarray(verifier.limits.qdd_max)[None, :])
         )
+        if dynamic_ok:
+            verification_candidate = verifier.verify(
+                candidate, forecast, current_q=np.asarray(q_start), current_qd=np.zeros(6),
+                current_qdd=np.zeros(6), q_goal=np.asarray(q_goal), solver_success=True,
+            )
+        else:
+            verification_candidate = SimpleNamespace(
+                accepted=False, min_distance=-math.inf,
+                checks={"solver_ok": True, "finite_ok": True, "goal_ok": True,
+                    "distance_ok": False, "position_ok": True, "velocity_ok": False,
+                    "acceleration_ok": False, "continuity_q_ok": True,
+                    "continuity_qd_ok": True, "continuity_qdd_ok": True,
+                    "forecast_horizon_ok": True},
+                max_qd_violation=math.inf, max_qdd_violation=math.inf,
+            )
         tabletop_candidate = trial.gripper_base_workspace_guard(
             candidate, model, min_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46))
         )
@@ -2592,7 +2648,7 @@ def plan_stationary_fast_terminal_bypass(
             "stationary_terminal_total_budget_ms": total_max_ms,
             "stationary_terminal_target_ms": total_target_ms,
             "total_budget_met": total_elapsed_ms <= total_max_ms,
-            "fast_invoked_for_route": True,
+            "fast_invoked_for_route": False,
             "reason": route_audit.get("reason", "virtual_fast_route_not_connected"),
         }
         trial.write_json(trial_dir / "authorization_summary.json", payload)
@@ -2652,23 +2708,33 @@ def plan_stationary_fast_terminal_bypass(
         # A connected coarse route that fails every deterministic retiming
         # profile is not a valid terminal seed.  Do not fall through with its
         # stale polyline and risk a q_goal-tail/runtime mismatch.
-        total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
-        payload = {
-            "status": "STATIONARY_FAST_TERMINAL_BYPASS_HOLD",
-            "authorized": False,
-            "planner_mode": "stationary_fast_terminal_bypass",
-            "full_optimizer_used": False,
-            "virtual_fast_route": {**route_audit, "connected_to_goal": False,
-                                    "reason": "boundary_routes_full_verifier_failed"},
-            "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
-            "stationary_terminal_total_budget_ms": total_max_ms,
-            "stationary_terminal_target_ms": total_target_ms,
-            "total_budget_met": total_elapsed_ms <= total_max_ms,
-            "fast_invoked_for_route": False,
-            "reason": "boundary_routes_full_verifier_failed",
-        }
-        trial.write_json(trial_dir / "authorization_summary.json", payload)
-        return payload, None
+        # A real failed route is allowed one explicit production-Fast
+        # fallback, but only with a fresh budget and an actual q_start/q_goal
+        # route object.  Never fall through with a stale/empty polyline.
+        remaining_deadline = planner_started + total_max_ms / 1000.0
+        route_points, fast_route_audit = build_stationary_virtual_fast_route(
+            base_fast, runtime_args, config, model,
+            q_escape_start=q_escape_start, q_start=q_start, q_goal=q_goal,
+            fresh=fresh, geometry=geometry, risk_links=risk_links,
+            trial_dir=trial_dir / "stationary_boundary_fast_fallback",
+            max_virtual_steps=1,
+            samples_per_local=3,
+            deadline_perf=remaining_deadline,
+        )
+        route_audit = {**route_audit, "connected_to_goal": bool(route_points is not None),
+                       "reason": "boundary_routes_full_verifier_failed",
+                       "fast_fallback_invoked": True,
+                       "fast_fallback_audit": fast_route_audit}
+        if route_points is None or not bool(fast_route_audit.get("connected_to_goal", False)):
+            total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+            payload = {"status": "STATIONARY_FAST_TERMINAL_BYPASS_HOLD", "authorized": False,
+                "planner_mode": "stationary_fast_terminal_bypass", "full_optimizer_used": False,
+                "virtual_fast_route": route_audit, "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
+                "stationary_terminal_total_budget_ms": total_max_ms,
+                "total_budget_met": total_elapsed_ms <= total_max_ms,
+                "fast_invoked_for_route": True, "reason": "boundary_routes_full_verifier_failed"}
+            trial.write_json(trial_dir / "authorization_summary.json", payload)
+            return payload, None
     duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 8.0))
     segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 12)))
     durations = np.full(segments, duration / segments, dtype=np.float64)
