@@ -3239,7 +3239,13 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "plan_stationary_fast_terminal_bypass" in source
     assert "stationary_fast_terminal_bypass" in source
     assert "STATIONARY_FAST_TERMINAL_BYPASS_HOLD" in source
-    assert 'if not terminal.get("authorized", False) and can_continue_local_after_terminal_block' in source
+    # A successful stationary bypass must fall through to the terminal
+    # executor; recovery/failure returns are guarded by a second authorization
+    # check rather than being evaluated unconditionally in the direct-failure
+    # block.
+    assert source.count('if not terminal.get("authorized", False):') >= 2
+    assert 'if not terminal.get("authorized", False):\n                if bool(getattr(event_args, "stationary_terminal_full_plan", False))' in source
+    assert 'if can_continue_local_after_terminal_block(tail_monitor, terminal):' in source
     assert 'context["local_artifacts"]["q_now"]' in source
     planner_source = inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert 'fast_args.fast_max_ms = remaining_ms' in planner_source

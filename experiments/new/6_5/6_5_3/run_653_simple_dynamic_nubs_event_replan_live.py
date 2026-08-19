@@ -3124,57 +3124,63 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 terminal_dir = bypass_dir
                 result["terminal_authorization"] = terminal
                 result["terminal_planner_mode"] = "stationary_fast_terminal_bypass"
-            if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
-                result["status"] = "STATIONARY_FULL_CCRO_HOLD"
+            # A successful stationary bypass replaces the rejected direct
+            # authorization and must fall through to the normal terminal
+            # precommand barriers/executor.  Keep all failure returns behind
+            # a second authorization check; otherwise the old direct-terminal
+            # failure block would discard an already-authorized fallback.
+            if not terminal.get("authorized", False):
+                if bool(getattr(event_args, "stationary_terminal_full_plan", False)):
+                    result["status"] = "STATIONARY_FULL_CCRO_HOLD"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                if can_continue_local_after_terminal_block(tail_monitor, terminal):
+                    worker = context.get("persistent_worker")
+                    if worker is None:
+                        result["status"] = "TERMINAL_PATH_BLOCKED_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
+                        trial.write_json(trial_dir / "event_replan_summary.json", result)
+                        return result
+                    stationary_recovery, latest = wait_for_stationary_safe_recovery_state(
+                        worker, args, timeout_s=float(args.prediction_horizon_s)
+                    )
+                    result["terminal_blocked_stationary_guard_recovery"] = stationary_recovery
+                    if not stationary_recovery.get("ready", False) or latest is None:
+                        result["status"] = "TERMINAL_PATH_BLOCKED_STATIONARY_GUARD_NOT_RECOVERED_OPERATOR_INTERVENTION_REQUIRED"
+                        trial.write_json(trial_dir / "event_replan_summary.json", result)
+                        return result
+                    raw_guard_latest = float(latest.get("raw_guard_distance_m", float("-inf")))
+                    fresh_latest, frames_latest, _points_latest, geometry_latest = fresh_from_persistent_snapshot(latest)
+                    if not fresh_latest.get("accepted", False) or geometry_latest is None:
+                        result["status"] = "TERMINAL_PATH_BLOCKED_LATEST_GEOMETRY_NOT_READY_OPERATOR_INTERVENTION_REQUIRED"
+                        trial.write_json(trial_dir / "event_replan_summary.json", result)
+                        return result
+                    result["terminal_path_blocked_replan_requested"] = True
+                    result["terminal_path_blocked_from_local_index"] = int(completed_local_index)
+                    result["terminal_blocked_latest_raw_guard_m"] = raw_guard_latest
+                    next_context = dict(context)
+                    next_context.update(
+                        {
+                            "local_artifacts": current_local_artifacts,
+                            "fresh3": fresh_latest,
+                            "fresh3_frames": frames_latest,
+                            "fresh3_geometry": geometry_latest,
+                            "fresh3_guard_distance": raw_guard_latest,
+                            "execution_summary": current_execution_summary,
+                            "local1_interrupted": current_local_interrupted,
+                            "replan_depth": int(completed_local_index - 1),
+                            "replan_started_monotonic": replan_started,
+                            "failed_replans": failed_replans,
+                            "force_goal_directed_local": True,
+                        }
+                    )
+                    next_result = handler(**next_context)
+                    result["terminal_path_blocked_replan"] = next_result
+                    result["status"] = next_result.get("status", "TERMINAL_PATH_BLOCKED_LOCAL_CONTINUATION")
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                result["status"] = "TERMINAL_AUTHORIZATION_FAILED_OPERATOR_INTERVENTION_REQUIRED"
                 trial.write_json(trial_dir / "event_replan_summary.json", result)
                 return result
-            if not terminal.get("authorized", False) and can_continue_local_after_terminal_block(tail_monitor, terminal):
-                worker = context.get("persistent_worker")
-                if worker is None:
-                    result["status"] = "TERMINAL_PATH_BLOCKED_TRACKER_UNAVAILABLE_OPERATOR_INTERVENTION_REQUIRED"
-                    trial.write_json(trial_dir / "event_replan_summary.json", result)
-                    return result
-                stationary_recovery, latest = wait_for_stationary_safe_recovery_state(
-                    worker, args, timeout_s=float(args.prediction_horizon_s)
-                )
-                result["terminal_blocked_stationary_guard_recovery"] = stationary_recovery
-                if not stationary_recovery.get("ready", False) or latest is None:
-                    result["status"] = "TERMINAL_PATH_BLOCKED_STATIONARY_GUARD_NOT_RECOVERED_OPERATOR_INTERVENTION_REQUIRED"
-                    trial.write_json(trial_dir / "event_replan_summary.json", result)
-                    return result
-                raw_guard_latest = float(latest.get("raw_guard_distance_m", float("-inf")))
-                fresh_latest, frames_latest, _points_latest, geometry_latest = fresh_from_persistent_snapshot(latest)
-                if not fresh_latest.get("accepted", False) or geometry_latest is None:
-                    result["status"] = "TERMINAL_PATH_BLOCKED_LATEST_GEOMETRY_NOT_READY_OPERATOR_INTERVENTION_REQUIRED"
-                    trial.write_json(trial_dir / "event_replan_summary.json", result)
-                    return result
-                result["terminal_path_blocked_replan_requested"] = True
-                result["terminal_path_blocked_from_local_index"] = int(completed_local_index)
-                result["terminal_blocked_latest_raw_guard_m"] = raw_guard_latest
-                next_context = dict(context)
-                next_context.update(
-                    {
-                        "local_artifacts": current_local_artifacts,
-                        "fresh3": fresh_latest,
-                        "fresh3_frames": frames_latest,
-                        "fresh3_geometry": geometry_latest,
-                        "fresh3_guard_distance": raw_guard_latest,
-                        "execution_summary": current_execution_summary,
-                        "local1_interrupted": current_local_interrupted,
-                        "replan_depth": int(completed_local_index - 1),
-                        "replan_started_monotonic": replan_started,
-                        "failed_replans": failed_replans,
-                        "force_goal_directed_local": True,
-                    }
-                )
-                next_result = handler(**next_context)
-                result["terminal_path_blocked_replan"] = next_result
-                result["status"] = next_result.get("status", "TERMINAL_PATH_BLOCKED_LOCAL_CONTINUATION")
-                trial.write_json(trial_dir / "event_replan_summary.json", result)
-                return result
-            result["status"] = "TERMINAL_AUTHORIZATION_FAILED_OPERATOR_INTERVENTION_REQUIRED"
-            trial.write_json(trial_dir / "event_replan_summary.json", result)
-            return result
         if terminal_trajectory is None:
             result["status"] = "TERMINAL_AUTHORIZED_TRAJECTORY_MISSING_OPERATOR_INTERVENTION_REQUIRED"
             trial.write_json(trial_dir / "event_replan_summary.json", result)
