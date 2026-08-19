@@ -3652,3 +3652,16 @@ def test_persistent_snapshot_preserves_track_identity_for_terminal_gate():
     snapshot = state.snapshot(now_timestamp=10.1)
     assert snapshot["track_id"] == 7
     assert dynamic_nubs_v3.PersistentObstacleState.snapshot.__name__ == "snapshot"
+
+
+def test_persistent_worker_snapshot_contract_forwards_track_identity():
+    worker_snapshot_source = inspect.getsource(dynamic_nubs_v3.PersistentPerceptionWorker.snapshot)
+    worker_wait_source = inspect.getsource(dynamic_nubs_v3.PersistentPerceptionWorker.wait_for_newer_state)
+    assert "self._state.snapshot" in worker_snapshot_source
+    assert "self._state.snapshot" in worker_wait_source
+    assert '"track_id"' in inspect.getsource(dynamic_nubs_v3.PersistentObstacleState.snapshot)
+    # The terminal gate must continue to reject a genuinely different track;
+    # this protects the fail-closed behavior while the positive identity
+    # contract is exercised above.
+    monitor_source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    assert "stationary_terminal_track_changed" in monitor_source
