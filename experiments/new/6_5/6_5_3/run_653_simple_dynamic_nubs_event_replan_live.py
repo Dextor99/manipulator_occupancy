@@ -1566,6 +1566,183 @@ def _stationary_virtual_anchors(
     return np.asarray(anchors), {"steps": audit, "anchor_count": len(anchors), "connected_to_goal": connected_to_goal, "connected_step": connected_step, "connection_threshold_m": virtual_topology_floor_m, "virtual_topology_floor_m": virtual_topology_floor_m, "final_authorization_clearance_m": authorization_clearance_m, "robust_preference_m": robust_target_m, "max_rollout_steps": int(rollout_steps), "failure_reason": None if connected_to_goal else (break_reason or "max_rollout_steps_without_goal_connection")}
 
 
+def screen_boundary_edge(
+    evaluator: Any,
+    forecast: Any,
+    model: Any,
+    q0: np.ndarray,
+    q1: np.ndarray,
+    *,
+    tcp_link: str,
+    topology_floor_m: float,
+    min_tcp_z_m: float,
+    samples: int = 9,
+) -> dict[str, Any]:
+    """Coarse topology screen; final authorization remains the full verifier."""
+    screen = sampled_joint_segment_clearance(
+        evaluator, forecast, np.asarray(q0), np.asarray(q1),
+        samples=int(samples), density="medium",
+    )
+    min_z = math.inf
+    for alpha in np.linspace(0.0, 1.0, max(2, int(samples))):
+        q = (1.0 - float(alpha)) * np.asarray(q0) + float(alpha) * np.asarray(q1)
+        min_z = min(min_z, float(live.simple.tcp_position(model, q, tcp_link)[2]))
+    return {
+        "accepted": bool(float(screen["min_distance_m"]) >= float(topology_floor_m) and min_z >= float(min_tcp_z_m)),
+        "min_distance_m": float(screen["min_distance_m"]),
+        "nearest_link": screen.get("nearest_link"),
+        "min_tcp_z_m": float(min_z),
+        "topology_floor_m": float(topology_floor_m),
+    }
+
+
+def build_one_stationary_boundary_route(
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    evaluator: Any,
+    forecast: Any,
+    geometry: dict[str, Any],
+    q_start: np.ndarray,
+    q_goal: np.ndarray,
+    direction: np.ndarray,
+    task_frame: dict[str, np.ndarray],
+    tcp_link: str,
+    max_escape_steps: int,
+    max_pass_steps: int,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Build one fixed-topology escape/pass route without repeated Fast calls."""
+    q = np.asarray(q_start, dtype=np.float64).copy()
+    goal = np.asarray(q_goal, dtype=np.float64)
+    d = bypass.normalized(np.asarray(direction, dtype=np.float64))
+    _, support_upper = bypass.multisphere_support_interval(geometry, d)
+    floor = float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08))
+    robust = float(getattr(runtime_args, "planning_robust_target_m", 0.11))
+    side_limit = float(getattr(runtime_args, "continuation_side_m", 0.04))
+    forward_limit = float(getattr(runtime_args, "forward_m", 0.05))
+    # Stationary topology anchors are virtual seed geometry.  They may use
+    # the already-reviewed terminal virtual cap; the production dynamic local
+    # cap remains unchanged and the assembled terminal trajectory is still
+    # subject to the full dynamics verifier.
+    max_delta = float(getattr(
+        runtime_args, "stationary_fast_terminal_virtual_max_joint_delta_rad",
+        getattr(runtime_args, "max_joint_delta_rad", 0.12),
+    ))
+    preserve_height = abs(float(np.dot(d, bypass.TABLE_UP))) < 0.10
+    route = [q.copy()]
+    audit: list[dict[str, Any]] = []
+    escaped = False
+    total_steps = max(1, int(max_escape_steps)) + max(1, int(max_pass_steps))
+    for step_index in range(total_steps):
+        risk = evaluator.configuration(q, forecast, 0.0, density="medium", with_gradient=False)
+        if risk.robot_point is None:
+            return None, {"connected_to_goal": False, "reason": "missing_limiting_robot_point", "steps": audit}
+        tcp_now = live.simple.tcp_position(model, q, tcp_link)
+        tcp_goal = live.simple.tcp_position(model, goal, tcp_link)
+        connection = confirmed_stationary_goal_connection(
+            evaluator, model, forecast, q, goal, tcp_link=tcp_link,
+            min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
+            min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+        )
+        if connection.get("connectable", False):
+            route.append(goal.copy())
+            return np.asarray(route), {"connected_to_goal": True, "steps": audit, "connection": connection}
+        projection = float(np.dot(np.asarray(risk.robot_point), d))
+        required = max(0.0, support_upper + robust - projection)
+        phase = "escape" if not escaped else "pass"
+        if not escaped and required <= 0.0:
+            escaped = True
+            phase = "pass"
+        side_step = min(required, side_limit)
+        remaining_forward = max(0.0, float(np.dot(tcp_goal - tcp_now, task_frame["task"])))
+        forward_step = min(forward_limit, remaining_forward) if escaped else 0.0
+        selected = None
+        attempts = []
+        for scale in (1.0, 0.75, 0.5):
+            goals, mapping = bypass.goal_directed_side_continuation_candidates(
+                model, q, tcp_position=tcp_now, goal_position=tcp_goal,
+                risk_link=str(risk.nearest_link), risk_position=np.asarray(risk.robot_point),
+                risk_point_q=q, established_side=d, forward_m=forward_step,
+                side_m=side_step * scale, side_weights=(1.0,), tcp_link=tcp_link,
+                max_joint_delta_rad=max_delta, tabletop_parallel_side=False,
+                preserve_tcp_height=preserve_height,
+            )
+            if not goals:
+                attempts.append({"scale": scale, "accepted": False, "reason": "no_candidate"})
+                continue
+            candidate_q = np.asarray(goals[0]["q_goal"], dtype=np.float64)
+            screen = screen_boundary_edge(
+                evaluator, forecast, model, q, candidate_q, tcp_link=tcp_link,
+                topology_floor_m=floor,
+                min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+            )
+            attempts.append({"scale": scale, "accepted": bool(screen["accepted"]), "screen": screen, "mapping": mapping})
+            if screen["accepted"]:
+                selected = (candidate_q, screen, mapping)
+                break
+        if selected is None:
+            return None, {"connected_to_goal": False, "reason": "boundary_edge_below_topology_floor", "phase": phase, "steps": audit, "attempts": attempts}
+        q, screen, mapping = selected
+        route.append(q.copy())
+        task_progress = float(np.dot(live.simple.tcp_position(model, q, tcp_link) - tcp_now, task_frame["task"]))
+        audit.append({
+            "step": step_index + 1, "phase": phase, "direction": d.tolist(),
+            "support_upper_m": float(support_upper), "required_escape_m": float(required),
+            "side_step_m": float(side_step), "forward_step_m": float(forward_step),
+            "edge_min_distance_m": float(screen["min_distance_m"]),
+            "min_tcp_z_m": float(screen["min_tcp_z_m"]), "task_progress_m": task_progress,
+            "attempts": attempts,
+        })
+        if not escaped and float(np.dot(live.simple.tcp_position(model, q, tcp_link), d)) >= support_upper + robust:
+            escaped = True
+    return None, {"connected_to_goal": False, "reason": "boundary_route_step_limit", "steps": audit, "escaped": escaped}
+
+
+def build_stationary_boundary_routes(
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    q_start: np.ndarray,
+    q_goal: np.ndarray,
+    geometry: dict[str, Any],
+    direction_count: int,
+    max_escape_steps: int,
+    max_pass_steps: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Search task-relative topology candidates independently."""
+    tcp_link = str(getattr(runtime_args, "tcp_link", "gripper_base_link"))
+    tcp_start = live.simple.tcp_position(model, np.asarray(q_start), tcp_link)
+    tcp_goal = live.simple.tcp_position(model, np.asarray(q_goal), tcp_link)
+    frame = bypass.build_task_relative_frame(tcp_start, tcp_goal)
+    directions = bypass.sample_task_relative_bypass_directions(frame, count=int(direction_count), allow_downward=False)
+    forecast = v3.v3_execution_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+    )
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    routes = []
+    direction_audit = []
+    for item in directions:
+        route, audit = build_one_stationary_boundary_route(
+            runtime_args, config, model, evaluator=evaluator, forecast=forecast,
+            geometry=geometry, q_start=q_start, q_goal=q_goal,
+            direction=item["direction"], task_frame=frame, tcp_link=tcp_link,
+            max_escape_steps=max_escape_steps, max_pass_steps=max_pass_steps,
+        )
+        row = {**item, "connected_to_goal": route is not None, "audit": audit}
+        direction_audit.append(row)
+        if route is not None:
+            row["route_points"] = route
+            row["joint_arclength"] = float(np.sum(np.linalg.norm(np.diff(route, axis=0), axis=1)))
+            row["coarse_min_clearance_m"] = float(min((x.get("edge_min_distance_m", math.inf) for x in audit.get("steps", [])), default=math.inf))
+            routes.append(row)
+    routes.sort(key=lambda row: (-float(row["coarse_min_clearance_m"]), float(row["joint_arclength"])))
+    return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()}, "direction_candidates": direction_audit, "connected_route_count": len(routes)}
+
+
 def build_stationary_virtual_fast_route(
     base_fast: Any,
     runtime_args: argparse.Namespace,
@@ -1833,14 +2010,52 @@ def plan_stationary_fast_terminal_bypass(
     # one second for polyline construction and final verification, then use
     # the remaining terminal budget as the actual route deadline.
     route_budget_ms = max(0.0, total_max_ms - 1000.0)
-    route_points, route_audit = build_stationary_virtual_fast_route(
-        base_fast, runtime_args, config, model, q_escape_start=q_escape_start,
-        q_start=q_start, q_goal=q_goal, fresh=fresh, geometry=geometry,
-        risk_links=risk_links, trial_dir=trial_dir / "virtual_fast_route",
-        max_virtual_steps=int(getattr(runtime_args, "stationary_fast_terminal_virtual_fast_steps", 6)),
-        samples_per_local=int(getattr(runtime_args, "stationary_fast_terminal_samples_per_local", 3)),
-        deadline_perf=planner_started + route_budget_ms / 1000.0,
-    )
+    if bool(getattr(runtime_args, "stationary_boundary_terminal", True)):
+        boundary_routes, boundary_audit = build_stationary_boundary_routes(
+            runtime_args, config, model, q_start=np.asarray(q_start), q_goal=np.asarray(q_goal),
+            geometry=geometry,
+            direction_count=int(getattr(runtime_args, "stationary_boundary_direction_count", 8)),
+            max_escape_steps=int(getattr(runtime_args, "stationary_boundary_max_escape_steps", 4)),
+            max_pass_steps=int(getattr(runtime_args, "stationary_boundary_max_pass_steps", 4)),
+        )
+        if boundary_routes:
+            selected_route = boundary_routes[0]
+            route_points = np.asarray(selected_route["route_points"], dtype=np.float64)
+            route_audit = {
+                "connected_to_goal": True,
+                "planner": "task_relative_boundary_route",
+                "selected_direction_index": int(selected_route["index"]),
+                "selected_direction": np.asarray(selected_route["direction"]).tolist(),
+                "selected_theta_deg": float(selected_route["theta_deg"]),
+                "coarse_min_clearance_m": float(selected_route["coarse_min_clearance_m"]),
+                "joint_arclength": float(selected_route["joint_arclength"]),
+                "boundary_audit": boundary_audit,
+            }
+        elif bool(getattr(runtime_args, "stationary_legacy_virtual_fast_fallback", False)):
+            route_points, route_audit = build_stationary_virtual_fast_route(
+                base_fast, runtime_args, config, model, q_escape_start=q_escape_start,
+                q_start=q_start, q_goal=q_goal, fresh=fresh, geometry=geometry,
+                risk_links=risk_links, trial_dir=trial_dir / "virtual_fast_route",
+                max_virtual_steps=int(getattr(runtime_args, "stationary_fast_terminal_virtual_fast_steps", 6)),
+                samples_per_local=int(getattr(runtime_args, "stationary_fast_terminal_samples_per_local", 3)),
+                deadline_perf=planner_started + route_budget_ms / 1000.0,
+            )
+        else:
+            route_points, route_audit = None, {
+                "connected_to_goal": False,
+                "planner": "task_relative_boundary_route",
+                "reason": "no_boundary_route_connected",
+                "boundary_audit": boundary_audit,
+            }
+    else:
+        route_points, route_audit = build_stationary_virtual_fast_route(
+            base_fast, runtime_args, config, model, q_escape_start=q_escape_start,
+            q_start=q_start, q_goal=q_goal, fresh=fresh, geometry=geometry,
+            risk_links=risk_links, trial_dir=trial_dir / "virtual_fast_route",
+            max_virtual_steps=int(getattr(runtime_args, "stationary_fast_terminal_virtual_fast_steps", 6)),
+            samples_per_local=int(getattr(runtime_args, "stationary_fast_terminal_samples_per_local", 3)),
+            deadline_perf=planner_started + route_budget_ms / 1000.0,
+        )
     rollout_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
     route_audit["route_elapsed_ms"] = rollout_elapsed_ms
     route_audit["route_target_ms"] = total_target_ms

@@ -1964,6 +1964,26 @@ def test_simple_bypass_side_is_orthogonal_to_task_and_points_away():
     assert abs(float(np.dot(task, side))) < 1.0e-12
 
 
+def test_task_relative_frame_and_support_geometry_are_axis_independent():
+    frame = simple_bypass.build_task_relative_frame(
+        np.array([0.0, 0.0, 0.4]), np.array([0.0, 1.0, 0.4])
+    )
+    assert abs(float(np.dot(frame["task"], frame["lateral"]))) < 1.0e-12
+    assert abs(float(np.dot(frame["task"], frame["normal_up"]))) < 1.0e-12
+    directions = simple_bypass.sample_task_relative_bypass_directions(frame, count=8)
+    assert directions
+    assert all(float(row["vertical_component"]) >= -1.0e-9 for row in directions)
+    geometry = {
+        "component_centers": [[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]],
+        "component_base_radii": [0.1, 0.1],
+    }
+    assert simple_bypass.multisphere_support_interval(geometry, np.array([1.0, 0.0, 0.0])) == pytest.approx((-0.1, 0.3))
+    rotated = simple_bypass.build_task_relative_frame(
+        np.array([0.0, 0.0, 0.4]), np.array([-1.0, 0.0, 0.4])
+    )
+    assert abs(float(np.dot(rotated["task"], np.array([-1.0, 0.0, 0.0])))) == pytest.approx(1.0)
+
+
 def test_simple_bypass_generates_six_bounded_joint_goals():
     class Model:
         @staticmethod
@@ -3281,6 +3301,20 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "stationary_confirmed_snapshot.json" in handler_source
     assert "route_hard_budget_ms" in inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert "execute_authorized_trajectory_offline_track" not in route_source
+
+
+def test_stationary_boundary_route_is_task_relative_and_primary():
+    planner_source = inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
+    route_source = inspect.getsource(event_replan.build_stationary_boundary_routes)
+    one_source = inspect.getsource(event_replan.build_one_stationary_boundary_route)
+    assert "stationary_boundary_terminal" in planner_source
+    assert "build_stationary_boundary_routes" in planner_source
+    assert "stationary_legacy_virtual_fast_fallback" in planner_source
+    assert "sample_task_relative_bypass_directions" in route_source
+    assert "multisphere_support_interval" in one_source
+    assert "max_escape_steps" in one_source
+    assert "max_pass_steps" in one_source
+    assert "topology_floor_m" in one_source
 
 
 def test_stationary_capture_and_replay_contract_is_fail_closed():

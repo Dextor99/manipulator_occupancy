@@ -9,6 +9,75 @@ import numpy as np
 TABLE_UP = np.array([0.0, 0.0, 1.0], dtype=np.float64)
 
 
+def build_task_relative_frame(
+    tcp_start: np.ndarray,
+    tcp_goal: np.ndarray,
+    *,
+    world_up: np.ndarray = TABLE_UP,
+) -> dict[str, np.ndarray]:
+    """Build a task-aligned orthonormal frame for topology search."""
+    p0 = np.asarray(tcp_start, dtype=np.float64)
+    pg = np.asarray(tcp_goal, dtype=np.float64)
+    task = normalized(pg - p0)
+    up = np.asarray(world_up, dtype=np.float64)
+    up_proj = up - task * float(np.dot(up, task))
+    if np.linalg.norm(up_proj) > 1.0e-6:
+        normal_up = normalized(up_proj)
+        lateral = normalized(np.cross(normal_up, task))
+    else:
+        axes = (
+            np.array([1.0, 0.0, 0.0], dtype=np.float64),
+            np.array([0.0, 1.0, 0.0], dtype=np.float64),
+        )
+        seed = min(axes, key=lambda axis: abs(float(np.dot(axis, task))))
+        lateral = normalized(seed - task * float(np.dot(seed, task)))
+        normal_up = normalized(np.cross(task, lateral))
+    return {"task": task, "lateral": lateral, "normal_up": normal_up}
+
+
+def sample_task_relative_bypass_directions(
+    frame: dict[str, np.ndarray],
+    *,
+    count: int = 8,
+    allow_downward: bool = False,
+) -> list[dict[str, Any]]:
+    """Sample obstacle-normal directions without world-axis side labels."""
+    if int(count) < 4:
+        raise ValueError("direction count must be at least four")
+    task = normalized(np.asarray(frame["task"], dtype=np.float64))
+    lateral = normalized(np.asarray(frame["lateral"], dtype=np.float64))
+    normal_up = normalized(np.asarray(frame["normal_up"], dtype=np.float64))
+    rows = []
+    for index, theta in enumerate(np.linspace(0.0, 2.0 * np.pi, int(count), endpoint=False)):
+        direction = normalized(np.cos(theta) * lateral + np.sin(theta) * normal_up)
+        direction = normalized(direction - task * float(np.dot(task, direction)))
+        vertical = float(np.dot(direction, TABLE_UP))
+        if not allow_downward and vertical < -1.0e-6:
+            continue
+        rows.append({
+            "index": int(index),
+            "theta_rad": float(theta),
+            "theta_deg": float(np.degrees(theta)),
+            "direction": direction,
+            "vertical_component": vertical,
+        })
+    return rows
+
+
+def multisphere_support_interval(
+    geometry: dict[str, Any],
+    direction: np.ndarray,
+) -> tuple[float, float]:
+    """Return the production multisphere support interval along a direction."""
+    d = normalized(np.asarray(direction, dtype=np.float64))
+    centers = np.asarray(geometry["component_centers"], dtype=np.float64)
+    radii = np.asarray(geometry["component_base_radii"], dtype=np.float64)
+    if centers.ndim != 2 or centers.shape[1] != 3 or radii.shape != (len(centers),):
+        raise ValueError("invalid multisphere geometry")
+    projected = centers @ d
+    return float(np.min(projected - radii)), float(np.max(projected + radii))
+
+
 def tabletop_parallel_lateral_direction(
     task_direction: np.ndarray,
     preferred_direction: np.ndarray,

@@ -129,11 +129,19 @@ def build_parser() -> argparse.ArgumentParser:
         # route deadline while reserving time for finalization/verifier.
         stationary_fast_terminal_route_max_ms=0.0,
         stationary_virtual_topology_floor_m=0.08,
+        stationary_boundary_terminal=True,
+        stationary_legacy_virtual_fast_fallback=False,
+        stationary_boundary_direction_count=8,
+        stationary_boundary_max_escape_steps=4,
+        stationary_boundary_max_pass_steps=4,
         stationary_center_span_m=HOLD_CENTER_SPAN_MAX_M,
         shadow_hold_observation_s=3.0,
         terminal_durations_s="6.0,8.0",
     )
     parser.add_argument("--scene-operator-phrase", default="")
+    parser.add_argument("--stationary-boundary-direction-count", type=int, default=8)
+    parser.add_argument("--stationary-boundary-max-escape-steps", type=int, default=4)
+    parser.add_argument("--stationary-boundary-max-pass-steps", type=int, default=4)
     parser.add_argument(
         "--stationary-capture-only", action="store_true",
         help="stop after confirmed stationary terminal capture; never command terminal motion",
