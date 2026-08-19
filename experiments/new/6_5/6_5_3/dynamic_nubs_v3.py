@@ -243,6 +243,11 @@ class PersistentObstacleState:
         now = float(time.time() if now_timestamp is None else now_timestamp)
         age = max(0.0, now - float(self.timestamp))
         return {
+            # Track identity is part of the published state contract.  The
+            # stationary terminal consistency gate compares this value with
+            # the confirmed track; omitting it turns a stable track into a
+            # false ``track_changed`` result at command time.
+            "track_id": int(self.track_id),
             "timestamp": float(self.timestamp),
             "snapshot_timestamp": now,
             "state_age_s": age,

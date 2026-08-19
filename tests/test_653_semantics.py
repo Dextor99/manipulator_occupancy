@@ -3634,3 +3634,21 @@ def test_stationary_virtual_route_only_accepts_verified_trajectory_and_reaches_f
     assert '"mode": "side_only_clearance_recovery"' in source
     assert '"mode": "locked_side_bypass"' in source
     assert '"attempted_modes": attempted_modes' in source
+
+
+def test_persistent_snapshot_preserves_track_identity_for_terminal_gate():
+    state = dynamic_nubs_v3.PersistentObstacleState(
+        track_id=7,
+        timestamp=10.0,
+        center=np.array([0.5, -0.1, 0.35]),
+        velocity=np.zeros(3),
+        geometry={
+            "covered": True,
+            "component_centers": np.array([[0.5, -0.1, 0.35]]),
+            "component_base_radii": np.array([0.12]),
+        },
+        association_error_m=0.001,
+    )
+    snapshot = state.snapshot(now_timestamp=10.1)
+    assert snapshot["track_id"] == 7
+    assert dynamic_nubs_v3.PersistentObstacleState.snapshot.__name__ == "snapshot"
