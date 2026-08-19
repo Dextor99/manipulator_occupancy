@@ -16,6 +16,7 @@ import argparse
 import copy
 from datetime import datetime, timezone
 import importlib
+import inspect
 import json
 import math
 from pathlib import Path
@@ -46,6 +47,23 @@ ROLLING_REPLAN_MONITOR_REASONS = {
 }
 COMMAND_TIME_REPLAN_STATUS = "COMMAND_TIME_REVALIDATION_REPLAN_REQUIRED"
 COMMAND_TIME_HOLD_STATUS = "COMMAND_TIME_REVALIDATION_HOLD_PRECOMMAND"
+
+
+def require_production_fast() -> Any:
+    """Return the unwrapped production Fast function for terminal routes."""
+    fn = live.ACTIVE_BASE_FAST_REPAIR
+    if fn is None:
+        raise RuntimeError("validated production Fast implementation is unavailable")
+    missing = {
+        "accept_verified_seed_without_fast_step",
+        "original_task_reference_goal",
+    }.difference(inspect.signature(fn).parameters)
+    if missing:
+        raise RuntimeError(
+            "production Fast API contract mismatch: "
+            f"missing={sorted(missing)}"
+        )
+    return fn
 
 
 def classify_terminal_authorization(terminal: dict[str, Any]) -> dict[str, Any]:
@@ -264,7 +282,7 @@ def make_mid_execution_monitor(**context: Any):
                 artifacts: dict[str, Any] = {}
                 ref_goal, ref_audit = next_recorded_reference_goal(reference, np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64), args.local_horizon_s)
                 candidate = plan_goal_directed_continuation(
-                    live.ACTIVE_BASE_FAST_REPAIR, args, context["stage4_config"], context["stage4_model"],
+                    require_production_fast(), args, context["stage4_config"], context["stage4_model"],
                     q_escape_start=np.asarray(local_artifacts["q_now"], dtype=np.float64),
                     q_now=np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64),
                     q_final=np.asarray(reference.q[-1], dtype=np.float64), fresh=fresh, geometry=geometry,
@@ -2424,8 +2442,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 artifacts = preplanned["artifacts"]
                 result["rolling_preplan_used"] = True
                 result["rolling_preplan_source_state_seq"] = preplanned.get("source_state_seq")
-            if live.ACTIVE_BASE_FAST_REPAIR is None:
-                raise RuntimeError("validated base Fast implementation is unavailable")
+            base_fast = require_production_fast()
             if not use_preplanned:
                 fresh_for_plan = dict(monitor1["fresh"])
                 if (
@@ -2434,7 +2451,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 ):
                     fresh_for_plan["velocity"] = [0.0, 0.0, 0.0]
                 candidate = plan_goal_directed_continuation(
-                live.ACTIVE_BASE_FAST_REPAIR,
+                    base_fast,
                 args,
                 config,
                 model,
@@ -2866,7 +2883,7 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             ):
                 bypass_dir = trial_dir / "stationary_fast_terminal_bypass"
                 bypass_payload, bypass_trajectory = plan_stationary_fast_terminal_bypass(
-                    trial.run_fast_repair,
+                    require_production_fast(),
                     args, config, model,
                     q_start=np.asarray(q_terminal_start), q_goal=np.asarray(q_goal),
                     fresh=monitor1["fresh"], geometry=confirmed_stationary_geometry,

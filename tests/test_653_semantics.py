@@ -1194,10 +1194,75 @@ def test_generic_executor_accepts_native_full_trajectory_time_before_robot_check
         candidate_joint_velc=0.006,
         candidate_joint_acc=0.012,
     )
-    with pytest.raises(RuntimeError, match="does not expose offline_track_execute_joints"):
+    with pytest.raises(RuntimeError, match="neither split nor combined"):
         trial.execute_authorized_trajectory_offline_track(
             object(), path, args, processor=object(), denoiser=None, playback_duration_s=None
         )
+
+
+def test_final_live_combined_only_sdk_is_rejected_before_command(tmp_path):
+    q0 = np.zeros(6)
+    q1 = np.ones(6) * 0.01
+    trajectory = NUBSTrajectory6D().generate(
+        np.empty((0, 6)),
+        NUBSTrajectory6D.make_boundary_state(q0),
+        NUBSTrajectory6D.make_boundary_state(q1),
+        np.array([1.0]),
+    )
+    path = tmp_path / "candidate.csv"
+    trial.save_trajectory_csv(path, trajectory, dt=0.01)
+
+    class CombinedOnly:
+        def offline_track_execute_joints(self, *args):
+            raise AssertionError("combined fallback must not be called")
+
+    args = SimpleNamespace(
+        candidate_controller_waypoint_period_s=0.005,
+        candidate_max_waypoints=0,
+        candidate_min_execution_wait_s=0.0,
+        candidate_joint_velc=0.006,
+        candidate_joint_acc=0.012,
+        require_split_offline_track=True,
+    )
+    result = trial.execute_authorized_trajectory_offline_track(
+        CombinedOnly(), path, args, processor=object(), denoiser=None
+    )
+    assert result["status"] == "OFFLINE_TRACK_SPLIT_API_REQUIRED"
+    assert result["robot_commanded"] is False
+
+
+def test_offline_track_capabilities_distinguish_split_and_combined():
+    class SplitOnly:
+        def get_joint(self):
+            return [0.0] * 6
+        def offline_track_prepare_joints(self, *args):
+            return {"prepare_ret": 0}
+        def offline_track_start(self, **kwargs):
+            return {"startup_ret": 0}
+
+    caps = trial.offline_track_capabilities(SplitOnly())
+    assert caps["split"] is True
+    assert caps["combined"] is False
+
+
+def test_final_live_requires_barrier_and_disables_startup_grace():
+    source = inspect.getsource(trial.execute_authorized_trajectory_offline_track)
+    assert "FINAL_PRECOMMAND_BARRIER_REQUIRED" in source
+    wait_source = inspect.getsource(trial.wait_for_candidate_goal_guarded)
+    assert "require_split_offline_track" in wait_source
+
+
+def test_terminal_routes_use_unwrapped_production_fast():
+    source = inspect.getsource(event_replan.make_event_handler)
+    assert "require_production_fast()" in source
+    assert "plan_stationary_fast_terminal_bypass(" in source
+    assert "trial.run_fast_repair" not in source
+
+
+def test_zero_motion_command_is_not_logged_as_executed_motion():
+    source = inspect.getsource(trial.run)
+    assert "COMMAND_ABORTED_BEFORE_OBSERVED_MOTION" in source
+    assert "meaningful_motion" in source
 
 
 def test_fresh3_reference_resume_requires_current_future_and_hard_guard(monkeypatch):

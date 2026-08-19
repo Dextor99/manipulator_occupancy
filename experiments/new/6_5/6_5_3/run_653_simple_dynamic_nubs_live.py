@@ -696,6 +696,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         # wrapper parameters into that Namespace instead of relying on parser
         # side effects.
         copy_wrapper_runtime_parameters(args, live_args)
+        # Final-live must use the split upload/start contract so the second
+        # perception barrier remains immediately before MoveStartup.  Shadow
+        # runs retain compatibility with older combined-only SDKs.
+        live_args.require_split_offline_track = bool(args.execute)
         trial.fit_pca_multisphere = fixed_two_sphere_adapter
         trial.run_fast_repair = make_r06_fast_wrapper(
             original_fast,

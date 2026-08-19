@@ -1533,7 +1533,8 @@ def wait_for_candidate_goal_guarded(
             final_seq = motion_monitor.get("final_precommand_state_seq")
             state_seq = motion_monitor.get("state_seq")
             startup_grace = bool(
-                not startup_freshness_grace_used
+                not bool(getattr(args, "require_split_offline_track", False))
+                and not startup_freshness_grace_used
                 and (now - started) < 0.10
                 and reason == "perception_watchdog_expired"
                 and final_seq is not None
@@ -1885,6 +1886,18 @@ def audit_execution_waypoints(
     }
 
 
+def offline_track_capabilities(robot: Any) -> dict[str, bool]:
+    """Describe the loaded SDK execution contract without guessing fallbacks."""
+    return {
+        "get_joint": callable(getattr(robot, "get_joint", None)),
+        "combined": callable(getattr(robot, "offline_track_execute_joints", None)),
+        "prepare": callable(getattr(robot, "offline_track_prepare_joints", None)),
+        "start": callable(getattr(robot, "offline_track_start", None)),
+        "split": callable(getattr(robot, "offline_track_prepare_joints", None))
+        and callable(getattr(robot, "offline_track_start", None)),
+    }
+
+
 def execute_authorized_trajectory_offline_track(
     robot: Any,
     trajectory_csv: Path,
@@ -1918,10 +1931,17 @@ def execute_authorized_trajectory_offline_track(
         controller_period_s=waypoint_period,
     )
     times_exec, qs_exec = maybe_downsample(times_exec, qs_exec, args.candidate_max_waypoints)
-    if not hasattr(robot, "offline_track_execute_joints") and not (
-        hasattr(robot, "offline_track_prepare_joints") and hasattr(robot, "offline_track_start")
-    ):
-        raise RuntimeError("current robot .so does not expose offline_track_execute_joints")
+    caps = offline_track_capabilities(robot)
+    require_split = bool(getattr(args, "require_split_offline_track", False))
+    if not caps["split"] and not caps["combined"]:
+        raise RuntimeError("robot SDK exposes neither split nor combined offline-track API")
+    if require_split and not caps["split"]:
+        return {
+            "status": "OFFLINE_TRACK_SPLIT_API_REQUIRED",
+            "robot_commanded": False,
+            "offline_track_capabilities": caps,
+            "require_split_offline_track": True,
+        }
     actual_q_for_waypoint_audit = np.asarray(robot.get_joint(), dtype=np.float64)
     min_wait = args.candidate_min_execution_wait_s
     if min_wait <= 0.0:
@@ -1938,6 +1958,8 @@ def execute_authorized_trajectory_offline_track(
         "joint_velc": args.candidate_joint_velc,
         "joint_acc": args.candidate_joint_acc,
         "min_execution_wait_s": min_wait,
+        "offline_track_capabilities": caps,
+        "require_split_offline_track": require_split,
     }
     execution_waypoint_audit = audit_execution_waypoints(
         times_exec, qs_exec, actual_q_for_waypoint_audit, args
@@ -1948,8 +1970,6 @@ def execute_authorized_trajectory_offline_track(
         log["robot_commanded"] = False
         return log
 
-    if not hasattr(robot, "offline_track_execute_joints"):
-        raise RuntimeError("current robot .so does not expose offline_track_execute_joints")
     actual_start = actual_q_for_waypoint_audit
     start_err = joint_error(actual_start, qs_exec[0])
     log["actual_start_joint_rad"] = actual_start.tolist()
@@ -2035,6 +2055,10 @@ def execute_authorized_trajectory_offline_track(
     # fresh enough for startup, and a boundary-continuous trajectory.  This is
     # intentionally the last gate before the SDK startup call.
     final_barrier = getattr(motion_monitor_provider, "final_precommand_barrier", None)
+    if require_split and not callable(final_barrier):
+        log["status"] = "FINAL_PRECOMMAND_BARRIER_REQUIRED"
+        log["robot_commanded"] = False
+        return log
     if callable(final_barrier):
         final_result = final_barrier(actual_q=np.asarray(robot.get_joint(), dtype=np.float64))
         log["final_precommand_barrier"] = final_result
@@ -2055,15 +2079,20 @@ def execute_authorized_trajectory_offline_track(
     # places the final barrier after waypoint upload and immediately before
     # MoveStartup.  Older SDKs expose only the combined call; for those the
     # barrier above remains the last Python-level gate available.
-    if hasattr(robot, "offline_track_prepare_joints") and hasattr(robot, "offline_track_start"):
+    if caps["split"]:
         prep_info = robot.offline_track_prepare_joints(
             qs_exec.tolist(), args.candidate_joint_velc, args.candidate_joint_acc
         )
         log["offline_track_prepare_return"] = dict(prep_info)
-        if int(prep_info.get("prepare_ret", 0)) != 0:
+        prepare_ret = int(prep_info.get("prepare_ret", -9999))
+        if prepare_ret != 0:
             log["status"] = "OFFLINE_TRACK_PREPARE_FAILED"
             return log
         final_barrier_after_prepare = getattr(motion_monitor_provider, "final_precommand_barrier", None)
+        if require_split and not callable(final_barrier_after_prepare):
+            log["status"] = "FINAL_PRECOMMAND_BARRIER_REQUIRED"
+            log["robot_commanded"] = False
+            return log
         if callable(final_barrier_after_prepare):
             final_result = final_barrier_after_prepare(actual_q=np.asarray(robot.get_joint(), dtype=np.float64))
             log["final_precommand_barrier_after_prepare"] = final_result
@@ -4114,6 +4143,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         processor.stop()
         raise RuntimeError("real AUBO state reader is required")
     robot = getattr(state_reader, "sdk_module", None)
+    live_caps = offline_track_capabilities(robot)
+    stop_names = (
+        "move_control_stop", "offline_track_stop", "teach_stop",
+        "move_stop", "MoveStop", "stop", "robotServiceRobotMoveStop",
+    )
+    live_caps["stop"] = any(callable(getattr(robot, name, None)) for name in stop_names)
+    log["live_robot_interface_audit"] = live_caps
+    if bool(getattr(args, "require_split_offline_track", False)):
+        required_caps = {"get_joint", "split", "stop"}
+        if not all(bool(live_caps.get(name, False)) for name in required_caps):
+            log["status"] = "FINAL_LIVE_ROBOT_INTERFACE_CONTRACT_FAILED"
+            log["robot_commanded"] = False
+            write_json(trial_dir / "summary.json", log)
+            processor.stop()
+            raise RuntimeError(
+                "FINAL_LIVE_ROBOT_INTERFACE_CONTRACT_FAILED: "
+                f"{live_caps}"
+            )
 
     safety_tracker = OccupancyTracker(
         association_distance=float(safety.get("association_distance", 0.20)),
@@ -5637,17 +5684,28 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         # any waypoint was sent.  It is not a local tail and
                         # must never enter normal post-local/terminal logic.
                         precommand_stale = bool(precommand_replan and not actually_commanded)
-                        actual_motion_interrupted = bool(
-                            actually_commanded
-                            and (
-                                first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
-                                and first_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
+                        observed_motion = float(
+                            (first_execution_summary.get("goal_check") or {}).get(
+                                "max_motion_from_start_rad", 0.0
                             )
+                        )
+                        meaningful_motion = bool(
+                            observed_motion >= float(args.candidate_min_observed_motion_rad)
+                        )
+                        actual_motion_interrupted = bool(
+                            actually_commanded and meaningful_motion
+                            and first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
+                            and first_execution_summary.get("goal_check", {}).get("monitor_stopped", False)
+                        )
+                        command_aborted_before_motion = bool(
+                            actually_commanded and not meaningful_motion
+                            and first_execution_summary.get("status") == "STOPPED_BY_MOTION_MONITOR"
                         )
                         early_monitor_stop = actual_motion_interrupted
                         if (
                             first_execution_summary["status"] != "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
                             and not early_monitor_stop
+                            and not command_aborted_before_motion
                             and not precommand_stale
                         ):
                             raise RuntimeError(
@@ -5656,6 +5714,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                             )
                         full_execution_summary = first_execution_summary
                         first_event_type = (
+                            "COMMAND_ABORTED_BEFORE_OBSERVED_MOTION"
+                            if command_aborted_before_motion else
                             "LOCAL_EXECUTION_PRECOMMAND_REPLAN_REQUIRED"
                             if precommand_replan
                             else (
@@ -5671,6 +5731,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 "execution": first_execution_summary,
                                 "robot_commanded": actually_commanded,
                                 "local_execution_state": (
+                                    "COMMAND_ABORTED_BEFORE_OBSERVED_MOTION"
+                                    if command_aborted_before_motion else
                                     "NOT_EXECUTED_COMMAND_TIME_STALE"
                                     if precommand_stale else
                                     ("INTERRUPTED_AFTER_COMMAND" if actual_motion_interrupted else "COMPLETED")
@@ -6353,6 +6415,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--multisphere-max-components", type=int, default=4)
     parser.add_argument("--candidate-execute-confirm", action="store_true", default=True)
     parser.add_argument("--no-candidate-execute-confirm", dest="candidate_execute_confirm", action="store_false")
+    parser.add_argument(
+        "--require-split-offline-track",
+        action="store_true",
+        help="final-live safety contract: require prepare/start SDK APIs and final barrier; never fallback to combined execution",
+    )
     return parser
 
 
