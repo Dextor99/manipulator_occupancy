@@ -308,6 +308,10 @@ class PersistentPerceptionWorker:
         self._re_bootstrapped = False
         self._latest_frame_timestamp = float(initial_fresh["last_timestamp"])
         self._latest_raw_guard_distance_m = float("inf")
+        # Keep the exact planning cluster that produced the latest published
+        # geometry.  This is diagnostic provenance only; the production
+        # planner continues to consume the fitted multisphere geometry.
+        self._latest_planning_cluster_points: np.ndarray | None = None
         self._samples = [
             {
                 "timestamp": float(row["timestamp"]),
@@ -365,6 +369,8 @@ class PersistentPerceptionWorker:
             result["worker_error"] = self._error
             result["update_count"] = len(self._audits)
             result["state_seq"] = int(self._state_seq)
+            if self._latest_planning_cluster_points is not None:
+                result["planning_cluster_points"] = self._latest_planning_cluster_points.copy()
             return result
 
     def diagnostics(self, *, since: int = 0) -> dict[str, Any]:
@@ -440,6 +446,8 @@ class PersistentPerceptionWorker:
             result["worker_error"] = self._error
             result["update_count"] = len(self._audits)
             result["state_seq"] = int(self._state_seq)
+            if self._latest_planning_cluster_points is not None:
+                result["planning_cluster_points"] = self._latest_planning_cluster_points.copy()
             return result
 
     def _run(self) -> None:
@@ -677,6 +685,7 @@ class PersistentPerceptionWorker:
             # the next time association is lost.
             self._re_bootstrapped = False
             if updated:
+                self._latest_planning_cluster_points = np.ascontiguousarray(points, dtype=np.float64)
                 self._state.update(
                     timestamp=float(fitted["last_timestamp"]),
                     center=np.asarray(fitted["center"], dtype=np.float64),

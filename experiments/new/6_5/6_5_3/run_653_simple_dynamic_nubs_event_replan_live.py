@@ -2957,6 +2957,12 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     "geometry": geometry_latest,
                 },
             )
+            stationary_points = stationary_snapshot.get("planning_cluster_points")
+            stationary_points_path = None
+            if stationary_points is not None:
+                stationary_points_path = trial_dir / "stationary_confirmed_cluster_points.npy"
+                np.save(stationary_points_path, np.asarray(stationary_points, dtype=np.float64))
+                result["stationary_confirmed_cluster_points_file"] = stationary_points_path.name
             if bool(getattr(event_args, "stationary_fast_goal_directed", False)):
                 # Once the three-frame stationary confirmation succeeds, do
                 # not extrapolate tracker jitter through the terminal/local
@@ -2992,6 +2998,9 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                         "stationary_goal_feasibility": stationary_goal_check,
                         "geometry_file": "stationary_confirmed_multisphere.json",
                         "snapshot_file": "stationary_confirmed_snapshot.json",
+                        "planning_cluster_points_file": (
+                            stationary_points_path.name if stationary_points_path is not None else None
+                        ),
                     }
                     trial.write_json(trial_dir / "stationary_terminal_replay_bundle.json", bundle)
                     result["stationary_terminal_replay_bundle"] = bundle

@@ -95,6 +95,26 @@ def _evaluate(model, q, forecast, finger):
     return {"minimum": best, "per_link": per_link}
 
 
+def _evaluate_raw(model, q, raw_points, finger):
+    """Compare robot mesh surfaces directly against archived cluster points."""
+    by_link = _custom_surfaces(model, q, finger)
+    best = None
+    per_link = {}
+    for link, points in by_link.items():
+        distances = np.linalg.norm(points[:, None, :] - raw_points[None, :, :], axis=2)
+        flat = int(np.argmin(distances))
+        robot_index, obstacle_index = np.unravel_index(flat, distances.shape)
+        row = {
+            "clearance_m": float(distances[robot_index, obstacle_index]),
+            "robot_surface_point_xyz": points[robot_index],
+            "raw_obstacle_point_xyz": raw_points[obstacle_index],
+        }
+        per_link[link] = row
+        if best is None or row["clearance_m"] < best["clearance_m"]:
+            best = dict(row, nearest_link=link)
+    return {"minimum": best, "per_link": per_link}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-trial", type=Path, required=True)
@@ -104,6 +124,12 @@ def main() -> None:
         raise RuntimeError(f"AUDIT_OUTPUT_NOT_EMPTY:{args.output}")
     args.output.mkdir(parents=True, exist_ok=True)
     event, core, model, q_goal, forecast = _load(args)
+    raw_points_path = args.source_trial / "stationary_confirmed_cluster_points.npy"
+    raw_points = None
+    if raw_points_path.exists():
+        raw_points = np.asarray(np.load(raw_points_path), dtype=np.float64)
+        if raw_points.ndim != 2 or raw_points.shape[1] != 3:
+            raise ValueError(f"invalid raw point archive: {raw_points_path}")
     production = event.check_goal_configuration_feasibility(
         config=core.load_stage4_config(Path("config/ccro_stage4.yaml")),
         model=model, q_goal=q_goal, forecast=forecast, min_clearance_m=0.09,
@@ -111,13 +137,21 @@ def main() -> None:
     rows = []
     for finger in (0.0, -0.01, -0.02, -0.03, -0.04):
         result = _evaluate(model, q_goal, forecast, finger)
-        rows.append({"left_joint_m": finger, "right_joint_m": finger, **result})
+        row = {"left_joint_m": finger, "right_joint_m": finger, **result}
+        if raw_points is not None:
+            row["raw_point_cloud"] = _evaluate_raw(model, q_goal, raw_points, finger)
+        rows.append(row)
     payload = {
         "status": "GOAL_CLEARANCE_GEOMETRY_AUDIT_COMPLETE",
         "source_trial": str(args.source_trial.resolve()),
         "q_goal_rad": q_goal,
         "production_zero_auxiliary_joint_check": production,
         "auxiliary_joint_sweep": rows,
+        "raw_cluster_points": {
+            "available": raw_points is not None,
+            "path": str(raw_points_path) if raw_points is not None else None,
+            "count": int(len(raw_points)) if raw_points is not None else 0,
+        },
         "auxiliary_joint_semantics": "fixed left_joint/right_joint applied only for diagnostic FK; production model unchanged",
     }
     (args.output / "goal_clearance_geometry_audit.json").write_text(
