@@ -3154,6 +3154,9 @@ def test_terminal_execution_uses_split_forecast_semantics_and_replan_reasons():
     assert "stationary_terminal_motion_resumed" in source
     assert "stationary_terminal_track_changed" in source
     assert '"replan_requested": True' in source
+    barrier = inspect.getsource(event_replan.make_mid_execution_monitor)
+    assert 'int(last.get("final_precommand_seq", -1))' in barrier
+    assert 'rolling_forecast = v3.v3_execution_multisphere_forecast' in barrier
 
 
 def test_joint_polyline_resampling_preserves_endpoints():

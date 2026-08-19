@@ -428,7 +428,11 @@ def make_mid_execution_monitor(**context: Any):
         return {"passed": all(checks.values()), "checks": checks, "failed_checks": [k for k, v in checks.items() if not v], "sample_dt_s": dt, "start_position_error_rad": start_error, "start_qd_max_rad_s": float(np.max(np.abs(qd0))), "end_qd_max_rad_s": float(np.max(np.abs(qde))), "start_qdd_max_rad_s2": float(np.max(np.abs(qdd0))), "end_qdd_max_rad_s2": float(np.max(np.abs(qdde)))}
 
     def final_precommand_barrier(*, actual_q: np.ndarray) -> dict[str, Any]:
-        after_seq = int(last.get("command_time_seq", last.get("prearm_seq", -1)))
+        after_seq = max(
+            int(last.get("prearm_seq", -1)),
+            int(last.get("command_time_seq", -1)),
+            int(last.get("final_precommand_seq", -1)),
+        )
         freshness, snapshot = wait_for_final_fresh_snapshot(after_seq=after_seq)
         if not freshness.get("ready", False) or snapshot is None:
             return {"ready": False, "action": "hold", "reason": "final_precommand_freshness_not_ready", "freshness": freshness}
@@ -436,22 +440,29 @@ def make_mid_execution_monitor(**context: Any):
         if raw <= float(args.guided_hard_stop_m):
             return {"ready": False, "action": "hold", "reason": "final_precommand_raw_guard_not_safe", "freshness": freshness, "raw_guard_distance_m": raw}
         aligned = v3.time_aligned_snapshot(snapshot, execution_timestamp=time.time())
+        full_forecast = None
+        stationary_audit = None
         if confirmed_stationary_terminal:
-            forecast, stationary_audit = stationary_terminal_forecast_from_snapshot(
+            full_forecast, stationary_audit = stationary_terminal_forecast_from_snapshot(
                 snapshot, aligned, horizon_s=float(trajectory.total_duration)
             )
-            if forecast is None:
+            if full_forecast is None:
                 return {"ready": False, "action": "replan", "reason": stationary_audit["reason"], "stationary_terminal_audit": stationary_audit, "freshness": freshness}
         else:
-            forecast = v3.v3_execution_multisphere_forecast(
+            full_forecast = v3.v3_execution_multisphere_forecast(
                 np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
                 np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
                 np.asarray(snapshot["velocity"], dtype=np.float64),
             )
+        rolling_forecast = v3.v3_execution_multisphere_forecast(
+            np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+            np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+            np.asarray(snapshot["velocity"], dtype=np.float64),
+        )
         q_actual = np.asarray(actual_q, dtype=np.float64)
         q_goal = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
         verification = verifier.verify(
-            trajectory, forecast, current_q=q_actual,
+            trajectory, full_forecast, current_q=q_actual,
             current_qd=np.zeros(6), current_qdd=np.zeros(6),
             q_goal=q_goal, solver_success=True,
         )
@@ -464,7 +475,7 @@ def make_mid_execution_monitor(**context: Any):
         if not verification.accepted or float(verification.min_distance) < float(args.online_accept_m):
             return {"ready": False, "action": "replan", "reason": "final_precommand_candidate_clearance_failed", "verification_min_distance_m": float(verification.min_distance), "verification_checks": verification.checks, "freshness": freshness}
         remaining = v3._remaining_clearance(
-            evaluator, trajectory, forecast, playback_time_s=0.0,
+            evaluator, trajectory, rolling_forecast, playback_time_s=0.0,
             max_lookahead_s=(float(args.prediction_horizon_s) if confirmed_stationary_terminal else None),
         )
         if float(remaining["min_distance_m"]) < float(args.rolling_replan_m):
@@ -473,7 +484,7 @@ def make_mid_execution_monitor(**context: Any):
         if not dynamics.get("passed", False):
             return {"ready": False, "action": "replan", "reason": "final_precommand_boundary_dynamics_failed", "freshness": freshness, "boundary_dynamics": dynamics}
         last["final_precommand_seq"] = int(v3._state_seq(snapshot))
-        return {"ready": True, "action": "execute", "reason": "final_precommand_candidate_valid", "freshness": freshness, "raw_guard_distance_m": raw, "verification_min_distance_m": float(verification.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "boundary_dynamics": dynamics, "state_seq": int(v3._state_seq(snapshot)), "forecast_semantics": "confirmed_stationary_frozen_occupancy" if confirmed_stationary_terminal else "fresh_dynamic", "stationary_terminal_audit": stationary_audit if confirmed_stationary_terminal else None}
+        return {"ready": True, "action": "execute", "reason": "final_precommand_candidate_valid", "freshness": freshness, "raw_guard_distance_m": raw, "verification_min_distance_m": float(verification.min_distance), "remaining_clearance_m": float(remaining["min_distance_m"]), "boundary_dynamics": dynamics, "state_seq": int(v3._state_seq(snapshot)), "full_verification_forecast_semantics": "confirmed_stationary_frozen_occupancy" if confirmed_stationary_terminal else "fresh_dynamic", "rolling_forecast_semantics": "fresh_dynamic_short_horizon", "full_verification_forecast_horizon_s": float(trajectory.total_duration), "rolling_lookahead_s": float(args.prediction_horizon_s) if confirmed_stationary_terminal else None, "stationary_terminal_audit": stationary_audit if confirmed_stationary_terminal else None}
 
     def monitor(*, elapsed_s: float, actual_q: np.ndarray, obstacle_snapshot: Any = None) -> dict[str, Any]:
         nonlocal preplan_thread
