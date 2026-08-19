@@ -127,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         stationary_fast_terminal_samples_per_local=3,
         # route target is diagnostic; terminal max budget supplies the hard
         # route deadline while reserving time for finalization/verifier.
-        stationary_fast_terminal_route_max_ms=0.0,
+        stationary_fast_terminal_route_max_ms=5000.0,
         stationary_virtual_topology_floor_m=0.08,
         stationary_boundary_terminal=True,
         stationary_legacy_virtual_fast_fallback=False,

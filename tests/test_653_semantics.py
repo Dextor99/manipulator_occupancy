@@ -3249,7 +3249,7 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_fast_terminal_virtual_max_joint_delta_rad == pytest.approx(0.30)
     assert core_args.stationary_virtual_topology_floor_m == pytest.approx(0.08)
     assert core_args.stationary_fast_terminal_virtual_fast_steps == 0
-    assert core_args.stationary_fast_terminal_route_max_ms == pytest.approx(0.0)
+    assert core_args.stationary_fast_terminal_route_max_ms == pytest.approx(5000.0)
 
 
 def test_stationary_fast_terminal_bypass_is_one_complete_path():
