@@ -2196,9 +2196,9 @@ def build_stationary_boundary_routes(
                     "audit": candidate_audit,
                 })
             if connector_candidates and float(connector_candidates[-1]["coarse_min_clearance_m"]) >= float(getattr(runtime_args, "planning_robust_target_m", 0.11)):
-                # A robust route is good enough, but still let the loop record
-                # the remaining deterministic seeds when the deadline allows.
-                continue
+                # A robust route is good enough; preserve the remaining
+                # terminal budget for NUBS verification and Fast repair.
+                break
     if connector_candidates:
         selected_connector = max(
             connector_candidates,

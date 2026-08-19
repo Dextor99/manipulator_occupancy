@@ -1,0 +1,204 @@
+{
+  "status": "STATIONARY_FAST_TERMINAL_BYPASS_TIMEOUT_HOLD",
+  "authorized": false,
+  "planner_mode": "stationary_fast_terminal_bypass",
+  "full_optimizer_used": false,
+  "virtual_fast_route": {
+    "connected_to_goal": true,
+    "planner": "task_relative_boundary_route",
+    "selected_direction_index": -2,
+    "selected_direction": [
+      0.9994289374897727,
+      0.03379051506065109,
+      0.0
+    ],
+    "selected_theta_deg": 0.0,
+    "coarse_min_clearance_m": 0.0868259737562116,
+    "joint_arclength": 2.4157771751748034,
+    "boundary_audit": {
+      "task_frame": {
+        "task": [
+          0.03378798617206441,
+          -0.9993541400376275,
+          -0.012234164462298878
+        ],
+        "lateral": [
+          0.9994289374897727,
+          0.03379051506065109,
+          0.0
+        ],
+        "normal_up": [
+          0.0004133987185177925,
+          -0.012227177989630503,
+          0.9999251598094275
+        ]
+      },
+      "direction_candidates": [],
+      "graph_audit": {
+        "search": [
+          {
+            "depth": 1,
+            "beam_count": 8,
+            "node_count": 13,
+            "best_goal_gap_m": 0.6286812404500373
+          },
+          {
+            "depth": 2,
+            "beam_count": 8,
+            "node_count": 29,
+            "best_goal_gap_m": 0.6286812404500373
+          }
+        ],
+        "beam_width": 8,
+        "max_depth": 32,
+        "action_count": 29,
+        "direction_count": 5,
+        "connected_to_goal": false,
+        "failure_reason": "boundary_graph_deadline_exhausted",
+        "best_edge_min_distance_m": 0.14927634722952068,
+        "best_goal_gap_m": 0.6286812404500373
+      },
+      "connector_audit": {
+        "connector": true,
+        "attempts": [
+          {
+            "connector": true,
+            "seed": 23,
+            "step_rad": 0.1,
+            "edge_samples": 7,
+            "iterations": 134,
+            "connected": true,
+            "best_gap_rad": 0.4099655967318311,
+            "failure_reason": null,
+            "best_edge_min_distance_m": 0.08025752882650403,
+            "edge_screen_calls": 236,
+            "accepted_extensions": 110,
+            "rejected_extensions": 126,
+            "connected_iteration": 134,
+            "elapsed_ms": 1813.9674220001325,
+            "node_count_start": 103,
+            "node_count_goal": 9
+          },
+          {
+            "connector": true,
+            "seed": 11,
+            "step_rad": 0.1,
+            "edge_samples": 7,
+            "iterations": 176,
+            "connected": true,
+            "best_gap_rad": 0.32799562950249195,
+            "failure_reason": null,
+            "best_edge_min_distance_m": 0.08036968094465402,
+            "edge_screen_calls": 308,
+            "accepted_extensions": 154,
+            "rejected_extensions": 154,
+            "connected_iteration": 176,
+            "elapsed_ms": 2457.1977120358497,
+            "node_count_start": 133,
+            "node_count_goal": 23
+          }
+        ],
+        "serial_seeds": [
+          23,
+          11,
+          47
+        ],
+        "selected_seed": 11,
+        "candidate_count": 2,
+        "candidate_scores": [
+          {
+            "seed": 23,
+            "coarse_min_clearance_m": 0.08062658706060913,
+            "joint_arclength": 2.3733719406169778
+          },
+          {
+            "seed": 11,
+            "coarse_min_clearance_m": 0.0868259737562116,
+            "joint_arclength": 2.4157771751748034
+          }
+        ],
+        "selected_coarse_min_clearance_m": 0.0868259737562116
+      },
+      "connected_route_count": 1
+    },
+    "route_elapsed_ms": 6887.203669990413,
+    "route_target_ms": 5000.0,
+    "route_hard_budget_ms": 6000.0,
+    "route_target_met": false,
+    "full_verify_candidate_count_requested": 1,
+    "full_verify_candidate_count_attempted": 1,
+    "full_verified_routes": [
+      {
+        "route_index": -2,
+        "theta_deg": 0.0,
+        "direction": [
+          0.9994289374897727,
+          0.03379051506065109,
+          0.0
+        ],
+        "segment_durations_s": [
+          0.6867023617969444,
+          0.6867023617969444,
+          0.6539881885794064,
+          0.6340863945601122,
+          0.6501414563357563,
+          0.6327886496835969,
+          0.6468743166756714,
+          0.6867023617969449,
+          0.6867023617969448,
+          0.6619068233837874,
+          0.6867023617969438,
+          0.6867023617969458
+        ],
+        "verification_accepted": false,
+        "verification_min_distance_m": 0.08867906848362284,
+        "max_qd_violation_rad_s": 0.0,
+        "max_qdd_violation_rad_s2": 0.0,
+        "max_qd_actual_rad_s": 0.30861789637696296,
+        "max_qdd_actual_rad_s2": 0.8275904494002777,
+        "max_qd_limit_rad_s": 1.0,
+        "max_qdd_limit_rad_s2": 2.0,
+        "max_qd_ratio": 0.30861789637696296,
+        "max_qdd_ratio": 0.41379522470013885,
+        "retiming_profile_curvature_weight": 0.0,
+        "retiming_profiles_attempted": [
+          0.0,
+          0.5,
+          1.0,
+          2.0,
+          4.0
+        ],
+        "verification_checks": {
+          "solver_ok": true,
+          "finite_ok": true,
+          "goal_ok": true,
+          "distance_ok": false,
+          "position_ok": true,
+          "velocity_ok": true,
+          "acceleration_ok": true,
+          "continuity_q_ok": true,
+          "continuity_qd_ok": true,
+          "continuity_qdd_ok": true,
+          "forecast_horizon_ok": true
+        },
+        "tabletop_passed": true,
+        "joint_arclength": 2.4157771751748034,
+        "connector_raw_route_min_clearance_m": null,
+        "shortcut_route_min_clearance_m": 0.0868259737562116,
+        "resampled_polyline_min_clearance_m": 0.0868259737562116,
+        "nubs_min_clearance_m": 0.08867906848362284,
+        "seed_safe": false
+      }
+    ],
+    "reason": "boundary_routes_full_verifier_failed",
+    "fast_fallback_invoked": true,
+    "fast_fallback_mode": "refine_failed_connected_polyline",
+    "fast_fallback_route_index": -2,
+    "fast_fallback_input_min_clearance_m": 0.08867906848362284
+  },
+  "stationary_terminal_total_elapsed_ms": 7649.602567020338,
+  "stationary_terminal_total_budget_ms": 7000.0,
+  "total_budget_met": false,
+  "fast_invoked_for_route": false,
+  "reason": "insufficient_remaining_budget_before_fast"
+}
