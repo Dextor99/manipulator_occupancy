@@ -98,6 +98,7 @@ def confirm_empty(processor, args, count: int):
     safe_away_ok = bool(samples and all(row["operator_safe_away"] for row in samples))
     ready = bool(empty_ok or safe_away_ok)
     return {
+        "ready": ready,
         "samples": samples,
         "required_frames": int(count),
         "mode": "STRICT_EMPTY" if empty_ok else ("OPERATOR_CONFIRMED_SAFE_AWAY" if safe_away_ok else None),
