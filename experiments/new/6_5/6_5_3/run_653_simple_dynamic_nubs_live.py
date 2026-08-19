@@ -618,8 +618,8 @@ def copy_wrapper_runtime_parameters(wrapper_args: Any, core_args: Any) -> None:
         ("stationary_boundary_terminal", True),
         ("stationary_legacy_virtual_fast_fallback", False),
         ("stationary_boundary_direction_count", 8),
-        ("stationary_boundary_max_escape_steps", 4),
-        ("stationary_boundary_max_pass_steps", 4),
+        ("stationary_boundary_max_escape_steps", 8),
+        ("stationary_boundary_max_pass_steps", 8),
     ):
         setattr(core_args, name, getattr(wrapper_args, name, default))
 

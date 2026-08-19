@@ -56,6 +56,15 @@ def main() -> None:
         core_args.stationary_fast_terminal_max_ms = 7000.0
         core_args.stationary_fast_terminal_route_max_ms = 0.0
         core_args.stationary_fast_terminal_virtual_fast_steps = 0
+        # Keep replay aligned with the D2 production boundary-terminal
+        # defaults; core's generic parser intentionally does not own these
+        # wrapper-specific orchestration options.
+        core_args.stationary_boundary_terminal = True
+        core_args.stationary_legacy_virtual_fast_fallback = False
+        core_args.stationary_boundary_direction_count = 8
+        core_args.stationary_boundary_max_escape_steps = 8
+        core_args.stationary_boundary_max_pass_steps = 8
+        core_args.stationary_fast_terminal_virtual_max_joint_delta_rad = 0.30
         payload, trajectory = event.plan_stationary_fast_terminal_bypass(
             core.run_fast_repair, core_args, config, model,
             q_start=q_start, q_goal=q_goal, fresh=snapshot["fresh"], geometry=geometry,

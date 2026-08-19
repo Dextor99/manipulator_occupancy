@@ -67,7 +67,13 @@ def main() -> None:
             "verification_min_distance_m": payload.get("verification_min_distance_m"),
             "stationary_terminal_total_elapsed_ms": payload.get("stationary_terminal_total_elapsed_ms"),
             "connected_route_count": (payload.get("virtual_fast_route") or {}).get("boundary_audit", {}).get("connected_route_count"),
-            "selected_direction": (payload.get("virtual_fast_route") or {}).get("selected_direction"),
+            "selected_direction_index": payload.get("selected_direction_index"),
+            "selected_theta_deg": payload.get("selected_theta_deg"),
+            "selected_direction": payload.get("selected_direction") or (payload.get("virtual_fast_route") or {}).get("selected_direction"),
+            "selection_reason": payload.get("selection_reason"),
+            "full_verify_candidate_count_requested": (payload.get("virtual_fast_route") or {}).get("full_verify_candidate_count_requested"),
+            "full_verify_candidate_count_attempted": (payload.get("virtual_fast_route") or {}).get("full_verify_candidate_count_attempted"),
+            "full_verified_routes": (payload.get("virtual_fast_route") or {}).get("full_verified_routes"),
             "stderr_tail": completed.stderr[-1000:],
         })
     result = {"status": "STATIONARY_BOUNDARY_ROUTE_BENCHMARK_COMPLETE", "rows": rows}
