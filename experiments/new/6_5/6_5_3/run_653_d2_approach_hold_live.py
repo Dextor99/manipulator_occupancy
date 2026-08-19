@@ -118,8 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
         stationary_fast_terminal_duration_s=10.0,
         stationary_fast_terminal_segments=16,
         stationary_fast_terminal_rollout_steps=8,
-        stationary_fast_terminal_target_ms=5000.0,
-        stationary_fast_terminal_max_ms=7000.0,
+        # Stationary-terminal planning runs only after the robot is stopped
+        # and the obstacle is confirmed stationary: 7 s is the performance
+        # target, while 10 s is the fail-closed hard timeout.  Dynamic STRO
+        # and local-Fast response budgets remain unchanged.
+        stationary_fast_terminal_target_ms=7000.0,
+        stationary_fast_terminal_max_ms=10000.0,
         stationary_fast_terminal_virtual_max_joint_delta_rad=0.30,
         # Formal production route is deadline-driven; a positive value is
         # reserved for diagnostic replay step caps.

@@ -52,8 +52,8 @@ def main() -> None:
                    "robot_commanded": False, "goal_check": goal_check,
                    "source_goal_clearance_m": source_goal}
     else:
-        core_args.stationary_fast_terminal_target_ms = 5000.0
-        core_args.stationary_fast_terminal_max_ms = 7000.0
+        core_args.stationary_fast_terminal_target_ms = 7000.0
+        core_args.stationary_fast_terminal_max_ms = 10000.0
         # Match the D2 wrapper's explicit route-phase budget.  Zero here
         # would otherwise be interpreted as an immediate route deadline once
         # the production planner enforces this existing parameter.

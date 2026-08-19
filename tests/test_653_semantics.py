@@ -3244,8 +3244,8 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_fast_terminal_duration_s == pytest.approx(10.0)
     assert core_args.stationary_fast_terminal_segments == 16
     assert core_args.stationary_fast_terminal_rollout_steps == 8
-    assert core_args.stationary_fast_terminal_target_ms == pytest.approx(5000.0)
-    assert core_args.stationary_fast_terminal_max_ms == pytest.approx(7000.0)
+    assert core_args.stationary_fast_terminal_target_ms == pytest.approx(7000.0)
+    assert core_args.stationary_fast_terminal_max_ms == pytest.approx(10000.0)
     assert core_args.stationary_fast_terminal_virtual_max_joint_delta_rad == pytest.approx(0.30)
     assert core_args.stationary_virtual_topology_floor_m == pytest.approx(0.08)
     assert core_args.stationary_fast_terminal_virtual_fast_steps == 0
