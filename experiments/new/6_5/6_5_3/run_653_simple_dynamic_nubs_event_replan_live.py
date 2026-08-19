@@ -1319,6 +1319,25 @@ def confirmed_stationary_goal_connection(
     return confirmed
 
 
+def load_stationary_terminal_replay_source(source_trial_dir: Path) -> dict[str, Any]:
+    """Load the atomic stationary-terminal replay bundle, with no fallback."""
+    source_trial_dir = Path(source_trial_dir)
+    bundle_path = source_trial_dir / "stationary_terminal_replay_bundle.json"
+    geometry_path = source_trial_dir / "stationary_confirmed_multisphere.json"
+    snapshot_path = source_trial_dir / "stationary_confirmed_snapshot.json"
+    if not (bundle_path.exists() and geometry_path.exists() and snapshot_path.exists()):
+        raise RuntimeError("REPLAY_SOURCE_STATIONARY_BUNDLE_MISSING")
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    geometry = json.loads(geometry_path.read_text(encoding="utf-8"))
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    for key in ("q_terminal_start_rad", "q_goal_rad", "stationary_goal_feasibility"):
+        if key not in bundle:
+            raise RuntimeError(f"REPLAY_SOURCE_STATIONARY_BUNDLE_FIELD_MISSING:{key}")
+    return {"bundle": bundle, "geometry": geometry, "snapshot": snapshot,
+            "bundle_path": str(bundle_path), "geometry_path": str(geometry_path),
+            "snapshot_path": str(snapshot_path)}
+
+
 def sampled_joint_segment_clearance(
     evaluator: Any,
     forecast: Any,
@@ -2958,6 +2977,28 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                 result["stationary_goal_feasibility"] = stationary_goal_check
                 if not stationary_goal_check["feasible"]:
                     result["status"] = "STATIONARY_GOAL_INFEASIBLE_HOLD"
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                if bool(getattr(event_args, "stationary_capture_only", False)):
+                    bundle = {
+                        "source_trial_dir": str(trial_dir),
+                        "source_git_commit": trial.git_commit_hash(),
+                        "state_seq": int(stationary_confirmation["state_seq"]),
+                        "track_id": fresh_latest.get("track_id"),
+                        "timestamp": float(fresh_latest.get("last_timestamp", 0.0)),
+                        "q_terminal_start_rad": np.asarray(q_terminal_start).tolist(),
+                        "q_goal_rad": np.asarray(q_goal).tolist(),
+                        "stationary_speed_m_s": float(stationary_confirmation["speed_m_s"]),
+                        "stationary_center_span_m": float(stationary_confirmation["center_span_m"]),
+                        "stationary_goal_feasibility": stationary_goal_check,
+                        "geometry_file": "stationary_confirmed_multisphere.json",
+                        "snapshot_file": "stationary_confirmed_snapshot.json",
+                    }
+                    trial.write_json(trial_dir / "stationary_terminal_replay_bundle.json", bundle)
+                    result["stationary_terminal_replay_bundle"] = bundle
+                    result["stationary_capture_only"] = True
+                    result["robot_commanded_terminal"] = False
+                    result["status"] = "STATIONARY_TERMINAL_CAPTURE_COMPLETE_HOLD"
                     trial.write_json(trial_dir / "event_replan_summary.json", result)
                     return result
         terminal_dir = trial_dir / "terminal_goal_authorization"

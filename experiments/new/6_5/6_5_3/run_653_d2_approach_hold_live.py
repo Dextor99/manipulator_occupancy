@@ -134,6 +134,10 @@ def build_parser() -> argparse.ArgumentParser:
         terminal_durations_s="6.0,8.0",
     )
     parser.add_argument("--scene-operator-phrase", default="")
+    parser.add_argument(
+        "--stationary-capture-only", action="store_true",
+        help="stop after confirmed stationary terminal capture; never command terminal motion",
+    )
     return parser
 
 

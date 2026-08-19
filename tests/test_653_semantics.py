@@ -3276,6 +3276,19 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "execute_authorized_trajectory_offline_track" not in route_source
 
 
+def test_stationary_capture_and_replay_contract_is_fail_closed():
+    args = d2_approach_hold.build_parser().parse_args(["--repeat", "1", "--stationary-capture-only"])
+    assert args.stationary_capture_only is True
+    loader_source = inspect.getsource(event_replan.load_stationary_terminal_replay_source)
+    assert "REPLAY_SOURCE_STATIONARY_BUNDLE_MISSING" in loader_source
+    assert "stationary_terminal_replay_bundle.json" in loader_source
+    assert "stationary_confirmed_multisphere.json" in loader_source
+    assert "post_plan_fresh_multisphere.json" not in loader_source
+    bundle_source = inspect.getsource(event_replan.make_event_handler)
+    assert "stationary_terminal_replay_bundle.json" in bundle_source
+    assert "q_terminal_start_rad" in bundle_source
+
+
 def test_stationary_clearance_recovery_is_side_only_and_topology_gated():
     source = inspect.getsource(event_replan.plan_stationary_clearance_recovery)
     assert "forward_m=0.0" in source
