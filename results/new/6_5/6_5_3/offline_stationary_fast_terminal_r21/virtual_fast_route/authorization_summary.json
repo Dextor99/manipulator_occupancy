@@ -1,0 +1,1359 @@
+{
+  "status": "TERMINAL_GOAL_AUTHORIZED",
+  "authorized": true,
+  "planner_mode": "stationary_fast_terminal_bypass",
+  "full_optimizer_used": false,
+  "duration_s": 8.0,
+  "segments": 12,
+  "candidate_total_duration_s": 8.0,
+  "tail_fixed_to_goal": true,
+  "verification_min_distance_m": 0.09531295470963116,
+  "verification_checks": {
+    "solver_ok": true,
+    "finite_ok": true,
+    "goal_ok": true,
+    "distance_ok": true,
+    "position_ok": true,
+    "velocity_ok": true,
+    "acceleration_ok": true,
+    "continuity_q_ok": true,
+    "continuity_qd_ok": true,
+    "continuity_qdd_ok": true,
+    "forecast_horizon_ok": true
+  },
+  "tabletop_workspace_guard": {
+    "passed": true,
+    "reason": "ok",
+    "min_gripper_base_z_m": 0.5385202360665977,
+    "threshold_m": 0.46,
+    "sample_count": 401
+  },
+  "virtual_rollout_elapsed_ms": 4893.988138996065,
+  "base_fast_elapsed_ms": 0.0,
+  "stationary_terminal_total_elapsed_ms": 5054.956061998382,
+  "stationary_terminal_total_budget_ms": 7000.0,
+  "stationary_terminal_target_ms": 5000.0,
+  "total_budget_met": true,
+  "authorized_trajectory_csv": "/home/hzy/Code/manipulator_occupancy/results/new/6_5/6_5_3/offline_stationary_fast_terminal_r21/virtual_fast_route/authorized_terminal_goal.csv",
+  "virtual_fast_route": {
+    "connected_to_goal": true,
+    "planner": "virtual_fast_chain",
+    "connection_mode": "post_fast_step_connection",
+    "virtual_fast_step_count": 23,
+    "route_point_count": 71,
+    "steps": [
+      {
+        "virtual_index": 1,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10307706601317759,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.09147326357807953,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.2614164693193053,
+        "goal_error_after_rad": 1.1414150704912096,
+        "goal_error_improvement_rad": 0.12000139882809568,
+        "q_step_motion_rad": 0.12000139882809568,
+        "fast_elapsed_ms": 35.957511980086565,
+        "verification_min_distance_m": 0.10307706601317759,
+        "q_virtual_tail_rad": [
+          0.6706138221868702,
+          -0.13379334886383845,
+          1.4287782838347065,
+          0.01650579466803789,
+          1.5958457210416894,
+          0.7620016104912097
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.809587012976408,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.56848800322041,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 35.957511980086565,
+          "step_total_ms": 162.894356995821
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10307706601317759,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.11476517374892752,
+          "nearest_link": "left_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 12.549341015983373
+        }
+      },
+      {
+        "virtual_index": 2,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10089154772603737,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.0406612934213085,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.1414150704912096,
+        "goal_error_after_rad": 1.1231223923366649,
+        "goal_error_improvement_rad": 0.018292678154544717,
+        "q_step_motion_rad": 0.05944495640425054,
+        "fast_elapsed_ms": 35.5459310230799,
+        "verification_min_distance_m": 0.10089154772603737,
+        "q_virtual_tail_rad": [
+          0.643404126232657,
+          -0.193238305268089,
+          1.3740596179677826,
+          0.06455402392011292,
+          1.5572636103868485,
+          0.743708932336665
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 12.026721029542387,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.687322027981281,
+          "recovery_seed_ms": 196.59689400577918,
+          "fast_elapsed_ms": 35.5459310230799,
+          "step_total_ms": 217.49534900300205
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10089154772603737,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.09919415774210394,
+          "nearest_link": "left_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.820411018561572
+        }
+      },
+      {
+        "virtual_index": 3,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10087213363825298,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.037292277281773895,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.1231223923366649,
+        "goal_error_after_rad": 1.1013692281594996,
+        "goal_error_improvement_rad": 0.02175316417716533,
+        "q_step_motion_rad": 0.0732863038975064,
+        "fast_elapsed_ms": 35.180275968741626,
+        "verification_min_distance_m": 0.10087213363825298,
+        "q_virtual_tail_rad": [
+          0.607329455067219,
+          -0.2665246091655954,
+          1.3032093112695544,
+          0.12345862628137488,
+          1.5108144903699097,
+          0.7219557681594996
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.613576964009553,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.496508002281189,
+          "recovery_seed_ms": 198.93887301441282,
+          "fast_elapsed_ms": 35.180275968741626,
+          "step_total_ms": 219.2416440229863
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10315795405789813,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.08932553825192568,
+          "nearest_link": "gripper_base_link",
+          "min_tcp_z_m": 0.5385991179519132,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 12.216205010190606
+        }
+      },
+      {
+        "virtual_index": 4,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10243114011112545,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.039856164430357555,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.1013692281594996,
+        "goal_error_after_rad": 1.0825356020854169,
+        "goal_error_improvement_rad": 0.018833626074082677,
+        "q_step_motion_rad": 0.07792372324154417,
+        "fast_elapsed_ms": 34.13685300620273,
+        "verification_min_distance_m": 0.10243114011112545,
+        "q_virtual_tail_rad": [
+          0.5704302927864605,
+          -0.33313270295944114,
+          1.2252855880280102,
+          0.178069971621948,
+          1.466915867650696,
+          0.7031221420854169
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.790563992690295,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 11.524724017363042,
+          "recovery_seed_ms": 190.31216303119436,
+          "fast_elapsed_ms": 34.13685300620273,
+          "step_total_ms": 213.8002699939534
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10997716258977616,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.07082094740838635,
+          "nearest_link": "gripper_base_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.63864997215569
+        }
+      },
+      {
+        "virtual_index": 5,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10947640005721518,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.04879696381764215,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.0825356020854169,
+        "goal_error_after_rad": 1.0708024428602618,
+        "goal_error_improvement_rad": 0.011733159225155054,
+        "q_step_motion_rad": 0.07625945314532623,
+        "fast_elapsed_ms": 35.12001602211967,
+        "verification_min_distance_m": 0.10947640005721518,
+        "q_virtual_tail_rad": [
+          0.5588671705904961,
+          -0.37791701228082586,
+          1.149026134882684,
+          0.21924123918029553,
+          1.4359324752419889,
+          0.6913889828602618
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.585156957153231,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.256795001216233,
+          "recovery_seed_ms": 189.0591779956594,
+          "fast_elapsed_ms": 35.12001602211967,
+          "step_total_ms": 209.0845110360533
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.1144007430492337,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.05367557490793959,
+          "nearest_link": "gripper_base_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.418344045523554
+        }
+      },
+      {
+        "virtual_index": 6,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.11353913343852673,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.06805835124094059,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.0708024428602618,
+        "goal_error_after_rad": 1.0708024428602618,
+        "goal_error_improvement_rad": 0.0,
+        "q_step_motion_rad": 0.13227691593115942,
+        "fast_elapsed_ms": 36.710486048832536,
+        "verification_min_distance_m": 0.11353913343852673,
+        "q_virtual_tail_rad": [
+          0.5263093036344354,
+          -0.4475287881170318,
+          1.0167492189515246,
+          0.1933201629710243,
+          1.4902538191013648,
+          0.6913889828602618
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 12.515356007497758,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.192905981559306,
+          "recovery_seed_ms": 195.53433399414644,
+          "fast_elapsed_ms": 36.710486048832536,
+          "step_total_ms": 216.43655496882275
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.11715249073822631,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.035306566794363725,
+          "nearest_link": "gripper_base_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.97494997177273
+        }
+      },
+      {
+        "virtual_index": 7,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10337893178442481,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.07125426064833337,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.0708024428602618,
+        "goal_error_after_rad": 1.0708024428602618,
+        "goal_error_improvement_rad": 0.0,
+        "q_step_motion_rad": 0.12851562366875624,
+        "fast_elapsed_ms": 40.38254200713709,
+        "verification_min_distance_m": 0.10337893178442481,
+        "q_virtual_tail_rad": [
+          0.4933473868174712,
+          -0.5168401161773806,
+          0.8882335952827684,
+          0.16210880426517435,
+          1.5365499945191408,
+          0.6913889828602618
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.692211963236332,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.108587993774563,
+          "recovery_seed_ms": 194.67244599945843,
+          "fast_elapsed_ms": 40.38254200713709,
+          "step_total_ms": 214.64228397235274
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10337893178442481,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.018213462542096173,
+          "nearest_link": "gripper_base_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.001927021425217
+        }
+      },
+      {
+        "virtual_index": 8,
+        "action": "virtual_fast_progress",
+        "selected_mode": "locked_side_bypass",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": false,
+            "verification_min_distance_m": 0.08854204332509533,
+            "accepted": false
+          },
+          {
+            "mode": "locked_side_bypass",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10337893178442481,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.07377631585463254,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.0708024428602618,
+        "goal_error_after_rad": 1.190802442860262,
+        "goal_error_improvement_rad": -0.1200000000000001,
+        "q_step_motion_rad": 0.12,
+        "fast_elapsed_ms": 37.77633502613753,
+        "verification_min_distance_m": 0.10337893178442481,
+        "q_virtual_tail_rad": [
+          0.4912335729079108,
+          -0.4658465478143291,
+          0.9340351552678607,
+          0.2528595999054883,
+          1.6478772918190079,
+          0.8113889828602618
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.001717008184642,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 7.916565984487534,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 37.77633502613753,
+          "step_total_ms": 402.59352198336273
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.1181185457010206,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.021101657908489557,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.167586024384946
+        }
+      },
+      {
+        "virtual_index": 9,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10039507595886343,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.07999471442630157,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.190802442860262,
+        "goal_error_after_rad": 1.190802442860262,
+        "goal_error_improvement_rad": 0.0,
+        "q_step_motion_rad": 0.12774588432741096,
+        "fast_elapsed_ms": 41.58822598401457,
+        "verification_min_distance_m": 0.10039507595886343,
+        "q_virtual_tail_rad": [
+          0.45939060858612457,
+          -0.5340271336039587,
+          0.8062892709404498,
+          0.21722039031675203,
+          1.6856640890152488,
+          0.8113889828602618
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.140082031488419,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 7.907758990768343,
+          "recovery_seed_ms": 200.51289902767166,
+          "fast_elapsed_ms": 41.58822598401457,
+          "step_total_ms": 219.7558109764941
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10039507595886343,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.009003121479630172,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.309334018733352
+        }
+      },
+      {
+        "virtual_index": 10,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10039507595886343,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.08249072209152836,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.190802442860262,
+        "goal_error_after_rad": 1.0708024428602618,
+        "goal_error_improvement_rad": 0.1200000000000001,
+        "q_step_motion_rad": 0.12,
+        "fast_elapsed_ms": 42.38569404697046,
+        "verification_min_distance_m": 0.10039507595886343,
+        "q_virtual_tail_rad": [
+          0.40486269042989115,
+          -0.47431812364635434,
+          0.8255024335758769,
+          0.18672662659991623,
+          1.6740889680835833,
+          0.6913889828602618
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.794557038228959,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 7.997278007678688,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 42.38569404697046,
+          "step_total_ms": 165.47713003819808
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.11077729332797881,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.008361848228727209,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.666707985568792
+        }
+      },
+      {
+        "virtual_index": 11,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.1019900738082456,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.08066418290569854,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 1.0708024428602618,
+        "goal_error_after_rad": 0.9505027334692143,
+        "goal_error_improvement_rad": 0.1202997093910475,
+        "q_step_motion_rad": 0.1202997093910475,
+        "fast_elapsed_ms": 36.901584011502564,
+        "verification_min_distance_m": 0.1019900738082456,
+        "q_virtual_tail_rad": [
+          0.33487643619404894,
+          -0.41916970399012327,
+          0.8504750489503256,
+          0.1624079983207596,
+          1.6633955391435034,
+          0.5710892734692143
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.27847598399967,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.048102958127856,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 36.901584011502564,
+          "step_total_ms": 161.28039098111913
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10627219009831565,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": -0.0090033545396256,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.20977004757151
+        }
+      },
+      {
+        "virtual_index": 12,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10504757256557959,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.06041857192114136,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.9505027334692143,
+        "goal_error_after_rad": 0.9505027334692142,
+        "goal_error_improvement_rad": 1.1102230246251565e-16,
+        "q_step_motion_rad": 0.12705754534324554,
+        "fast_elapsed_ms": 33.77654997166246,
+        "verification_min_distance_m": 0.10504757256557959,
+        "q_virtual_tail_rad": [
+          0.29470899596437394,
+          -0.4864473040507306,
+          0.72341750360708,
+          0.12660167846579484,
+          1.7165717668473899,
+          0.5710892734692142
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.341361969243735,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.143562998156995,
+          "recovery_seed_ms": 188.2076079491526,
+          "fast_elapsed_ms": 33.77654997166246,
+          "step_total_ms": 207.87993003614247
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10504757256557959,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.00822252697719636,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.190002027433366
+        }
+      },
+      {
+        "virtual_index": 13,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10504058454413975,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.07690423381276074,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.9505027334692142,
+        "goal_error_after_rad": 0.9505027334692141,
+        "goal_error_improvement_rad": 1.1102230246251565e-16,
+        "q_step_motion_rad": 0.12553014083428693,
+        "fast_elapsed_ms": 33.71314000105485,
+        "verification_min_distance_m": 0.10504058454413975,
+        "q_virtual_tail_rad": [
+          0.26091831399519044,
+          -0.5514272994469066,
+          0.5978873627727931,
+          0.08709279395064397,
+          1.760847570888814,
+          0.5710892734692141
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.018740013241768,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.10263300081715,
+          "recovery_seed_ms": 208.7378190481104,
+          "fast_elapsed_ms": 33.71314000105485,
+          "step_total_ms": 228.05986797902733
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10573808324667713,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.021100202877412655,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.18595601292327
+        }
+      },
+      {
+        "virtual_index": 14,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.09953289327378292,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.09130698242336563,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.9505027334692141,
+        "goal_error_after_rad": 0.8284707960578366,
+        "goal_error_improvement_rad": 0.12203193741137752,
+        "q_step_motion_rad": 0.12203193741137752,
+        "fast_elapsed_ms": 35.17281700624153,
+        "verification_min_distance_m": 0.09953289327378292,
+        "q_virtual_tail_rad": [
+          0.1872876412112515,
+          -0.4990755826399081,
+          0.666507762958348,
+          0.08131061378777722,
+          1.7365177495954118,
+          0.4490573360578366
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.11533201765269,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.048410003539175,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 35.17281700624153,
+          "step_total_ms": 156.01368603529409
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10409440193839434,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.021411045439484994,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.474519968032837
+        }
+      },
+      {
+        "virtual_index": 15,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10193982537720878,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.07511771734564596,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.8284707960578366,
+        "goal_error_after_rad": 0.8052699614974559,
+        "goal_error_improvement_rad": 0.02320083456038069,
+        "q_step_motion_rad": 0.07833879923524878,
+        "fast_elapsed_ms": 35.89473303873092,
+        "verification_min_distance_m": 0.10193982537720878,
+        "q_virtual_tail_rad": [
+          0.1625871567975041,
+          -0.5447202140664978,
+          0.5881689637230992,
+          0.13638579621005217,
+          1.684601166252016,
+          0.42585650149745596
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.278810969088227,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.425311010796577,
+          "recovery_seed_ms": 192.10515898885205,
+          "fast_elapsed_ms": 35.89473303873092,
+          "step_total_ms": 211.9755619787611
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10274374830619173,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.043309565160064956,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.199186032172292
+        }
+      },
+      {
+        "virtual_index": 16,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.09753223886157666,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.09805867835246224,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.8052699614974559,
+        "goal_error_after_rad": 0.6852699614974559,
+        "goal_error_improvement_rad": 0.12,
+        "q_step_motion_rad": 0.12000000000000005,
+        "fast_elapsed_ms": 35.06558598019183,
+        "verification_min_distance_m": 0.09753223886157666,
+        "q_virtual_tail_rad": [
+          0.08196691278703257,
+          -0.499908344315983,
+          0.6938200401929918,
+          0.11060797381261112,
+          1.6676427147969939,
+          0.3058565014974559
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.093088949564844,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.020466018933803,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 35.06558598019183,
+          "step_total_ms": 154.8165829735808
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.09753223886157666,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.04159019682911916,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.164198978804052
+        }
+      },
+      {
+        "virtual_index": 17,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.09548331698164192,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.07930364888461186,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.6852699614974559,
+        "goal_error_after_rad": 0.7278139444478524,
+        "goal_error_improvement_rad": -0.04254398295039652,
+        "q_step_motion_rad": 0.1269850946408443,
+        "fast_elapsed_ms": 38.504758034832776,
+        "verification_min_distance_m": 0.09548331698164192,
+        "q_virtual_tail_rad": [
+          0.041439232783913815,
+          -0.5542202096175418,
+          0.5668349455521475,
+          0.05527391580402681,
+          1.781551614481977,
+          0.30585650149745586
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.10153499757871,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 7.944790995679796,
+          "recovery_seed_ms": 190.39208203321323,
+          "fast_elapsed_ms": 38.504758034832776,
+          "step_total_ms": 209.61638900917023
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.09548331698164192,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.052150461302582024,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.357745039276779
+        }
+      },
+      {
+        "virtual_index": 18,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.09548331698164192,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.09382676243825677,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.7278139444478524,
+        "goal_error_after_rad": 0.6117470227510369,
+        "goal_error_improvement_rad": 0.11606692169681554,
+        "q_step_motion_rad": 0.11606692169681554,
+        "fast_elapsed_ms": 34.64987297775224,
+        "verification_min_distance_m": 0.09548331698164192,
+        "q_virtual_tail_rad": [
+          -0.028178288497435033,
+          -0.4933007805020915,
+          0.6829018672489631,
+          0.04006860683611634,
+          1.74680346829604,
+          0.19287103865079472
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.242916050832719,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.330851967912167,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 34.64987297775224,
+          "step_total_ms": 155.7574860053137
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10119575778760201,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.053822054388868557,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.117332964204252
+        }
+      },
+      {
+        "virtual_index": 19,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.09910694618187893,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.06998111267282611,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.6117470227510369,
+        "goal_error_after_rad": 0.7321498042987596,
+        "goal_error_improvement_rad": -0.12040278154772277,
+        "q_step_motion_rad": 0.12040278154772277,
+        "fast_elapsed_ms": 34.01601902442053,
+        "verification_min_distance_m": 0.09910694618187893,
+        "q_virtual_tail_rad": [
+          -0.07116707815650118,
+          -0.5478512855518491,
+          0.5624990857012403,
+          -0.01987076861745575,
+          1.86680346829604,
+          0.1928710386507947
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.098577990196645,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.137436001561582,
+          "recovery_seed_ms": 187.24386696703732,
+          "fast_elapsed_ms": 34.01601902442053,
+          "step_total_ms": 206.65467798244208
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.09910694618187893,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.06410083846982959,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.250749987084419
+        }
+      },
+      {
+        "virtual_index": 20,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.09910694618187893,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.09090117379039031,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.7321498042987596,
+        "goal_error_after_rad": 0.6272192223239341,
+        "goal_error_improvement_rad": 0.10493058197482552,
+        "q_step_motion_rad": 0.10493058197482552,
+        "fast_elapsed_ms": 39.921927032992244,
+        "verification_min_distance_m": 0.09910694618187893,
+        "q_virtual_tail_rad": [
+          -0.12894531892223088,
+          -0.4927020755414821,
+          0.6674296676760658,
+          -0.010981409548148328,
+          1.8162668289317525,
+          0.10140904067760528
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.176282016094774,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.4510279702954,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 39.921927032992244,
+          "step_total_ms": 161.36509994976223
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10013671293308207,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.06990029657536193,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.239586980082095
+        }
+      },
+      {
+        "virtual_index": 21,
+        "action": "virtual_fast_progress",
+        "selected_mode": "side_only_clearance_recovery",
+        "attempted_modes": [
+          {
+            "mode": "side_only_clearance_recovery",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10013671293308207,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.07926917567008931,
+        "joint_goal_seed_ok": false,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.6272192223239341,
+        "goal_error_after_rad": 0.6849846926245048,
+        "goal_error_improvement_rad": -0.057765470300570665,
+        "q_step_motion_rad": 0.057765470300570665,
+        "fast_elapsed_ms": 42.2133689862676,
+        "verification_min_distance_m": 0.10013671293308207,
+        "q_virtual_tail_rad": [
+          -0.1498513306874133,
+          -0.5387766472819885,
+          0.6096641973754952,
+          0.03343720772001564,
+          1.7625584383777888,
+          0.10110188512748083
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.096703994553536,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.493061002809554,
+          "recovery_seed_ms": 183.52517299354076,
+          "fast_elapsed_ms": 42.2133689862676,
+          "step_total_ms": 203.2827220391482
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10150836580342107,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.08990555396548969,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.184488015715033
+        }
+      },
+      {
+        "virtual_index": 22,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10150836580342107,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.10150836580342107,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.6849846926245048,
+        "goal_error_after_rad": 0.5649846926245049,
+        "goal_error_improvement_rad": 0.11999999999999988,
+        "q_step_motion_rad": 0.11999999999999988,
+        "fast_elapsed_ms": 35.86372500285506,
+        "verification_min_distance_m": 0.10150836580342107,
+        "q_virtual_tail_rad": [
+          -0.19006685522996117,
+          -0.48629736758289543,
+          0.729664197375495,
+          0.021106668049062822,
+          1.7289649808113596,
+          0.016922133322564533
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.136295972391963,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.065316011197865,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 35.86372500285506,
+          "step_total_ms": 143.4401739970781
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10660396355418802,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": false,
+          "min_distance_m": 0.08975719062780008,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "coarse_samples": 9,
+          "confirmed": false,
+          "confirm_samples": 0,
+          "elapsed_ms": 11.178070970345289
+        }
+      },
+      {
+        "virtual_index": 23,
+        "action": "virtual_fast_progress",
+        "selected_mode": "joint_goal_progress",
+        "attempted_modes": [
+          {
+            "mode": "joint_goal_progress",
+            "attempted": true,
+            "local_repair_ready": true,
+            "verification_min_distance_m": 0.10057341764734817,
+            "accepted": true
+          }
+        ],
+        "joint_goal_seed_clearance_m": 0.09270641543702507,
+        "joint_goal_seed_ok": true,
+        "locked_bypass_side": [
+          0.998186320532316,
+          -0.0601901961709675,
+          -0.0010999032033296573
+        ],
+        "goal_error_before_rad": 0.5649846926245049,
+        "goal_error_after_rad": 0.4523774408511936,
+        "goal_error_improvement_rad": 0.11260725177331132,
+        "q_step_motion_rad": 0.11260725177331132,
+        "fast_elapsed_ms": 38.87641301844269,
+        "verification_min_distance_m": 0.10057341764734817,
+        "q_virtual_tail_rad": [
+          -0.24320063502904551,
+          -0.43280362556722035,
+          0.8422714491488064,
+          0.01431687761954076,
+          1.691156337363085,
+          -0.06607210202124023
+        ],
+        "sampled_shape_point_count": 3,
+        "timing_ms": {
+          "connection_coarse_ms": 11.130077997222543,
+          "connection_confirm_ms": 0.0,
+          "joint_screen_ms": 8.149555011186749,
+          "recovery_seed_ms": 0.0,
+          "fast_elapsed_ms": 38.87641301844269,
+          "step_total_ms": 161.2303979927674
+        },
+        "post_step_connection_probe": {
+          "start_clearance_m": 0.10182777724577946,
+          "goal_clearance_m": 0.10891754600235137,
+          "connectable": true,
+          "min_distance_m": 0.09735080460641435,
+          "nearest_link": "right_link",
+          "min_tcp_z_m": 0.5395643693250993,
+          "confirmed": true,
+          "coarse_probe": {
+            "start_clearance_m": 0.10182777724577946,
+            "goal_clearance_m": 0.10891754600235137,
+            "connectable": true,
+            "min_distance_m": 0.09735080460641435,
+            "nearest_link": "right_link",
+            "min_tcp_z_m": 0.5395643693250993,
+            "coarse_samples": 9
+          },
+          "coarse_samples": 9,
+          "confirm_samples": 25,
+          "elapsed_ms": 38.915915007237345
+        }
+      }
+    ],
+    "route_elapsed_ms": 4893.988138996065,
+    "route_target_ms": 5000.0,
+    "route_hard_budget_ms": 6000.0,
+    "route_target_met": true
+  },
+  "seed_first": true,
+  "forecast_semantics": "confirmed_stationary_frozen_occupancy",
+  "forecast_valid_horizon_s": 8.0,
+  "dynamic_extrapolation_used": false
+}

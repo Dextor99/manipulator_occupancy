@@ -1661,6 +1661,7 @@ def build_stationary_virtual_fast_route(
         candidate: dict[str, Any] | None = None
         trajectory = None
         selected_mode = None
+        attempted_modes: list[dict[str, Any]] = []
         joint_step_is_final = bool(np.max(np.abs(q_joint_step - q_goal)) <= 1.0e-9)
         if joint_seed_ok:
             candidate = plan_stationary_joint_goal_progress(
@@ -1669,10 +1670,18 @@ def build_stationary_virtual_fast_route(
                 geometry=geometry, risk_links=risk_links,
                 trial_dir=step_dir / "joint_goal_progress", artifacts_out=artifacts,
             )
-            trajectory = artifacts.get("candidate_trajectory")
-            if candidate.get("local_repair_ready", False) and trajectory is not None:
+            raw_trajectory = artifacts.get("candidate_trajectory")
+            accepted = bool(candidate.get("local_repair_ready", False) and raw_trajectory is not None)
+            attempted_modes.append({
+                "mode": "joint_goal_progress", "attempted": True,
+                "local_repair_ready": bool(candidate.get("local_repair_ready", False)),
+                "verification_min_distance_m": candidate.get("verification_min_distance_m"),
+                "accepted": accepted,
+            })
+            if accepted:
+                trajectory = raw_trajectory
                 selected_mode = "joint_goal_progress"
-        if trajectory is None and not joint_seed_ok:
+        if trajectory is None:
             artifacts = {}
             recovery_started = time.perf_counter()
             candidate = plan_stationary_clearance_recovery(
@@ -1685,8 +1694,16 @@ def build_stationary_virtual_fast_route(
                 evaluator=route_evaluator, forecast=forecast,
             )
             recovery_seed_ms = (time.perf_counter() - recovery_started) * 1000.0
-            trajectory = artifacts.get("candidate_trajectory")
-            if candidate.get("local_repair_ready", False) and trajectory is not None:
+            raw_trajectory = artifacts.get("candidate_trajectory")
+            accepted = bool(candidate.get("local_repair_ready", False) and raw_trajectory is not None)
+            attempted_modes.append({
+                "mode": "side_only_clearance_recovery", "attempted": True,
+                "local_repair_ready": bool(candidate.get("local_repair_ready", False)),
+                "verification_min_distance_m": candidate.get("verification_min_distance_m"),
+                "accepted": accepted,
+            })
+            if accepted:
+                trajectory = raw_trajectory
                 selected_mode = "side_only_clearance_recovery"
         if trajectory is None:
             artifacts = {}
@@ -1704,11 +1721,19 @@ def build_stationary_virtual_fast_route(
                 robust_target_is_diagnostic=True, allow_unestablished_side_fallback=False,
                 locked_bypass_side=locked_bypass_side,
             )
-            trajectory = artifacts.get("candidate_trajectory")
-            if candidate.get("local_repair_ready", False) and trajectory is not None:
+            raw_trajectory = artifacts.get("candidate_trajectory")
+            accepted = bool(candidate.get("local_repair_ready", False) and raw_trajectory is not None)
+            attempted_modes.append({
+                "mode": "locked_side_bypass", "attempted": True,
+                "local_repair_ready": bool(candidate.get("local_repair_ready", False)),
+                "verification_min_distance_m": candidate.get("verification_min_distance_m"),
+                "accepted": accepted,
+            })
+            if accepted:
+                trajectory = raw_trajectory
                 selected_mode = "locked_side_bypass"
-        if not candidate.get("local_repair_ready", False) or trajectory is None:
-            return None, {"connected_to_goal": False, "reason": "joint_goal_and_bypass_failed", "failed_virtual_index": virtual_index, "candidate": candidate, "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]), "joint_goal_seed_ok": bool(joint_seed_ok), "steps": step_audit}
+        if trajectory is None:
+            return None, {"connected_to_goal": False, "reason": "joint_goal_and_bypass_failed", "failed_virtual_index": virtual_index, "candidate": candidate, "attempted_modes": attempted_modes, "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]), "joint_goal_seed_ok": bool(joint_seed_ok), "steps": step_audit}
         sampled = sample_trajectory_shape_points(trajectory, samples=samples_per_local)
         for point in sampled:
             append_unique_route_point(route_points, point)
@@ -1730,6 +1755,7 @@ def build_stationary_virtual_fast_route(
         step_audit.append({
             "virtual_index": virtual_index, "action": "virtual_fast_progress",
             "selected_mode": selected_mode,
+            "attempted_modes": attempted_modes,
             "joint_goal_seed_clearance_m": float(joint_screen["min_distance_m"]),
             "joint_goal_seed_ok": bool(joint_seed_ok),
             "locked_bypass_side": locked_bypass_side.tolist(),

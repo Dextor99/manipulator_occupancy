@@ -3512,3 +3512,12 @@ def test_command_time_revalidation_uses_strict_start_sync_threshold():
         'start_error["max_abs_rad"] > float(args.candidate_start_tolerance_rad)'
         not in source
     )
+
+
+def test_stationary_virtual_route_only_accepts_verified_trajectory_and_reaches_fallbacks():
+    source = inspect.getsource(event_replan.build_stationary_virtual_fast_route)
+    assert "raw_trajectory = artifacts.get(\"candidate_trajectory\")" in source
+    assert "local_repair_ready" in source
+    assert '"mode": "side_only_clearance_recovery"' in source
+    assert '"mode": "locked_side_bypass"' in source
+    assert '"attempted_modes": attempted_modes' in source
