@@ -121,7 +121,9 @@ def build_parser() -> argparse.ArgumentParser:
         stationary_fast_terminal_target_ms=5000.0,
         stationary_fast_terminal_max_ms=7000.0,
         stationary_fast_terminal_virtual_max_joint_delta_rad=0.30,
-        stationary_fast_terminal_virtual_fast_steps=20,
+        # Formal production route is deadline-driven; a positive value is
+        # reserved for diagnostic replay step caps.
+        stationary_fast_terminal_virtual_fast_steps=0,
         stationary_fast_terminal_samples_per_local=3,
         # route target is diagnostic; terminal max budget supplies the hard
         # route deadline while reserving time for finalization/verifier.

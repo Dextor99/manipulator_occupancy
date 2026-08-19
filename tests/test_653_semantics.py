@@ -3227,7 +3227,7 @@ def test_d2_approach_hold_forwards_stationary_semantics_to_core():
     assert core_args.stationary_fast_terminal_max_ms == pytest.approx(7000.0)
     assert core_args.stationary_fast_terminal_virtual_max_joint_delta_rad == pytest.approx(0.30)
     assert core_args.stationary_virtual_topology_floor_m == pytest.approx(0.08)
-    assert core_args.stationary_fast_terminal_virtual_fast_steps == 20
+    assert core_args.stationary_fast_terminal_virtual_fast_steps == 0
     assert core_args.stationary_fast_terminal_route_max_ms == pytest.approx(0.0)
 
 
@@ -3247,7 +3247,9 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "plan_goal_directed_continuation" in route_source
     assert "sample_trajectory_shape_points" in route_source
     assert "append_unique_route_point" in route_source
-    assert "probe_stationary_goal_connection" in route_source
+    assert "confirmed_stationary_goal_connection" in route_source
+    assert "post_step_connection_probe" in route_source
+    assert "stationary_virtual_fast_zero_motion" in route_source
     assert "bounded_joint_goal_step" in route_source
     assert "plan_stationary_joint_goal_progress" in route_source
     assert "plan_stationary_clearance_recovery" in route_source
@@ -3260,8 +3262,9 @@ def test_stationary_fast_terminal_bypass_is_one_complete_path():
     assert "getattr(runtime_args, \"local_segments\", 5)" in route_source
     assert "getattr(runtime_args, \"local_horizon_s\", 1.0)" in route_source
     assert "connected_to_goal" in route_source
-    assert "coarse_samples" in route_source
-    assert "confirm_samples" in route_source
+    connection_source = inspect.getsource(event_replan.confirmed_stationary_goal_connection)
+    assert "coarse_samples" in connection_source
+    assert "confirm_samples" in connection_source
     assert "route_hard_budget_ms" in inspect.getsource(event_replan.plan_stationary_fast_terminal_bypass)
     assert "execute_authorized_trajectory_offline_track" not in route_source
 

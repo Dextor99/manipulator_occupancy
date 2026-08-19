@@ -746,7 +746,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stationary-fast-terminal-max-ms", type=float, default=1000.0)
     parser.add_argument("--stationary-fast-terminal-route-max-ms", type=float, default=0.0)
     parser.add_argument("--stationary-fast-terminal-virtual-max-joint-delta-rad", type=float, default=0.30)
-    parser.add_argument("--stationary-fast-terminal-virtual-fast-steps", type=int, default=6)
+    parser.add_argument(
+        "--stationary-fast-terminal-virtual-fast-steps", type=int, default=0,
+        help="diagnostic step cap; 0 selects the formal deadline-driven route",
+    )
     parser.add_argument("--stationary-fast-terminal-samples-per-local", type=int, default=3)
     parser.add_argument(
         "--stationary-virtual-topology-floor-m", type=float, default=0.08,
@@ -1278,6 +1281,34 @@ def probe_stationary_goal_connection(
     }
 
 
+def confirmed_stationary_goal_connection(
+    evaluator: Any, model: Any, forecast: Any,
+    q_now: np.ndarray, q_goal: np.ndarray, *, tcp_link: str,
+    min_clearance_m: float, min_tcp_z_m: float,
+) -> dict[str, Any]:
+    """Run a cheap topology probe, then confirm only a promising edge."""
+    coarse = probe_stationary_goal_connection(
+        evaluator, model, forecast, q_now, q_goal,
+        tcp_link=tcp_link, min_clearance_m=min_clearance_m,
+        min_tcp_z_m=min_tcp_z_m, samples=9,
+    )
+    coarse["coarse_samples"] = 9
+    if not coarse["connectable"]:
+        coarse["confirmed"] = False
+        coarse["confirm_samples"] = 0
+        return coarse
+    confirmed = probe_stationary_goal_connection(
+        evaluator, model, forecast, q_now, q_goal,
+        tcp_link=tcp_link, min_clearance_m=min_clearance_m,
+        min_tcp_z_m=min_tcp_z_m, samples=25,
+    )
+    confirmed["confirmed"] = True
+    confirmed["coarse_probe"] = coarse
+    confirmed["coarse_samples"] = 9
+    confirmed["confirm_samples"] = 25
+    return confirmed
+
+
 def sampled_joint_segment_clearance(
     evaluator: Any,
     forecast: Any,
@@ -1546,39 +1577,29 @@ def build_stationary_virtual_fast_route(
     except RuntimeError as exc:
         return None, {"connected_to_goal": False, "reason": "locked_bypass_side_unavailable", "error": str(exc), "steps": step_audit}
     zero = np.zeros(6, dtype=np.float64)
-    for virtual_index in range(1, int(max_virtual_steps) + 1):
+    virtual_index = 0
+    while True:
         if deadline_perf is not None and time.perf_counter() >= deadline_perf:
             return None, {"connected_to_goal": False, "reason": "stationary_virtual_fast_budget_exhausted", "steps": step_audit}
+        if int(max_virtual_steps) > 0 and virtual_index >= int(max_virtual_steps):
+            return None, {
+                "connected_to_goal": False,
+                "reason": "stationary_virtual_fast_diagnostic_step_cap",
+                "virtual_fast_step_count": len(step_audit),
+                "steps": step_audit,
+            }
+        virtual_index += 1
         step_started = time.perf_counter()
         coarse_started = time.perf_counter()
-        connection = probe_stationary_goal_connection(
+        connection = confirmed_stationary_goal_connection(
             route_evaluator, model, forecast, q_virtual, q_goal,
-            tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
+            tcp_link=tcp_link,
             min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
             min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
-            samples=9,
         )
         coarse_ms = (time.perf_counter() - coarse_started) * 1000.0
-        confirm_ms = 0.0
-        connection["coarse_samples"] = 9
         connection["coarse_elapsed_ms"] = coarse_ms
-        if connection["connectable"]:
-            confirm_started = time.perf_counter()
-            connection = probe_stationary_goal_connection(
-                route_evaluator, model, forecast, q_virtual, q_goal,
-                tcp_link=str(getattr(runtime_args, "tcp_link", "gripper_base_link")),
-                min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
-                min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
-                samples=25,
-            )
-            confirm_ms = (time.perf_counter() - confirm_started) * 1000.0
-            connection["coarse_samples"] = 9
-            connection["coarse_elapsed_ms"] = coarse_ms
-            connection["confirm_samples"] = 25
-            connection["confirm_elapsed_ms"] = confirm_ms
-        else:
-            connection["confirm_samples"] = 0
-            connection["confirm_elapsed_ms"] = 0.0
+        confirm_ms = 0.0
         if connection["connectable"]:
             append_unique_route_point(route_points, q_goal)
             step_audit.append({"virtual_index": virtual_index, "action": "goal_spatially_connected", "connection_probe": connection})
@@ -1664,6 +1685,14 @@ def build_stationary_virtual_fast_route(
             append_unique_route_point(route_points, point)
         goal_error_before = float(np.max(np.abs(q_goal - q_virtual)))
         q_new = np.asarray(trajectory.evaluate(trajectory.total_duration), dtype=np.float64)
+        q_step_motion = float(np.max(np.abs(q_new - q_virtual)))
+        if q_step_motion <= 1.0e-6:
+            return None, {
+                "connected_to_goal": False,
+                "reason": "stationary_virtual_fast_zero_motion",
+                "failed_virtual_index": virtual_index,
+                "steps": step_audit,
+            }
         goal_error_after = float(np.max(np.abs(q_goal - q_new)))
         goal_error_improvement = goal_error_before - goal_error_after
         if selected_mode == "joint_goal_progress" and goal_error_improvement <= 1.0e-6:
@@ -1678,6 +1707,7 @@ def build_stationary_virtual_fast_route(
             "goal_error_before_rad": goal_error_before,
             "goal_error_after_rad": goal_error_after,
             "goal_error_improvement_rad": goal_error_improvement,
+            "q_step_motion_rad": q_step_motion,
             "fast_elapsed_ms": candidate.get("fast_elapsed_ms"),
             "verification_min_distance_m": candidate.get("verification_min_distance_m"),
             "q_virtual_tail_rad": q_virtual.tolist(), "sampled_shape_point_count": len(sampled),
@@ -1690,6 +1720,25 @@ def build_stationary_virtual_fast_route(
                 "step_total_ms": (time.perf_counter() - step_started) * 1000.0,
             },
         })
+        post_connection_started = time.perf_counter()
+        post_connection = confirmed_stationary_goal_connection(
+            route_evaluator, model, forecast, q_virtual, q_goal,
+            tcp_link=tcp_link,
+            min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
+            min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+        )
+        post_connection["elapsed_ms"] = (time.perf_counter() - post_connection_started) * 1000.0
+        step_audit[-1]["post_step_connection_probe"] = post_connection
+        if post_connection["connectable"]:
+            append_unique_route_point(route_points, q_goal)
+            return np.asarray(route_points, dtype=np.float64), {
+                "connected_to_goal": True,
+                "planner": "virtual_fast_chain",
+                "connection_mode": "post_fast_step_connection",
+                "virtual_fast_step_count": len(step_audit),
+                "route_point_count": len(route_points),
+                "steps": step_audit,
+            }
         if selected_mode == "joint_goal_progress" and joint_step_is_final:
             append_unique_route_point(route_points, q_goal)
             return np.asarray(route_points, dtype=np.float64), {
@@ -1698,7 +1747,7 @@ def build_stationary_virtual_fast_route(
                 "virtual_fast_step_count": sum(row.get("action") == "virtual_fast_progress" for row in step_audit),
                 "route_point_count": len(route_points), "steps": step_audit,
             }
-    return None, {"connected_to_goal": False, "reason": "max_virtual_fast_steps_without_terminal_connection", "virtual_fast_step_count": len(step_audit), "steps": step_audit}
+    return None, {"connected_to_goal": False, "reason": "stationary_virtual_fast_budget_exhausted", "virtual_fast_step_count": len(step_audit), "steps": step_audit}
 
 
 def plan_stationary_fast_terminal_bypass(
@@ -1728,10 +1777,7 @@ def plan_stationary_fast_terminal_bypass(
     # The route target is a performance diagnostic, not a hard stop.  Reserve
     # one second for polyline construction and final verification, then use
     # the remaining terminal budget as the actual route deadline.
-    route_max_ms = float(getattr(runtime_args, "stationary_fast_terminal_route_max_ms", 0.0))
     route_budget_ms = max(0.0, total_max_ms - 1000.0)
-    if route_max_ms > 0.0:
-        route_budget_ms = max(route_budget_ms, min(route_max_ms, total_max_ms - 1000.0))
     route_points, route_audit = build_stationary_virtual_fast_route(
         base_fast, runtime_args, config, model, q_escape_start=q_escape_start,
         q_start=q_start, q_goal=q_goal, fresh=fresh, geometry=geometry,
