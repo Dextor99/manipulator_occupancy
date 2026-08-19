@@ -2051,24 +2051,36 @@ def build_bounded_bidirectional_connector_route(
 
 
 def shortcut_stationary_route(route, evaluator, forecast, model, *, tcp_link, floor, min_z,
-                              preferred_floor=0.09):
-    """Greedy shortcut, preferring chords with execution-level clearance."""
+                              preferred_floor=0.11):
+    """Greedy shortcut with a robust-clearance preference.
+
+    The topology floor remains the hard feasibility floor.  When no chord
+    reaches ``preferred_floor``, choose the accepted chord with the largest
+    measured clearance (then task progress), rather than the longest chord;
+    this avoids shortening a route into a barely-feasible segment.
+    """
     points = [np.asarray(route[0], dtype=np.float64)]
     index = 0
     while index < len(route) - 1:
-        preferred = None
-        fallback = index + 1
+        accepted = []
         for candidate in range(len(route) - 1, index, -1):
             screen = screen_boundary_edge(evaluator, forecast, model, route[index], route[candidate],
                 tcp_link=tcp_link, topology_floor_m=floor, min_tcp_z_m=min_z, samples=7)
             if not screen["accepted"]:
                 continue
-            if float(screen["min_distance_m"]) >= float(preferred_floor):
-                preferred = candidate
-                break
-            if fallback == index + 1:
-                fallback = candidate
-        chosen = preferred if preferred is not None else fallback
+            accepted.append((candidate, float(screen["min_distance_m"])))
+        if not accepted:
+            # The adjacent edge should normally be valid; preserve the old
+            # fail-closed behavior if a malformed route reaches this point.
+            return np.asarray(points, dtype=np.float64)
+        preferred = [row for row in accepted if row[1] >= float(preferred_floor)]
+        if preferred:
+            # Among robust chords, retain as much forward route progress as
+            # possible while still preferring the widest clearance on ties.
+            chosen, _ = max(preferred, key=lambda row: (row[0], row[1]))
+        else:
+            # No robust chord: maximize clearance first, then progress.
+            chosen, _ = max(accepted, key=lambda row: (row[1], row[0]))
         points.append(np.asarray(route[chosen], dtype=np.float64))
         index = chosen
     return np.asarray(points, dtype=np.float64)
@@ -2131,6 +2143,7 @@ def build_stationary_boundary_routes(
             graph_route, evaluator, forecast, model, tcp_link=tcp_link,
             floor=float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)),
             min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+            preferred_floor=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
         )
         graph_min_clearance = selected_route_clearance(graph_route)
         graph_row = {
@@ -2144,6 +2157,7 @@ def build_stationary_boundary_routes(
         }
         routes.append(graph_row)
     connector_route = None
+    connector_candidates: list[dict[str, Any]] = []
     connector_audit = {"connector": True, "attempts": [],
                        "serial_seeds": [23, 11, 47]}
     # Use the empirically fastest validated oracle seed first.  Later seeds
@@ -2157,9 +2171,49 @@ def build_stationary_boundary_routes(
         )
         connector_audit["attempts"].append(candidate_audit)
         if candidate_route is not None:
-            connector_route, connector_audit = candidate_route, {**connector_audit,
-                "selected_seed": int(connector_seed)}
-            break
+            # Do not stop at the first merely-connected seed.  Keep all
+            # candidates found before the absolute deadline and select by
+            # measured coarse clearance below.
+            normalized = np.asarray(candidate_route, dtype=np.float64)
+            if np.max(np.abs(normalized[0] - np.asarray(q_start))) > 1.0e-9:
+                if np.max(np.abs(normalized[-1] - np.asarray(q_start))) <= 1.0e-9:
+                    normalized = normalized[::-1]
+                else:
+                    normalized = None
+            if normalized is not None and np.max(np.abs(normalized[-1] - np.asarray(q_goal))) <= 1.0e-9:
+                shortened = shortcut_stationary_route(
+                    normalized, evaluator, forecast, model,
+                    tcp_link=tcp_link,
+                    floor=float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)),
+                    min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+                    preferred_floor=float(getattr(runtime_args, "planning_robust_target_m", 0.11)),
+                )
+                connector_candidates.append({
+                    "seed": int(connector_seed),
+                    "route": shortened,
+                    "coarse_min_clearance_m": selected_route_clearance(shortened),
+                    "joint_arclength": float(np.sum(np.linalg.norm(np.diff(shortened, axis=0), axis=1))),
+                    "audit": candidate_audit,
+                })
+            if connector_candidates and float(connector_candidates[-1]["coarse_min_clearance_m"]) >= float(getattr(runtime_args, "planning_robust_target_m", 0.11)):
+                # A robust route is good enough, but still let the loop record
+                # the remaining deterministic seeds when the deadline allows.
+                continue
+    if connector_candidates:
+        selected_connector = max(
+            connector_candidates,
+            key=lambda row: (float(row["coarse_min_clearance_m"]), -float(row["joint_arclength"])),
+        )
+        connector_route = selected_connector["route"]
+        connector_audit = {**connector_audit,
+            "selected_seed": int(selected_connector["seed"]),
+            "candidate_count": len(connector_candidates),
+            "candidate_scores": [
+                {key: value for key, value in row.items() if key not in {"route", "audit"}}
+                for row in connector_candidates
+            ],
+            "selected_coarse_min_clearance_m": float(selected_connector["coarse_min_clearance_m"]),
+        }
     if connector_route is not None:
         if np.max(np.abs(connector_route[0] - np.asarray(q_start))) > 1.0e-9:
             if np.max(np.abs(connector_route[-1] - np.asarray(q_start))) <= 1.0e-9:
@@ -2169,12 +2223,7 @@ def build_stationary_boundary_routes(
         if connector_route is not None and np.max(np.abs(connector_route[-1] - np.asarray(q_goal))) > 1.0e-9:
             connector_route = None
     if connector_route is not None:
-        connector_route = shortcut_stationary_route(
-            connector_route, evaluator, forecast, model,
-            tcp_link=tcp_link,
-            floor=float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08)),
-            min_z=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
-        )
+        # Candidate routes were shortened and scored in the seed loop.
         connector_row = {
             "index": -2, "theta_deg": 0.0,
             "direction": np.asarray(frame["lateral"], dtype=np.float64).tolist(),
