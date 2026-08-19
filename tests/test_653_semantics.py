@@ -3317,9 +3317,16 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "topology_floor_m" in one_source
     assert "risk_after" in one_source
     assert "required_escape_after_m" in one_source
+    assert "fixed_task_direction" in inspect.getsource(simple_bypass.goal_directed_side_continuation_candidates)
+    assert 'fixed_task_direction=task_frame["task"]' in one_source
+    assert "forward_probe_count" in one_source
+    assert "forward_probe_pass_count" in one_source
+    assert "post_step_goal_connection_min_m" in one_source
     assert "boundary_route_deadline_exhausted" in one_source
     assert "escape_phase_not_completed" in one_source
     assert "deadline_perf" in route_source
+    assert "direction_budget_ms" in route_source
+    assert "remaining_directions" in route_source
     seed_source = inspect.getsource(event_replan.build_and_verify_stationary_boundary_seed)
     assert "verification_checks" in seed_source
     assert "seed_safe" in seed_source

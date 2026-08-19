@@ -1634,13 +1634,21 @@ def build_one_stationary_boundary_route(
     route = [q.copy()]
     audit: list[dict[str, Any]] = []
     escaped = False
+    escape_step_count = 0
+    pass_step_count = 0
+    forward_probe_count = 0
+    forward_probe_pass_count = 0
+    post_connection_min_m = math.inf
     phase_steps = (
         [(index, "escape") for index in range(max(1, int(max_escape_steps)))]
         + [(max(1, int(max_escape_steps)) + index, "pass") for index in range(max(1, int(max_pass_steps)))]
     )
     for step_index, phase in phase_steps:
         if deadline_perf is not None and time.perf_counter() >= deadline_perf:
-            return None, {"connected_to_goal": False, "reason": "boundary_route_deadline_exhausted", "steps": audit, "escaped": escaped}
+            return None, {"connected_to_goal": False, "reason": "boundary_route_deadline_exhausted", "steps": audit, "escaped": escaped,
+                "escape_step_count": escape_step_count, "pass_step_count": pass_step_count,
+                "forward_probe_count": forward_probe_count, "forward_probe_pass_count": forward_probe_pass_count,
+                "post_step_goal_connection_min_m": post_connection_min_m}
         if phase == "escape" and escaped:
             # The phase cap is a hard upper bound, not extra pass work.
             continue
@@ -1658,12 +1666,70 @@ def build_one_stationary_boundary_route(
         )
         if connection.get("connectable", False):
             route.append(goal.copy())
-            return np.asarray(route), {"connected_to_goal": True, "steps": audit, "connection": connection}
+            post_connection_min_m = min(post_connection_min_m, float(connection.get("min_distance_m", math.inf)))
+            return np.asarray(route), {"connected_to_goal": True, "steps": audit, "connection": connection,
+                "escaped": escaped, "escape_step_count": escape_step_count,
+                "pass_step_count": pass_step_count, "forward_probe_count": forward_probe_count,
+                "forward_probe_pass_count": forward_probe_pass_count,
+                "post_step_goal_connection_min_m": post_connection_min_m}
         projection = float(np.dot(np.asarray(risk.robot_point), d))
         required = max(0.0, support_upper + robust - projection)
-        if not escaped and required <= 0.0:
-            escaped = True
-            continue
+        # A fixed-task forward corridor probe, rather than the support boundary,
+        # determines when the limiting link has actually escaped.  The support
+        # value remains only a side-step magnitude hint.
+        if not escaped:
+            remaining_forward = max(0.0, float(np.dot(tcp_goal - tcp_now, task_frame["task"])))
+            probe_forward = min(forward_limit, remaining_forward)
+            forward_probe_count += 1
+            if probe_forward > 1.0e-6:
+                probe_goals, probe_mapping = bypass.goal_directed_side_continuation_candidates(
+                    model, q, tcp_position=tcp_now, goal_position=tcp_goal,
+                    risk_link=str(risk.nearest_link), risk_position=np.asarray(risk.robot_point),
+                    risk_point_q=q, established_side=d, forward_m=probe_forward, side_m=0.0,
+                    side_weights=(0.0,), tcp_link=tcp_link, max_joint_delta_rad=max_delta,
+                    tabletop_parallel_side=False, preserve_tcp_height=preserve_height,
+                    fixed_task_direction=task_frame["task"],
+                )
+                if probe_goals:
+                    probe_q = np.asarray(probe_goals[0]["q_goal"], dtype=np.float64)
+                    probe_screen = screen_boundary_edge(
+                        evaluator, forecast, model, q, probe_q, tcp_link=tcp_link,
+                        topology_floor_m=floor,
+                        min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+                    )
+                    probe_progress = float(np.dot(
+                        live.simple.tcp_position(model, probe_q, tcp_link) - tcp_now,
+                        task_frame["task"],
+                    ))
+                    if probe_screen["accepted"] and probe_progress > 1.0e-6:
+                        forward_probe_pass_count += 1
+                        q = probe_q
+                        route.append(q.copy())
+                        escaped = True
+                        pass_step_count += 1
+                        probe_connection = confirmed_stationary_goal_connection(
+                            evaluator, model, forecast, q, goal, tcp_link=tcp_link,
+                            min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
+                            min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+                        )
+                        probe_min = float(probe_connection.get("min_distance_m", math.inf))
+                        post_connection_min_m = min(post_connection_min_m, probe_min)
+                        audit.append({"step": step_index + 1, "phase": "forward_probe",
+                            "direction": d.tolist(), "forward_step_m": probe_forward,
+                            "edge_min_distance_m": float(probe_screen["min_distance_m"]),
+                            "task_progress_m": probe_progress,
+                            "goal_connection": probe_connection,
+                            "goal_connectable_after_step": bool(probe_connection.get("connectable", False)),
+                            "post_step_goal_connection_min_m": probe_min})
+                        if probe_connection.get("connectable", False):
+                            route.append(goal.copy())
+                            return np.asarray(route), {"connected_to_goal": True, "steps": audit,
+                                "connection": probe_connection, "escaped": True,
+                                "escape_step_count": escape_step_count, "pass_step_count": pass_step_count,
+                                "forward_probe_count": forward_probe_count,
+                                "forward_probe_pass_count": forward_probe_pass_count,
+                                "post_step_goal_connection_min_m": post_connection_min_m}
+                        continue
         side_step = min(required, side_limit)
         remaining_forward = max(0.0, float(np.dot(tcp_goal - tcp_now, task_frame["task"])))
         forward_step = min(forward_limit, remaining_forward) if escaped else 0.0
@@ -1677,6 +1743,7 @@ def build_one_stationary_boundary_route(
                 side_m=side_step * scale, side_weights=(1.0,), tcp_link=tcp_link,
                 max_joint_delta_rad=max_delta, tabletop_parallel_side=False,
                 preserve_tcp_height=preserve_height,
+                fixed_task_direction=task_frame["task"],
             )
             if not goals:
                 attempts.append({"scale": scale, "accepted": False, "reason": "no_candidate"})
@@ -1695,6 +1762,10 @@ def build_one_stationary_boundary_route(
             return None, {"connected_to_goal": False, "reason": "boundary_edge_below_topology_floor", "phase": phase, "steps": audit, "attempts": attempts}
         q, screen, mapping = selected
         route.append(q.copy())
+        if phase == "escape":
+            escape_step_count += 1
+        else:
+            pass_step_count += 1
         task_progress = float(np.dot(live.simple.tcp_position(model, q, tcp_link) - tcp_now, task_frame["task"]))
         audit.append({
             "step": step_index + 1, "phase": phase, "direction": d.tolist(),
@@ -1704,14 +1775,32 @@ def build_one_stationary_boundary_route(
             "min_tcp_z_m": float(screen["min_tcp_z_m"]), "task_progress_m": task_progress,
             "attempts": attempts,
         })
-        if not escaped:
-            risk_after = evaluator.configuration(q, forecast, 0.0, density="medium", with_gradient=False)
-            if risk_after.robot_point is not None:
-                projection_after = float(np.dot(np.asarray(risk_after.robot_point), d))
-                required_after = max(0.0, support_upper + robust - projection_after)
-                audit[-1]["required_escape_after_m"] = required_after
-                escaped = required_after <= 1.0e-6
-    return None, {"connected_to_goal": False, "reason": "boundary_route_step_limit", "steps": audit, "escaped": escaped}
+        risk_after = evaluator.configuration(q, forecast, 0.0, density="medium", with_gradient=False)
+        if risk_after.robot_point is not None:
+            projection_after = float(np.dot(np.asarray(risk_after.robot_point), d))
+            audit[-1]["required_escape_after_m"] = max(0.0, support_upper + robust - projection_after)
+        post_connection = confirmed_stationary_goal_connection(
+            evaluator, model, forecast, q, goal, tcp_link=tcp_link,
+            min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
+            min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+        )
+        post_min = float(post_connection.get("min_distance_m", math.inf))
+        post_connection_min_m = min(post_connection_min_m, post_min)
+        audit[-1]["goal_connection"] = post_connection
+        audit[-1]["goal_connectable_after_step"] = bool(post_connection.get("connectable", False))
+        audit[-1]["post_step_goal_connection_min_m"] = post_min
+        if post_connection.get("connectable", False):
+            route.append(goal.copy())
+            return np.asarray(route), {"connected_to_goal": True, "steps": audit,
+                "connection": post_connection, "escaped": escaped,
+                "escape_step_count": escape_step_count, "pass_step_count": pass_step_count,
+                "forward_probe_count": forward_probe_count,
+                "forward_probe_pass_count": forward_probe_pass_count,
+                "post_step_goal_connection_min_m": post_connection_min_m}
+    return None, {"connected_to_goal": False, "reason": "boundary_route_step_limit", "steps": audit, "escaped": escaped,
+        "escape_step_count": escape_step_count, "pass_step_count": pass_step_count,
+        "forward_probe_count": forward_probe_count, "forward_probe_pass_count": forward_probe_pass_count,
+        "post_step_goal_connection_min_m": post_connection_min_m}
 
 
 def build_stationary_boundary_routes(
@@ -1741,15 +1830,31 @@ def build_stationary_boundary_routes(
     evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
     routes = []
     direction_audit = []
-    for item in directions:
+    for direction_index, item in enumerate(directions):
+        direction_started = time.perf_counter()
+        if deadline_perf is not None and direction_started >= deadline_perf:
+            break
+        remaining_directions = max(1, len(directions) - direction_index)
+        direction_budget_s = ((deadline_perf - direction_started) / remaining_directions
+            if deadline_perf is not None else math.inf)
+        direction_deadline = (min(deadline_perf, direction_started + max(0.0, direction_budget_s))
+            if deadline_perf is not None else None)
         route, audit = build_one_stationary_boundary_route(
             runtime_args, config, model, evaluator=evaluator, forecast=forecast,
             geometry=geometry, q_start=q_start, q_goal=q_goal,
             direction=item["direction"], task_frame=frame, tcp_link=tcp_link,
             max_escape_steps=max_escape_steps, max_pass_steps=max_pass_steps,
-            deadline_perf=deadline_perf,
+            deadline_perf=direction_deadline,
         )
-        row = {**item, "connected_to_goal": route is not None, "audit": audit}
+        row = {**item, "connected_to_goal": route is not None, "audit": audit,
+            "direction_budget_ms": (float(max(0.0, direction_budget_s) * 1000.0)
+                if math.isfinite(direction_budget_s) else None),
+            "direction_elapsed_ms": float((time.perf_counter() - direction_started) * 1000.0),
+            "escape_step_count": int(audit.get("escape_step_count", 0)),
+            "pass_step_count": int(audit.get("pass_step_count", 0)),
+            "forward_probe_count": int(audit.get("forward_probe_count", 0)),
+            "forward_probe_pass_count": int(audit.get("forward_probe_pass_count", 0)),
+            "post_step_goal_connection_min_m": audit.get("post_step_goal_connection_min_m")}
         direction_audit.append(row)
         if route is not None:
             row["route_points"] = route

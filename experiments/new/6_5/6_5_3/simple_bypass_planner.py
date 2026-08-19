@@ -347,6 +347,7 @@ def goal_directed_side_continuation_candidates(
     tabletop_parallel_side: bool = False,
     preserve_tcp_height: bool = False,
     tcp_height_weight: float = 1.0,
+    fixed_task_direction: np.ndarray | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Progress toward goal while preserving a previously validated bypass side.
 
@@ -356,7 +357,10 @@ def goal_directed_side_continuation_candidates(
     must grow without bound.
     """
     q_values = np.asarray(q_now, dtype=np.float64)
-    task = normalized(np.asarray(goal_position) - np.asarray(tcp_position))
+    if fixed_task_direction is None:
+        task = normalized(np.asarray(goal_position) - np.asarray(tcp_position))
+    else:
+        task = normalized(np.asarray(fixed_task_direction, dtype=np.float64))
     side_raw = np.asarray(established_side, dtype=np.float64)
     side_lateral = side_raw - task * float(np.dot(task, side_raw))
     side = normalized(side_lateral, fallback=side_raw)
