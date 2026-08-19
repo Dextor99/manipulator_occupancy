@@ -1252,6 +1252,88 @@ def test_final_live_requires_barrier_and_disables_startup_grace():
     assert "require_split_offline_track" in wait_source
 
 
+def _run_split_executor_contract(tmp_path, monkeypatch, *, second_barrier_ready=True):
+    q0 = np.zeros(6)
+    q1 = np.ones(6) * 0.01
+    trajectory = NUBSTrajectory6D().generate(
+        np.empty((0, 6)),
+        NUBSTrajectory6D.make_boundary_state(q0),
+        NUBSTrajectory6D.make_boundary_state(q1),
+        np.array([1.0]),
+    )
+    path = tmp_path / "split_candidate.csv"
+    trial.save_trajectory_csv(path, trajectory, dt=0.01)
+    events = []
+
+    class SplitRobot:
+        def get_joint(self):
+            return q0.copy()
+        def offline_track_prepare_joints(self, *args):
+            events.append("prepare")
+            return {"prepare_ret": 0}
+        def offline_track_start(self, **kwargs):
+            events.append("start")
+            return {"startup_ret": 0}
+
+    class Monitor:
+        barrier_count = 0
+        def prearm(self):
+            events.append("prearm")
+            return {"ready": True}
+        def command_time_revalidate(self, **kwargs):
+            events.append("command_time")
+            return {"ready": True}
+        def final_precommand_barrier(self, **kwargs):
+            self.barrier_count += 1
+            events.append(f"barrier_{self.barrier_count}")
+            return {
+                "ready": self.barrier_count == 1 or second_barrier_ready,
+                "action": "hold",
+            }
+
+    args = trial.build_parser().parse_args(["--scene", "D2"])
+    args.require_split_offline_track = True
+    args.candidate_execute_confirm = False
+    monkeypatch.setattr(trial.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(
+        trial,
+        "wait_for_candidate_goal_guarded",
+        lambda *a, **k: ({"reached": True, "elapsed_s": 1.0}, []),
+    )
+    monkeypatch.setattr(trial, "candidate_tracking_metrics", lambda *a, **k: {})
+    monkeypatch.setattr(
+        trial,
+        "authorized_execution_timing_check",
+        lambda *a, **k: {"accepted": True},
+    )
+    result = trial.execute_authorized_trajectory_offline_track(
+        SplitRobot(), path, args, processor=object(), denoiser=None,
+        motion_monitor_provider=Monitor(),
+    )
+    return result, events
+
+
+def test_split_executor_enforces_barrier_prepare_start_order(tmp_path, monkeypatch):
+    result, events = _run_split_executor_contract(tmp_path, monkeypatch)
+    assert events == [
+        "prearm", "command_time", "barrier_1", "prepare", "barrier_2", "start"
+    ]
+    assert result["status"] == "COMPLETED_AUTHORIZED_TRAJECTORY_EXECUTION"
+    assert result["robot_commanded"] is True
+
+
+def test_second_barrier_failure_blocks_start(tmp_path, monkeypatch):
+    result, events = _run_split_executor_contract(
+        tmp_path, monkeypatch, second_barrier_ready=False
+    )
+    assert events == [
+        "prearm", "command_time", "barrier_1", "prepare", "barrier_2"
+    ]
+    assert "start" not in events
+    assert result["status"] == "FINAL_PRECOMMAND_HOLD_PRECOMMAND"
+    assert result["robot_commanded"] is False
+
+
 def test_terminal_routes_use_unwrapped_production_fast():
     source = inspect.getsource(event_replan.make_event_handler)
     assert "require_production_fast()" in source
