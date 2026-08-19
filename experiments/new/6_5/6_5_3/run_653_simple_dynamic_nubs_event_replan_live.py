@@ -2652,9 +2652,23 @@ def plan_stationary_fast_terminal_bypass(
         # A connected coarse route that fails every deterministic retiming
         # profile is not a valid terminal seed.  Do not fall through with its
         # stale polyline and risk a q_goal-tail/runtime mismatch.
-        route_points = None
-        route_audit = {**route_audit, "connected_to_goal": False,
-                       "reason": "boundary_routes_full_verifier_failed"}
+        total_elapsed_ms = (time.perf_counter() - planner_started) * 1000.0
+        payload = {
+            "status": "STATIONARY_FAST_TERMINAL_BYPASS_HOLD",
+            "authorized": False,
+            "planner_mode": "stationary_fast_terminal_bypass",
+            "full_optimizer_used": False,
+            "virtual_fast_route": {**route_audit, "connected_to_goal": False,
+                                    "reason": "boundary_routes_full_verifier_failed"},
+            "stationary_terminal_total_elapsed_ms": total_elapsed_ms,
+            "stationary_terminal_total_budget_ms": total_max_ms,
+            "stationary_terminal_target_ms": total_target_ms,
+            "total_budget_met": total_elapsed_ms <= total_max_ms,
+            "fast_invoked_for_route": False,
+            "reason": "boundary_routes_full_verifier_failed",
+        }
+        trial.write_json(trial_dir / "authorization_summary.json", payload)
+        return payload, None
     duration = float(getattr(runtime_args, "stationary_fast_terminal_duration_s", 8.0))
     segments = max(2, int(getattr(runtime_args, "stationary_fast_terminal_segments", 12)))
     durations = np.full(segments, duration / segments, dtype=np.float64)
