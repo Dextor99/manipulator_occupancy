@@ -1330,7 +1330,7 @@ def load_stationary_terminal_replay_source(source_trial_dir: Path) -> dict[str, 
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     geometry = json.loads(geometry_path.read_text(encoding="utf-8"))
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    for key in ("q_terminal_start_rad", "q_goal_rad", "stationary_goal_feasibility"):
+    for key in ("q_terminal_start_rad", "q_escape_start_rad", "q_goal_rad", "stationary_goal_feasibility"):
         if key not in bundle:
             raise RuntimeError(f"REPLAY_SOURCE_STATIONARY_BUNDLE_FIELD_MISSING:{key}")
     return {"bundle": bundle, "geometry": geometry, "snapshot": snapshot,
@@ -2983,6 +2983,9 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                         "track_id": fresh_latest.get("track_id"),
                         "timestamp": float(fresh_latest.get("last_timestamp", 0.0)),
                         "q_terminal_start_rad": np.asarray(q_terminal_start).tolist(),
+                        "q_escape_start_rad": np.asarray(
+                            (context.get("local_artifacts") or {}).get("q_now", q_terminal_start)
+                        ).tolist(),
                         "q_goal_rad": np.asarray(q_goal).tolist(),
                         "stationary_speed_m_s": float(stationary_confirmation["speed_m_s"]),
                         "stationary_center_span_m": float(stationary_confirmation["center_span_m"]),

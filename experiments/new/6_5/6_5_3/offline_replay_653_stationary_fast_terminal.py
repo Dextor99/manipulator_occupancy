@@ -31,6 +31,7 @@ def main() -> None:
     config = core.load_stage4_config(Path("config/ccro_stage4.yaml"))
     model = core.load_stage4_surface_model(config)
     q_start = np.asarray(bundle["q_terminal_start_rad"], dtype=float)
+    q_escape_start = np.asarray(bundle["q_escape_start_rad"], dtype=float)
     q_goal = np.asarray(bundle["q_goal_rad"], dtype=float)
     forecast = event.v3.v3_confirmed_stationary_multisphere_forecast(
         np.asarray(geometry["component_centers"], dtype=float),
@@ -58,7 +59,7 @@ def main() -> None:
         payload, trajectory = event.plan_stationary_fast_terminal_bypass(
             core.run_fast_repair, core_args, config, model,
             q_start=q_start, q_goal=q_goal, fresh=snapshot["fresh"], geometry=geometry,
-            q_escape_start=q_start, trial_dir=output / "virtual_fast_route",
+            q_escape_start=q_escape_start, trial_dir=output / "virtual_fast_route",
             nominal_reference_goal=(q_goal, np.zeros(6), np.zeros(6)),
             risk_links=set(), artifacts_out={},
         )
