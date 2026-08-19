@@ -3334,6 +3334,20 @@ def test_stationary_boundary_route_is_task_relative_and_primary():
     assert "boundary_routes[:3]" in plan_source
     assert "full_verify_candidate_count_attempted" in plan_source
     assert "selection_reason" in plan_source
+    assert "build_stationary_boundary_graph_route" in route_source
+    assert "retreat" in inspect.getsource(event_replan.build_stationary_boundary_graph_route)
+    assert "bypass_forward" in inspect.getsource(event_replan.build_stationary_boundary_graph_route)
+    assert "max_qd_actual_rad_s" in seed_source
+    assert "max_qdd_actual_rad_s2" in seed_source
+
+
+def test_stationary_path_existence_oracle_is_offline_only():
+    oracle = Path(__file__).resolve().parents[1] / "experiments/new/6_5/6_5_3/offline_stationary_path_existence_oracle.py"
+    source = oracle.read_text(encoding="utf-8")
+    assert "production_planner" in source
+    assert "robot_commanded" in source
+    assert "offline" in source.lower()
+    assert "sampled_joint_segment_clearance" in source
 
 
 def test_stationary_capture_and_replay_contract_is_fail_closed():

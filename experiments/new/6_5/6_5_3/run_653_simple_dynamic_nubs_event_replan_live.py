@@ -1803,6 +1803,144 @@ def build_one_stationary_boundary_route(
         "post_step_goal_connection_min_m": post_connection_min_m}
 
 
+def build_stationary_boundary_graph_route(
+    runtime_args: argparse.Namespace,
+    config: dict[str, Any],
+    model: Any,
+    *,
+    q_start: np.ndarray,
+    q_goal: np.ndarray,
+    geometry: dict[str, Any],
+    directions: list[dict[str, Any]],
+    task_frame: dict[str, np.ndarray],
+    tcp_link: str,
+    deadline_perf: float | None,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Bounded task-relative anchor graph used after boundary oracle evidence.
+
+    This diagnostic-sized production route initializer keeps the same coarse
+    edge screen and safety floor as the marcher, but permits short retreat,
+    direction changes, and bypass+forward actions.  Full NUBS verification
+    remains the only execution gate.
+    """
+    floor = float(getattr(runtime_args, "stationary_virtual_topology_floor_m", 0.08))
+    side_m = float(getattr(runtime_args, "continuation_side_m", 0.04))
+    forward_m = float(getattr(runtime_args, "forward_m", 0.05))
+    max_delta = float(getattr(runtime_args, "stationary_fast_terminal_virtual_max_joint_delta_rad",
+                              getattr(runtime_args, "max_joint_delta_rad", 0.12)))
+    beam_width = 8
+    max_depth = 32
+    edge_samples = 5
+    tcp_start = live.simple.tcp_position(model, np.asarray(q_start), tcp_link)
+    tcp_goal = live.simple.tcp_position(model, np.asarray(q_goal), tcp_link)
+    forecast = v3.v3_execution_multisphere_forecast(
+        np.asarray(geometry["component_centers"], dtype=np.float64),
+        np.asarray(geometry["component_base_radii"], dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+    )
+    evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
+    nodes = [{"q": np.asarray(q_start, dtype=np.float64).copy(), "parent": None,
+              "edge": None, "path_cost": 0.0, "depth": 0}]
+    beam = [0]
+    closed: set[tuple[int, ...]] = {tuple(np.round(np.asarray(q_start) / 0.04).astype(int))}
+    audit = {"search": [], "beam_width": beam_width, "max_depth": max_depth,
+             "action_count": 0, "direction_count": len(directions),
+             "connected_to_goal": False, "failure_reason": None}
+    best_gap = float(np.linalg.norm(tcp_goal - tcp_start))
+    for depth in range(max_depth):
+        if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+            audit["failure_reason"] = "boundary_graph_deadline_exhausted"
+            break
+        next_ids: list[int] = []
+        for node_id in beam:
+            node = nodes[node_id]
+            q = node["q"]
+            risk = evaluator.configuration(q, forecast, 0.0, density="medium", with_gradient=False)
+            if risk.robot_point is None or risk.nearest_link is None:
+                continue
+            tcp_now = live.simple.tcp_position(model, q, tcp_link)
+            remaining_forward = max(0.0, float(np.dot(tcp_goal - tcp_now, task_frame["task"])))
+            # The graph deliberately includes negative task progress.
+            actions = [("retreat", np.zeros(3), -min(forward_m, 0.05), 0.0)]
+            actions.append(("forward", np.zeros(3), min(forward_m, remaining_forward), 0.0))
+            for direction in directions:
+                d = bypass.normalized(np.asarray(direction["direction"], dtype=np.float64))
+                actions.append(("bypass", d, 0.0, side_m))
+                actions.append(("bypass_forward", d, min(forward_m, remaining_forward), side_m * 0.5))
+            for action, d, forward_step, side_step in actions:
+                if deadline_perf is not None and time.perf_counter() >= deadline_perf:
+                    break
+                established = (d if float(np.linalg.norm(d)) > 1.0e-9
+                               else np.asarray(task_frame["lateral"], dtype=np.float64))
+                goals, mapping = bypass.goal_directed_side_continuation_candidates(
+                    model, q, tcp_position=tcp_now, goal_position=tcp_goal,
+                    risk_link=str(risk.nearest_link), risk_position=np.asarray(risk.robot_point),
+                    risk_point_q=q, established_side=established, forward_m=float(forward_step),
+                    side_m=float(side_step), side_weights=(1.0,), tcp_link=tcp_link,
+                    max_joint_delta_rad=max_delta, tabletop_parallel_side=False,
+                    preserve_tcp_height=abs(float(np.dot(established, bypass.TABLE_UP))) < 0.10,
+                    fixed_task_direction=task_frame["task"],
+                )
+                audit["action_count"] += 1
+                if not goals:
+                    continue
+                q_new = np.asarray(goals[0]["q_goal"], dtype=np.float64)
+                key = tuple(np.round(q_new / 0.04).astype(int))
+                if key in closed:
+                    continue
+                screen = screen_boundary_edge(
+                    evaluator, forecast, model, q, q_new, tcp_link=tcp_link,
+                    topology_floor_m=floor,
+                    min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+                    samples=edge_samples,
+                )
+                if not screen["accepted"]:
+                    continue
+                closed.add(key)
+                progress = float(np.dot(
+                    live.simple.tcp_position(model, q_new, tcp_link) - tcp_now,
+                    task_frame["task"],
+                ))
+                gap = float(np.linalg.norm(tcp_goal - live.simple.tcp_position(model, q_new, tcp_link)))
+                best_gap = min(best_gap, gap)
+                child = {"q": q_new, "parent": node_id, "edge": {"action": action,
+                    "direction": established.tolist(), "screen": screen, "mapping": mapping,
+                    "task_progress_m": progress},
+                    "path_cost": float(node["path_cost"] + np.linalg.norm(q_new - q)), "depth": depth + 1}
+                nodes.append(child)
+                child_id = len(nodes) - 1
+                connection = confirmed_stationary_goal_connection(
+                    evaluator, model, forecast, q_new, np.asarray(q_goal), tcp_link=tcp_link,
+                    min_clearance_m=float(getattr(runtime_args, "online_accept_m", 0.09)),
+                    min_tcp_z_m=float(getattr(runtime_args, "gripper_base_min_z_m", 0.46)),
+                )
+                child["edge"]["goal_connection"] = connection
+                if connection.get("connectable", False):
+                    route_ids = [child_id]
+                    parent = child["parent"]
+                    while parent is not None:
+                        route_ids.append(parent)
+                        parent = nodes[parent]["parent"]
+                    route = np.asarray([nodes[index]["q"] for index in route_ids[::-1]] + [q_goal], dtype=np.float64)
+                    audit.update({"connected_to_goal": True, "connected_depth": depth + 1,
+                                  "best_goal_gap_m": best_gap, "failure_reason": None})
+                    return route, audit
+                next_ids.append(child_id)
+        if not next_ids:
+            audit["failure_reason"] = "boundary_graph_no_safe_neighbors"
+            break
+        next_ids.sort(key=lambda index: (
+            float(np.linalg.norm(tcp_goal - live.simple.tcp_position(model, nodes[index]["q"], tcp_link))),
+            float(nodes[index]["path_cost"]),
+            -float(nodes[index]["edge"]["screen"]["min_distance_m"]),
+        ))
+        beam = next_ids[:beam_width]
+        audit["search"].append({"depth": depth + 1, "beam_count": len(beam), "node_count": len(nodes),
+                                "best_goal_gap_m": best_gap})
+    audit["best_goal_gap_m"] = best_gap
+    return None, audit
+
+
 def build_stationary_boundary_routes(
     runtime_args: argparse.Namespace,
     config: dict[str, Any],
@@ -1830,6 +1968,29 @@ def build_stationary_boundary_routes(
     evaluator, _, _ = trial.make_risk_stack(config, model, forecast)
     routes = []
     direction_audit = []
+    # Once the bounded oracle has established that the safe C-space can be
+    # connected, use the direction-biased graph as the primary initializer.
+    graph_route, graph_audit = build_stationary_boundary_graph_route(
+        runtime_args, config, model, q_start=q_start, q_goal=q_goal,
+        geometry=geometry, directions=directions, task_frame=frame,
+        tcp_link=tcp_link, deadline_perf=deadline_perf,
+    )
+    if graph_route is not None:
+        graph_row = {
+            "index": -1, "theta_deg": None, "direction": None,
+            "graph_route": True, "connected_to_goal": True,
+            "route_points": graph_route,
+            "joint_arclength": float(np.sum(np.linalg.norm(np.diff(graph_route, axis=0), axis=1))),
+            "coarse_min_clearance_m": float(min(
+                (step.get("edge", {}).get("screen", {}).get("min_distance_m", math.inf)
+                 for step in graph_audit.get("search", [])), default=math.inf)),
+            "audit": graph_audit,
+        }
+        routes.append(graph_row)
+        return routes, {"task_frame": {key: value.tolist() for key, value in frame.items()},
+                        "direction_candidates": direction_audit,
+                        "graph_audit": graph_audit, "connected_route_count": len(routes)}
+    direction_audit.append({"graph_route": False, "connected_to_goal": False, "audit": graph_audit})
     for direction_index, item in enumerate(directions):
         direction_started = time.perf_counter()
         if deadline_perf is not None and direction_started >= deadline_perf:
@@ -1901,6 +2062,13 @@ def build_and_verify_stationary_boundary_seed(
     )
     checks = {key: bool(value) for key, value in verification.checks.items()}
     seed_safe = bool(verification.accepted and all(checks.values()) and tabletop.get("passed", False))
+    _, _, limits = trial.make_risk_stack(config, model, None)
+    sample_count = max(2, int(np.ceil(seed.total_duration / 0.04)) + 1)
+    seed_samples = seed.sample(np.linspace(0.0, seed.total_duration, sample_count))
+    max_qd_actual = float(np.max(np.abs(seed_samples.qd)))
+    max_qdd_actual = float(np.max(np.abs(seed_samples.qdd)))
+    max_qd_limit = float(np.max(np.asarray(limits.qd_max)))
+    max_qdd_limit = float(np.max(np.asarray(limits.qdd_max)))
     return {
         "route_index": int(route_row["index"]),
         "theta_deg": float(route_row["theta_deg"]),
@@ -1909,6 +2077,14 @@ def build_and_verify_stationary_boundary_seed(
         "polyline": polyline,
         "verification_accepted": bool(verification.accepted),
         "verification_min_distance_m": float(verification.min_distance),
+        "max_qd_violation_rad_s": float(verification.max_qd_violation),
+        "max_qdd_violation_rad_s2": float(verification.max_qdd_violation),
+        "max_qd_actual_rad_s": max_qd_actual,
+        "max_qdd_actual_rad_s2": max_qdd_actual,
+        "max_qd_limit_rad_s": max_qd_limit,
+        "max_qdd_limit_rad_s2": max_qdd_limit,
+        "max_qd_ratio": max_qd_actual / max_qd_limit if max_qd_limit > 0.0 else math.inf,
+        "max_qdd_ratio": max_qdd_actual / max_qdd_limit if max_qdd_limit > 0.0 else math.inf,
         "verification_checks": checks,
         "tabletop_passed": bool(tabletop.get("passed", False)),
         "tabletop_workspace_guard": tabletop,
