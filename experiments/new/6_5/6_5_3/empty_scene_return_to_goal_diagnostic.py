@@ -36,6 +36,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--duration-s", type=float, default=10.0)
     p.add_argument("--segments", type=int, default=16)
     p.add_argument("--empty-confirm-frames", type=int, default=3)
+    p.add_argument("--operator-confirmed-obstacle-safe-away", action="store_true",
+                   help="allow visible but operator-confirmed distant clusters; raw guard remains active")
+    p.add_argument("--safe-away-raw-guard-m", type=float, default=0.20)
     p.add_argument("--execute", action="store_true")
     p.add_argument("--robot-ip", default="192.168.123.96")
     return p
@@ -75,25 +78,30 @@ def build_empty_observation(processor, args):
     )
     clusters = trial.filter_guard_clusters(list(clustered.clusters), args)
     raw_guard = trial.execution_hard_guard_distance(processor, None, args)
+    safe_away = bool(
+        args.operator_confirmed_obstacle_safe_away
+        and raw_guard > float(args.safe_away_raw_guard_m)
+    )
     return {
         "frame_valid": True,
         "external_cluster_count": len(clusters),
         "raw_guard_distance_m": float(raw_guard),
         "timestamp": float(getattr(frame, "timestamp", time.time())),
-        "strict_empty": bool(
-            not clusters and raw_guard > float(args.guided_hard_stop_m)
-        ),
+        "strict_empty": bool(not clusters and raw_guard > float(args.guided_hard_stop_m)),
+        "operator_safe_away": safe_away,
     }
 
 
 def confirm_empty(processor, args, count: int):
     samples = [build_empty_observation(processor, args) for _ in range(int(count))]
+    empty_ok = bool(samples and all(row["strict_empty"] for row in samples))
+    safe_away_ok = bool(samples and all(row["operator_safe_away"] for row in samples))
+    ready = bool(empty_ok or safe_away_ok)
     return {
-        "ready": bool(samples and all(row["strict_empty"] for row in samples)),
         "samples": samples,
         "required_frames": int(count),
-        "reason": "strict_empty_scene_confirmed" if samples and all(row["strict_empty"] for row in samples)
-        else "external_cluster_or_raw_guard_not_clear",
+        "mode": "STRICT_EMPTY" if empty_ok else ("OPERATOR_CONFIRMED_SAFE_AWAY" if safe_away_ok else None),
+        "reason": "strict_empty_scene_confirmed" if empty_ok else ("operator_confirmed_obstacle_safe_away" if safe_away_ok else "external_cluster_or_raw_guard_not_clear"),
     }
 
 
@@ -170,6 +178,7 @@ def run(ns):
         tabletop = trial.gripper_base_workspace_guard(
             trajectory, model, min_z_m=float(args.gripper_base_min_z_m))
         result.update({"status": "EMPTY_SCENE_RETURN_AUTHORIZED" if verification.accepted and tabletop["passed"] else "EMPTY_SCENE_RETURN_REJECTED",
+                       "scene_clearance_mode": empty_audit.get("mode"),
                        "authorized": bool(verification.accepted and tabletop["passed"]),
                        "verification_min_distance_m": float(verification.min_distance),
                        "verification_checks": verification.checks,
