@@ -2975,10 +2975,6 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     min_clearance_m=float(args.online_accept_m),
                 )
                 result["stationary_goal_feasibility"] = stationary_goal_check
-                if not stationary_goal_check["feasible"]:
-                    result["status"] = "STATIONARY_GOAL_INFEASIBLE_HOLD"
-                    trial.write_json(trial_dir / "event_replan_summary.json", result)
-                    return result
                 if bool(getattr(event_args, "stationary_capture_only", False)):
                     bundle = {
                         "source_trial_dir": str(trial_dir),
@@ -2998,7 +2994,15 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     result["stationary_terminal_replay_bundle"] = bundle
                     result["stationary_capture_only"] = True
                     result["robot_commanded_terminal"] = False
-                    result["status"] = "STATIONARY_TERMINAL_CAPTURE_COMPLETE_HOLD"
+                    result["status"] = (
+                        "STATIONARY_TERMINAL_CAPTURE_COMPLETE_HOLD"
+                        if stationary_goal_check["feasible"]
+                        else "STATIONARY_TERMINAL_CAPTURE_GOAL_INFEASIBLE_HOLD"
+                    )
+                    trial.write_json(trial_dir / "event_replan_summary.json", result)
+                    return result
+                if not stationary_goal_check["feasible"]:
+                    result["status"] = "STATIONARY_GOAL_INFEASIBLE_HOLD"
                     trial.write_json(trial_dir / "event_replan_summary.json", result)
                     return result
         terminal_dir = trial_dir / "terminal_goal_authorization"

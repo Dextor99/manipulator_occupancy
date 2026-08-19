@@ -5,6 +5,7 @@ import inspect
 import csv
 import json
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -3287,6 +3288,9 @@ def test_stationary_capture_and_replay_contract_is_fail_closed():
     bundle_source = inspect.getsource(event_replan.make_event_handler)
     assert "stationary_terminal_replay_bundle.json" in bundle_source
     assert "q_terminal_start_rad" in bundle_source
+    assert "STATIONARY_TERMINAL_CAPTURE_GOAL_INFEASIBLE_HOLD" in bundle_source
+    replay_source = Path("experiments/new/6_5/6_5_3/offline_replay_653_stationary_fast_terminal.py").read_text()
+    assert "REPLAY_OUTPUT_NOT_EMPTY" in replay_source
 
 
 def test_stationary_clearance_recovery_is_side_only_and_topology_gated():

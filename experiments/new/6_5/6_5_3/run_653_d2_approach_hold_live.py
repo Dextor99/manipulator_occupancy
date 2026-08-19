@@ -161,6 +161,12 @@ def validate_frozen_request(args: argparse.Namespace) -> None:
         raise RuntimeError(f"D2-AH frozen planner parameters changed: {changed}")
     if args.task_geometry_id != SCENE_ID:
         raise RuntimeError("D2-AH task geometry id must not be overridden")
+    if bool(getattr(args, "stationary_capture_only", False)) and not bool(args.execute):
+        raise RuntimeError(
+            "STATIONARY_CAPTURE_REQUIRES_LOCAL_EXECUTION: "
+            "--stationary-capture-only must be used with --execute; "
+            "terminal execution remains disabled by capture-only mode"
+        )
 
 
 def _load_json(path: Path) -> dict[str, Any]:

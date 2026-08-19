@@ -14,6 +14,10 @@ def main() -> None:
     p.add_argument("--source-trial", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
+    output = args.output.resolve()
+    if output.exists() and any(output.iterdir()):
+        raise RuntimeError(f"REPLAY_OUTPUT_NOT_EMPTY:{output}")
+    output.mkdir(parents=True, exist_ok=True)
     event = importlib.import_module("experiments.new.6_5.6_5_3.run_653_simple_dynamic_nubs_event_replan_live")
     core = importlib.import_module("experiments.new.6_5.6_5_3.run_653_dynamic_repair_trial")
     source = event.load_stationary_terminal_replay_source(args.source_trial)
@@ -49,15 +53,14 @@ def main() -> None:
         payload, trajectory = event.plan_stationary_fast_terminal_bypass(
             core.run_fast_repair, core_args, config, model,
             q_start=q_start, q_goal=q_goal, fresh=snapshot["fresh"], geometry=geometry,
-            q_escape_start=q_start, trial_dir=args.output / "virtual_fast_route",
+            q_escape_start=q_start, trial_dir=output / "virtual_fast_route",
             nominal_reference_goal=(q_goal, np.zeros(6), np.zeros(6)),
             risk_links=set(), artifacts_out={},
         )
         payload["robot_commanded"] = False
         payload["replay_source_audit"] = {"bundle": "PASS", "geometry": "PASS",
                                            "goal_feasible": "PASS", "goal_clearance_consistent": "PASS"}
-    args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / "authorization_summary.json").write_text(json.dumps(payload, indent=2, default=lambda x: x.tolist() if hasattr(x, "tolist") else str(x)), encoding="utf-8")
+    (output / "authorization_summary.json").write_text(json.dumps(payload, indent=2, default=lambda x: x.tolist() if hasattr(x, "tolist") else str(x)), encoding="utf-8")
     print(json.dumps({k: payload.get(k) for k in ("status", "authorized", "robot_commanded", "reason", "goal_check")}, indent=2))
     raise SystemExit(0 if payload.get("authorized", False) else 2)
 
