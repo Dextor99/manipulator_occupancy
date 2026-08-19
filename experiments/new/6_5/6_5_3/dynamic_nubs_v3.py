@@ -144,6 +144,7 @@ def v3_execution_multisphere_forecast(
     velocity: np.ndarray,
     *,
     object_id: int = 1,
+    valid_horizon_s: float | None = None,
 ) -> CompositeForecast:
     """Move the Fresh geometry without reapplying the legacy 6.4 shell.
 
@@ -159,12 +160,15 @@ def v3_execution_multisphere_forecast(
         raise ValueError("centers must have shape (M, 3)")
     if radius_values.shape != (len(center_values),) or len(center_values) == 0:
         raise ValueError("radii must have shape (M,) with M > 0")
+    horizon = config64.FORECAST_HORIZON if valid_horizon_s is None else float(valid_horizon_s)
+    if horizon <= 0.0:
+        raise ValueError("valid_horizon_s must be positive")
     forecasts = [
         ConstantVelocitySphereForecast(
             center,
             velocity_value,
             float(radius),
-            config64.FORECAST_HORIZON,
+            horizon,
             object_id=int(object_id),
             margin=0.0,
             uncertainty=0.0,

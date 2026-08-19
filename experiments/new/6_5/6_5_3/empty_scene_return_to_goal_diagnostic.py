@@ -44,11 +44,12 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-def empty_forecast():
+def empty_forecast(valid_horizon_s: float):
     return v3.v3_execution_multisphere_forecast(
         np.asarray([[100.0, 100.0, 100.0]], dtype=np.float64),
         np.asarray([1.0e-6], dtype=np.float64),
         np.zeros(3, dtype=np.float64),
+        valid_horizon_s=float(valid_horizon_s),
     )
 
 
@@ -173,7 +174,7 @@ def run(ns):
             (output / "diagnostic_summary.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
             return result
         trajectory = make_trajectory(q_start, q_goal, ns.duration_s, ns.segments)
-        forecast = empty_forecast()
+        forecast = empty_forecast(ns.duration_s)
         _, verifier, _ = trial.make_risk_stack(config, model, None)
         verification = verifier.verify(trajectory, forecast, current_q=q_start,
                                        current_qd=np.zeros(6), current_qdd=np.zeros(6),
