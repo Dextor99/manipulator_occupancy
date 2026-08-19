@@ -236,19 +236,27 @@ def make_mid_execution_monitor(**context: Any):
     local_index = int(context.get("event_local_index", 1))
     confirmed_stationary_terminal = bool(context.get("confirmed_stationary_terminal", False))
     confirmed_stationary_track_id = context.get("confirmed_stationary_track_id")
+    confirmed_stationary_geometry = copy.deepcopy(
+        context.get("confirmed_stationary_geometry")
+    ) if confirmed_stationary_terminal else None
+    confirmed_stationary_center = (
+        np.asarray(context["confirmed_stationary_center"], dtype=np.float64)
+        if confirmed_stationary_terminal and context.get("confirmed_stationary_center") is not None
+        else None
+    )
 
     def stationary_terminal_forecast_from_snapshot(snapshot: dict[str, Any], aligned: dict[str, Any], *, horizon_s: float):
-        geometry = aligned.get("geometry")
+        live_geometry = aligned.get("geometry")
         velocity = np.asarray(snapshot.get("velocity", [np.nan, np.nan, np.nan]), dtype=np.float64)
         audit = {
             "speed_m_s": float(np.linalg.norm(velocity)),
             "track_id": snapshot.get("track_id"),
-            "geometry_covered": bool(geometry is not None and geometry.get("covered", False)),
+            "geometry_covered": bool(live_geometry is not None and live_geometry.get("covered", False)),
         }
         if velocity.shape != (3,) or not np.all(np.isfinite(velocity)):
             audit["reason"] = "stationary_terminal_velocity_invalid"
             return None, audit
-        if geometry is None or not geometry.get("covered", False):
+        if live_geometry is None or not live_geometry.get("covered", False):
             audit["reason"] = "stationary_terminal_geometry_not_covered"
             return None, audit
         track_id = snapshot.get("track_id")
@@ -257,6 +265,17 @@ def make_mid_execution_monitor(**context: Any):
             return None, audit
         if audit["speed_m_s"] > 0.04:
             audit["reason"] = "stationary_terminal_motion_resumed"
+            return None, audit
+        if confirmed_stationary_center is not None:
+            live_center = np.asarray(aligned.get("propagated_center", snapshot.get("center")), dtype=np.float64)
+            center_shift = float(np.linalg.norm(live_center - confirmed_stationary_center))
+            audit["center_shift_m"] = center_shift
+            if center_shift > 0.02:
+                audit["reason"] = "stationary_terminal_motion_resumed"
+                return None, audit
+        geometry = confirmed_stationary_geometry if confirmed_stationary_geometry is not None else live_geometry
+        if geometry is None or not geometry.get("covered", False):
+            audit["reason"] = "stationary_terminal_geometry_not_covered"
             return None, audit
         forecast = v3.v3_confirmed_stationary_multisphere_forecast(
             np.asarray(geometry["component_centers"], dtype=np.float64),
@@ -536,11 +555,19 @@ def make_mid_execution_monitor(**context: Any):
                 return {"motion_safe": False, "replan_requested": True, "reason": "stationary_terminal_track_changed", "state_seq": int(v3._state_seq(snapshot)), "raw_guard_distance_m": raw_guard}
             if not np.isfinite(speed) or speed > 0.04:
                 return {"motion_safe": False, "replan_requested": True, "reason": "stationary_terminal_motion_resumed", "state_seq": int(v3._state_seq(snapshot)), "raw_guard_distance_m": raw_guard, "speed_m_s": speed}
-        forecast = v3.v3_execution_multisphere_forecast(
-            np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
-            np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
-            np.asarray(snapshot["velocity"], dtype=np.float64),
-        )
+        if confirmed_stationary_terminal and confirmed_stationary_geometry is not None:
+            forecast = v3.v3_confirmed_stationary_multisphere_forecast(
+                np.asarray(confirmed_stationary_geometry["component_centers"], dtype=np.float64),
+                np.asarray(confirmed_stationary_geometry["component_base_radii"], dtype=np.float64),
+                valid_horizon_s=float(trajectory.total_duration),
+                object_id=int(confirmed_stationary_track_id or 1),
+            )
+        else:
+            forecast = v3.v3_execution_multisphere_forecast(
+                np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
+                np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
+                np.asarray(snapshot["velocity"], dtype=np.float64),
+            )
         current = evaluator.configuration(
             np.asarray(actual_q, dtype=np.float64), forecast, 0.0,
             density="medium", with_gradient=False,
@@ -630,7 +657,7 @@ def make_mid_execution_monitor(**context: Any):
                 np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
                 np.asarray(snapshot["velocity"], dtype=np.float64),
             )
-        rolling_forecast = v3.v3_execution_multisphere_forecast(
+        rolling_forecast = full_forecast if confirmed_stationary_terminal else v3.v3_execution_multisphere_forecast(
             np.asarray(aligned["geometry"]["component_centers"], dtype=np.float64),
             np.asarray(aligned["geometry"]["component_base_radii"], dtype=np.float64),
             np.asarray(snapshot["velocity"], dtype=np.float64),
@@ -4224,6 +4251,8 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
             trial_dir=terminal_dir,
             confirmed_stationary_terminal=True,
             confirmed_stationary_track_id=int(monitor1["fresh"].get("track_id", 1)),
+            confirmed_stationary_geometry=copy.deepcopy(confirmed_stationary_geometry),
+            confirmed_stationary_center=np.asarray(monitor1["fresh"]["center"], dtype=np.float64),
         )
         terminal_execution = trial.execute_authorized_trajectory_offline_track(
             robot,
@@ -4269,7 +4298,9 @@ def make_event_handler(event_args: argparse.Namespace, terminal_durations: tuple
                     "execution_summary": terminal_execution,
                     "local1_interrupted": True,
                     "replan_depth": replan_depth + 1,
-                    "replan_started_monotonic": replan_started,
+                    # A terminal interruption starts a fresh recovery window;
+                    # do not inherit the original event watchdog timestamp.
+                    "replan_started_monotonic": time.monotonic(),
                     "failed_replans": failed_replans,
                 }
             )

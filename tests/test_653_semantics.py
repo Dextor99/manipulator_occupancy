@@ -3665,3 +3665,12 @@ def test_persistent_worker_snapshot_contract_forwards_track_identity():
     # contract is exercised above.
     monitor_source = inspect.getsource(event_replan.make_mid_execution_monitor)
     assert "stationary_terminal_track_changed" in monitor_source
+
+
+def test_stationary_terminal_monitor_freezes_geometry_and_resets_replan_watchdog():
+    source = inspect.getsource(event_replan.make_mid_execution_monitor)
+    handler = inspect.getsource(event_replan.make_event_handler)
+    assert "confirmed_stationary_geometry" in source
+    assert "v3_confirmed_stationary_multisphere_forecast" in source
+    assert "center_shift_m" in source
+    assert '"replan_started_monotonic": time.monotonic()' in handler
